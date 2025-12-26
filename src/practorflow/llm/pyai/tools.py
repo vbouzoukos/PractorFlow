@@ -185,10 +185,6 @@ def register_knowledge_tools(agent, use_generic: bool = False):
 
     Returns:
         The agent (for chaining).
-
-    Example:
-        agent = Agent(model, deps_type=KnowledgeDeps)
-        register_knowledge_tools(agent)
     """
     if use_generic:
         agent.tool(search_knowledge_generic)

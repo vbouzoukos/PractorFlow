@@ -1,0 +1,36 @@
+"""
+FastAPI dependencies for dependency injection.
+"""
+
+from typing import Optional
+
+from practorflow.services.chat import ChatService
+
+
+class ServiceContainer:
+    """
+    Container for application services.
+    
+    Initialized during application lifespan and used for dependency injection.
+    """
+    
+    chat_service: Optional[ChatService] = None
+
+
+# Global service container instance
+container = ServiceContainer()
+
+
+def get_chat_service() -> ChatService:
+    """
+    Dependency to get ChatService instance.
+    
+    Returns:
+        ChatService instance.
+    
+    Raises:
+        RuntimeError: If ChatService is not initialized.
+    """
+    if container.chat_service is None:
+        raise RuntimeError("ChatService not initialized. Application not started properly.")
+    return container.chat_service
