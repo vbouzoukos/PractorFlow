@@ -13,6 +13,38 @@ class SessionResponse(BaseModel):
     message: str = Field(default="Session created successfully")
 
 
+class SessionSummary(BaseModel):
+    """Summary information for a session."""
+    
+    session_id: str = Field(..., description="Unique session identifier")
+    user: Optional[str] = Field(default=None, description="User identifier")
+    message_count: int = Field(..., description="Number of messages in session")
+    document_count: int = Field(..., description="Number of documents in session")
+    created_at: str = Field(..., description="Session creation timestamp (ISO format)")
+    updated_at: str = Field(..., description="Session last update timestamp (ISO format)")
+
+
+class MessageResponse(BaseModel):
+    """Response model for a single message."""
+    
+    id: str = Field(..., description="Message identifier")
+    role: str = Field(..., description="Message role (user, assistant, system)")
+    content: str = Field(..., description="Message content text")
+    timestamp: str = Field(..., description="Message timestamp (ISO format)")
+
+
+class SessionHistoryResponse(BaseModel):
+    """Response model for full session history."""
+    
+    session_id: str = Field(..., description="Unique session identifier")
+    user: Optional[str] = Field(default=None, description="User identifier")
+    instructions: Optional[str] = Field(default=None, description="System instructions")
+    messages: List[MessageResponse] = Field(..., description="List of messages in session")
+    document_count: int = Field(..., description="Number of documents in session")
+    created_at: str = Field(..., description="Session creation timestamp (ISO format)")
+    updated_at: str = Field(..., description="Session last update timestamp (ISO format)")
+
+
 class DocumentInfo(BaseModel):
     """Document information model."""
     

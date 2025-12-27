@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 import uuid
 
 
@@ -48,7 +48,8 @@ class Session:
     metadata: Dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
-    
+    user:Optional[str] = None
+
     def add_document(self, document: Dict[str, Any]) -> None:
         """
         Add a document to the session.

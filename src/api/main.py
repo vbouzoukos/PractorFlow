@@ -21,7 +21,7 @@ from practorflow.llm.knowledge.chroma_knowledge_store import ChromaKnowledgeStor
 from practorflow.services.chat import ChatService
 from practorflow.settings.app_settings import appConfiguration
 from practorflow.logger.logger import get_logger
-from session_store.factory import create_session_store
+from session_store.factory import create_session_history, create_session_store
 
 logger = get_logger("agent-api", level="INFO")
 
@@ -30,36 +30,39 @@ logger = get_logger("agent-api", level="INFO")
 async def lifespan(app: FastAPI):
     """
     Application lifespan manager.
-    
+
     Initializes services on startup and cleans up on shutdown.
     """
     logger.info("[API] Starting application...")
-    
+
     # Initialize configuration
     model_config = appConfiguration.ModelConfiguration
     knowledge_config = appConfiguration.KnowledgeChromaConfiguration
-    
+
     # Initialize model pool
     logger.info(f"[API] Initializing model pool with model: {model_config.model_name}")
     model_pool = ModelPool.get_instance(max_models=1)
-    
+
     # Preload model
     logger.info("[API] Preloading model...")
     await model_pool.preload(model_config)
     logger.info("[API] Model preloaded successfully")
-    
+
     # Initialize knowledge store
     logger.info("[API] Initializing knowledge store...")
     knowledge_store = ChromaKnowledgeStore(knowledge_config)
-    logger.info(f"[API] Knowledge store initialized: {knowledge_store.count_documents()} documents")
-    
+    logger.info(
+        f"[API] Knowledge store initialized: {knowledge_store.count_documents()} documents"
+    )
 
     session_env = os.path.join("../config/options", "session.env")
-    
+
     load_dotenv(dotenv_path=session_env, override=True)
     # Initialize session store
     session_store = create_session_store()
-    
+    # Initialize session history
+    session_history = create_session_history()
+
     # Initialize chat service
     chat_service = ChatService(
         model_pool=model_pool,
@@ -67,20 +70,21 @@ async def lifespan(app: FastAPI):
         knowledge_store=knowledge_store,
         session_store=session_store,
     )
-    
+
     # Set service in container for dependency injection
     container.chat_service = chat_service
-    
+    # Set session history in container
+    container.session_history = session_history
     logger.info("[API] Application started successfully")
-    
+
     yield
-    
+
     # Cleanup on shutdown
     logger.info("[API] Shutting down application...")
-    
+
     # Unload all models
     await model_pool.unload_all()
-    
+
     logger.info("[API] Application shutdown complete")
 
 

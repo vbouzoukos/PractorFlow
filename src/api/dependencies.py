@@ -5,6 +5,7 @@ FastAPI dependencies for dependency injection.
 from typing import Optional
 
 from practorflow.services.chat import ChatService
+from session_store.session_history import SessionHistory
 
 
 class ServiceContainer:
@@ -15,6 +16,7 @@ class ServiceContainer:
     """
     
     chat_service: Optional[ChatService] = None
+    session_history: Optional[SessionHistory] = None
 
 
 # Global service container instance
@@ -34,3 +36,18 @@ def get_chat_service() -> ChatService:
     if container.chat_service is None:
         raise RuntimeError("ChatService not initialized. Application not started properly.")
     return container.chat_service
+
+
+def get_session_history() -> SessionHistory:
+    """
+    Dependency to get SessionHistory instance.
+    
+    Returns:
+        SessionHistory instance.
+    
+    Raises:
+        RuntimeError: If SessionHistory is not initialized.
+    """
+    if container.session_history is None:
+        raise RuntimeError("SessionHistory not initialized. Application not started properly.")
+    return container.session_history
