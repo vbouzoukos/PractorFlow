@@ -8,7 +8,9 @@ Sets up the FastAPI application with:
 """
 
 from contextlib import asynccontextmanager
+import os
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -51,6 +53,10 @@ async def lifespan(app: FastAPI):
     knowledge_store = ChromaKnowledgeStore(knowledge_config)
     logger.info(f"[API] Knowledge store initialized: {knowledge_store.count_documents()} documents")
     
+
+    session_env = os.path.join("../config/options", "session.env")
+    
+    load_dotenv(dotenv_path=session_env, override=True)
     # Initialize session store
     session_store = create_session_store()
     

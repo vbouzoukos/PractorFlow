@@ -78,10 +78,9 @@ class ChatService:
         self._web_search_tool = web_search_tool or DuckDuckGoSearchTool()
         self._instructions = default_instructions or (
             "You are a helpful AI assistant. "
-            "Respond naturally to greetings and casual conversation. "
-            "Only use the search_knowledge tool when the user asks questions about uploaded documents. "
-            "Only use the search_web tool when the user explicitly asks for current events, news, or web information. "
-            "Do not use any tools for simple greetings, general knowledge questions, or casual conversation."
+            "When the user attaches files, you MUST use the search_knowledge tool to read and retrieve their content before answering. "
+            "Use the search_knowledge tool to find information from uploaded documents. "
+            "Use the search_web tool only when the user explicitly asks for current events, news, or web information."
         )
         
         logger.info("[ChatService] Initialized")
@@ -147,18 +146,28 @@ class ChatService:
         
         session = self._session_store.get(session_id)
         
+        # Track newly uploaded file names
+        new_file_names: List[str] = []
+        
         # Index files if provided
         if files:
             for file in files:
                 doc_info = await self._index_file(file)
                 session.add_document(doc_info)
+                new_file_names.append(doc_info['filename'])
                 logger.info(f"[ChatService] Indexed file: {doc_info['filename']} -> {doc_info['id']}")
             self._session_store.save(session)
         
         # Get document scope from session
         document_scope = self._get_document_scope(session)
         
-        # Add user message to session
+        # Build message with file attachment notification for the agent
+        if new_file_names:
+            enhanced_message = f"[User attached files: {', '.join(new_file_names)}]\n\n{message}"
+        else:
+            enhanced_message = message
+        
+        # Add user message to session (store original, not enhanced)
         user_message = Message(role="user", content=message)
         session.messages.append(user_message)
         
@@ -194,7 +203,7 @@ class ChatService:
             
             # Stream response
             async with agent.run_stream(
-                message,
+                enhanced_message,
                 deps=deps,
                 message_history=message_history,
             ) as response:

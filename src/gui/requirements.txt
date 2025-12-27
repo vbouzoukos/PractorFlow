@@ -1,0 +1,5 @@
+# PractorFlow GUI Chat Client Dependencies
+PySide6
+httpx
+httpx-sse
+python-dotenv
