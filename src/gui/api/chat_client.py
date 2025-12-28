@@ -7,7 +7,7 @@ and SSE streaming responses.
 """
 
 import json
-from typing import Iterator, Optional
+from typing import Iterator, List, Optional
 from dataclasses import dataclass
 
 import httpx
@@ -24,6 +24,42 @@ class StreamChunk:
     error: Optional[str] = None
 
 
+@dataclass
+class SessionSummary:
+    """Summary information for a session."""
+    session_id: str
+    user: Optional[str] = None
+    message_count: int = 0
+    document_count: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass
+class MessageInfo:
+    """Information for a single message."""
+    id: str
+    role: str
+    content: str
+    timestamp: str
+
+
+@dataclass
+class SessionHistory:
+    """Full session with message history."""
+    session_id: str
+    user: Optional[str] = None
+    instructions: Optional[str] = None
+    messages: List[MessageInfo] = None
+    document_count: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+    
+    def __post_init__(self):
+        if self.messages is None:
+            self.messages = []
+
+
 class ChatClient:
     """
     HTTP client for the PractorFlow Chat API.
@@ -33,6 +69,8 @@ class ChatClient:
     - Sending messages with optional file uploads
     - Streaming responses via SSE
     - Deleting sessions
+    - Listing all sessions
+    - Retrieving session history
     """
     
     def __init__(self, base_url: str, timeout: float = 30.0):
@@ -86,6 +124,86 @@ class ChatClient:
             
             data = response.json()
             return data.get("deleted", False)
+    
+    def list_sessions(self, user: Optional[str] = None) -> List[SessionSummary]:
+        """
+        List all chat sessions.
+        
+        Args:
+            user: Optional user identifier to filter sessions.
+        
+        Returns:
+            List of SessionSummary objects sorted by updated_at descending.
+        
+        Raises:
+            httpx.HTTPError: If the request fails.
+        """
+        url = f"{self._base_url}/chat/sessions"
+        params = {}
+        if user is not None:
+            params["user"] = user
+        
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.get(url, params=params)
+            response.raise_for_status()
+            
+            data = response.json()
+            return [
+                SessionSummary(
+                    session_id=item.get("session_id", ""),
+                    user=item.get("user"),
+                    message_count=item.get("message_count", 0),
+                    document_count=item.get("document_count", 0),
+                    created_at=item.get("created_at", ""),
+                    updated_at=item.get("updated_at", ""),
+                )
+                for item in data
+            ]
+    
+    def get_history(self, session_id: str) -> Optional[SessionHistory]:
+        """
+        Get full session with message history.
+        
+        Args:
+            session_id: Session ID to retrieve.
+        
+        Returns:
+            SessionHistory object with full message history,
+            or None if session not found.
+        
+        Raises:
+            httpx.HTTPError: If the request fails (except 404).
+        """
+        url = f"{self._base_url}/chat/{session_id}/history"
+        
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.get(url)
+            
+            if response.status_code == 404:
+                return None
+            
+            response.raise_for_status()
+            
+            data = response.json()
+            messages = [
+                MessageInfo(
+                    id=msg.get("id", ""),
+                    role=msg.get("role", ""),
+                    content=msg.get("content", ""),
+                    timestamp=msg.get("timestamp", ""),
+                )
+                for msg in data.get("messages", [])
+            ]
+            
+            return SessionHistory(
+                session_id=data.get("session_id", ""),
+                user=data.get("user"),
+                instructions=data.get("instructions"),
+                messages=messages,
+                document_count=data.get("document_count", 0),
+                created_at=data.get("created_at", ""),
+                updated_at=data.get("updated_at", ""),
+            )
     
     def send_message_stream(
         self,

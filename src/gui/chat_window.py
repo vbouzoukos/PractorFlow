@@ -5,6 +5,7 @@ Provides the primary chat interface with:
 - Message history display
 - Message input with file attachment
 - Session management (async)
+- Collapsible history panel for past sessions
 """
 
 from PySide6.QtWidgets import (
@@ -16,12 +17,14 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QStatusBar,
+    QSplitter,
 )
-from PySide6.QtCore import Slot
+from PySide6.QtCore import Qt, Slot
 
 from widgets.chat_display import ChatDisplay
 from widgets.input_widget import InputWidget
-from api.chat_client import ChatClient
+from widgets.history_panel import HistoryPanel
+from api.chat_client import ChatClient, SessionHistory
 from workers.stream_worker import StreamWorker
 from workers.session_worker import StartSessionWorker, DeleteSessionWorker
 
@@ -42,28 +45,40 @@ class ChatWindow(QMainWindow):
         self._session_id = None
         self._stream_worker = None
         self._session_worker = None
+        self._delete_worker = None
         self._pending_close = False
         
         self._setup_ui()
         self._connect_signals()
         
-        # Start a new session on launch
+        # Load history panel and start a new session
+        self._history_panel.refresh_sessions()
         self._start_new_session()
     
     def _setup_ui(self):
         """Initialize the user interface."""
         self.setWindowTitle("PractorFlow Chat")
-        self.setMinimumSize(600, 500)
-        self.resize(800, 600)
+        self.setMinimumSize(700, 500)
+        self.resize(1000, 700)
         
         # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        # Main layout
-        layout = QVBoxLayout(central_widget)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        # Main horizontal layout with splitter
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(4, 4, 4, 4)
+        main_layout.setSpacing(4)
+        
+        # History panel (collapsible)
+        self._history_panel = HistoryPanel(self._client)
+        main_layout.addWidget(self._history_panel)
+        
+        # Chat area container
+        chat_container = QWidget()
+        chat_layout = QVBoxLayout(chat_container)
+        chat_layout.setContentsMargins(4, 4, 4, 4)
+        chat_layout.setSpacing(8)
         
         # Header with session controls
         header_layout = QHBoxLayout()
@@ -82,15 +97,17 @@ class ChatWindow(QMainWindow):
         self._new_session_btn.setToolTip("Start a new chat session")
         header_layout.addWidget(self._new_session_btn)
         
-        layout.addLayout(header_layout)
+        chat_layout.addLayout(header_layout)
         
         # Chat display area
         self._chat_display = ChatDisplay()
-        layout.addWidget(self._chat_display, stretch=1)
+        chat_layout.addWidget(self._chat_display, stretch=1)
         
         # Input area
         self._input_widget = InputWidget()
-        layout.addWidget(self._input_widget)
+        chat_layout.addWidget(self._input_widget)
+        
+        main_layout.addWidget(chat_container, stretch=1)
         
         # Status bar
         self._status_bar = QStatusBar()
@@ -105,6 +122,10 @@ class ChatWindow(QMainWindow):
         self._new_session_btn.clicked.connect(self._on_new_session_clicked)
         self._input_widget.message_submitted.connect(self._on_message_submitted)
         self._reconnect_btn.clicked.connect(self._on_reconnect_clicked)
+        
+        # History panel signals
+        self._history_panel.session_selected.connect(self._on_session_selected)
+        self._history_panel.session_deleted.connect(self._on_session_deleted_from_history)
     
     def _start_new_session(self):
         """Start a new chat session asynchronously."""
@@ -116,11 +137,19 @@ class ChatWindow(QMainWindow):
         # Clear chat display
         self._chat_display.clear_messages()
         
-        # Start worker
-        self._session_worker = StartSessionWorker(self._client)
+        # Start worker with parent to prevent premature garbage collection
+        self._session_worker = StartSessionWorker(self._client, parent=self)
         self._session_worker.session_started.connect(self._on_session_started)
         self._session_worker.error_occurred.connect(self._on_session_error)
+        self._session_worker.finished.connect(self._cleanup_session_worker)
         self._session_worker.start()
+    
+    @Slot()
+    def _cleanup_session_worker(self):
+        """Clean up session worker after it finishes."""
+        if self._session_worker:
+            self._session_worker.deleteLater()
+            self._session_worker = None
     
     @Slot(str)
     def _on_session_started(self, session_id: str):
@@ -131,7 +160,12 @@ class ChatWindow(QMainWindow):
         self._new_session_btn.setEnabled(True)
         self._reconnect_btn.hide()
         self._status_bar.showMessage("Session started", 3000)
-        self._session_worker = None
+        
+        # Update history panel current session
+        self._history_panel.set_current_session(session_id)
+        
+        # Refresh history to show the new session
+        self._history_panel.refresh_sessions()
     
     @Slot(str)
     def _on_session_error(self, error: str):
@@ -140,7 +174,6 @@ class ChatWindow(QMainWindow):
         self._session_label.setText("Session: Error")
         self._new_session_btn.setEnabled(True)
         self._reconnect_btn.show()
-        self._session_worker = None
         
         QMessageBox.critical(
             self,
@@ -155,15 +188,20 @@ class ChatWindow(QMainWindow):
                 on_complete()
             return
         
-        worker = DeleteSessionWorker(self._client, self._session_id)
+        self._delete_worker = DeleteSessionWorker(self._client, self._session_id, parent=self)
         
         if on_complete:
-            worker.session_deleted.connect(on_complete)
+            self._delete_worker.session_deleted.connect(on_complete)
         
-        worker.start()
-        
-        # Keep reference to prevent garbage collection
-        self._delete_worker = worker
+        self._delete_worker.finished.connect(self._cleanup_delete_worker)
+        self._delete_worker.start()
+    
+    @Slot()
+    def _cleanup_delete_worker(self):
+        """Clean up delete worker after it finishes."""
+        if self._delete_worker:
+            self._delete_worker.deleteLater()
+            self._delete_worker = None
     
     @Slot()
     def _on_reconnect_clicked(self):
@@ -183,8 +221,40 @@ class ChatWindow(QMainWindow):
         )
         
         if reply == QMessageBox.Yes:
-            # Delete old session then start new one
-            self._delete_session_async(on_complete=self._start_new_session)
+            # Start new session (don't delete old one - it stays in history)
+            self._start_new_session()
+    
+    @Slot(object)
+    def _on_session_selected(self, history: SessionHistory):
+        """Handle session selected from history panel."""
+        # Switch to the selected session
+        self._session_id = history.session_id
+        self._session_label.setText(f"Session: {history.session_id[:16]}...")
+        
+        # Clear and reload chat display with history
+        self._chat_display.clear_messages()
+        
+        for msg in history.messages:
+            if msg.role == "user":
+                self._chat_display.add_user_message(msg.content)
+            elif msg.role == "assistant":
+                self._chat_display.add_assistant_message(msg.content)
+                self._chat_display.finalize_last_message()
+            elif msg.role == "system":
+                self._chat_display.add_system_message(msg.content)
+        
+        # Enable input
+        self._input_widget.set_enabled(True)
+        self._input_widget.clear_input()
+        
+        self._status_bar.showMessage(f"Loaded session with {len(history.messages)} messages", 3000)
+    
+    @Slot(str)
+    def _on_session_deleted_from_history(self, session_id: str):
+        """Handle session deleted from history panel."""
+        # If the deleted session is the current one, start a new session
+        if session_id == self._session_id:
+            self._start_new_session()
     
     @Slot(str, list)
     def _on_message_submitted(self, message: str, file_paths: list):
@@ -258,6 +328,9 @@ class ChatWindow(QMainWindow):
         self._chat_display.finalize_last_message()
         
         self._stream_worker = None
+        
+        # Refresh history to update message counts
+        self._history_panel.refresh_sessions()
     
     @Slot(str)
     def _on_stream_error(self, error: str):
@@ -275,8 +348,5 @@ class ChatWindow(QMainWindow):
             self._stream_worker.stop()
             self._stream_worker.wait(1000)
         
-        # Delete session in background and close
-        if self._session_id:
-            self._delete_session_async()
-        
+        # Don't delete session on close - keep it in history
         event.accept()

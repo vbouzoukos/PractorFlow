@@ -32,6 +32,12 @@ class StartSessionWorker(QThread):
             self.session_started.emit(session_id)
         except Exception as e:
             self.error_occurred.emit(str(e))
+    
+    def safe_delete(self):
+        """Safely delete worker - wait if still running."""
+        if self.isRunning():
+            self.wait(2000)
+        self.deleteLater()
 
 
 class DeleteSessionWorker(QThread):
@@ -58,3 +64,9 @@ class DeleteSessionWorker(QThread):
         except Exception:
             # Ignore delete errors on cleanup
             self.session_deleted.emit()
+    
+    def safe_delete(self):
+        """Safely delete worker - wait if still running."""
+        if self.isRunning():
+            self.wait(2000)
+        self.deleteLater()

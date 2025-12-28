@@ -112,8 +112,6 @@ class ChatService:
             instructions=instructions or self._instructions,
         )
         
-        self._session_store.save(session)
-        
         logger.info(f"[ChatService] Started chat session: {session_id}")
         
         return session

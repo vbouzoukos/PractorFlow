@@ -190,3 +190,6 @@ cython_debug/
 /samples
 /data/session
 /data
+data/session/session.json
+
+/data/session/session.json
