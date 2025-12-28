@@ -87,3 +87,10 @@ class StreamWorker(QThread):
     def stop(self):
         """Request the worker to stop."""
         self._stop_requested = True
+    
+    def safe_delete(self):
+        """Safely delete worker - wait if still running."""
+        if self.isRunning():
+            self._stop_requested = True
+            self.wait(2000)
+        self.deleteLater()

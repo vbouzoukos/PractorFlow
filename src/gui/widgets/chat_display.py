@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QSizePolicy,
+    QApplication,
 )
 from PySide6.QtCore import Qt
 
@@ -50,8 +51,6 @@ class ChatDisplay(QScrollArea):
         
         # Add stretch at bottom to push messages to top
         self._layout.addStretch()
-        
-        # No hardcoded styles - use system palette
     
     def add_user_message(self, content: str):
         """
@@ -88,15 +87,18 @@ class ChatDisplay(QScrollArea):
             role: Message role (user, assistant, system).
             content: Message text.
         """
-        widget = MessageWidget(role, content)
-        self._messages.append(widget)
-        
-        # Insert before the stretch
-        count = self._layout.count()
-        self._layout.insertWidget(count - 1, widget)
-        
-        # Scroll to bottom
-        self._scroll_to_bottom()
+        try:
+            widget = MessageWidget(role, content)
+            self._messages.append(widget)
+            
+            # Insert before the stretch
+            count = self._layout.count()
+            self._layout.insertWidget(count - 1, widget)
+            
+            # Scroll to bottom
+            self._scroll_to_bottom()
+        except Exception:
+            pass
     
     def append_to_last_message(self, text: str):
         """
@@ -105,14 +107,17 @@ class ChatDisplay(QScrollArea):
         Args:
             text: Text chunk to append.
         """
-        if not self._messages:
-            return
-        
-        last_message = self._messages[-1]
-        last_message.append_content(text)
-        
-        # Scroll to bottom
-        self._scroll_to_bottom()
+        try:
+            if not self._messages:
+                return
+            
+            last_message = self._messages[-1]
+            last_message.append_content(text)
+            
+            # Scroll to bottom
+            self._scroll_to_bottom()
+        except Exception:
+            pass
     
     def finalize_last_message(self):
         """
@@ -120,19 +125,25 @@ class ChatDisplay(QScrollArea):
         
         Triggers Markdown rendering for assistant messages.
         """
-        if not self._messages:
-            return
-        
-        last_message = self._messages[-1]
-        last_message.finalize()
+        try:
+            if not self._messages:
+                return
+            
+            last_message = self._messages[-1]
+            last_message.finalize()
+        except Exception:
+            pass
     
     def clear_messages(self):
         """Clear all messages from the display."""
-        for widget in self._messages:
-            self._layout.removeWidget(widget)
-            widget.deleteLater()
-        
-        self._messages.clear()
+        try:
+            for widget in self._messages:
+                self._layout.removeWidget(widget)
+                widget.deleteLater()
+            
+            self._messages.clear()
+        except Exception:
+            self._messages = []
     
     def get_message_count(self) -> int:
         """Get the number of messages."""
@@ -140,9 +151,11 @@ class ChatDisplay(QScrollArea):
     
     def _scroll_to_bottom(self):
         """Scroll to the bottom of the display."""
-        # Process events to ensure layout is updated
-        from PySide6.QtWidgets import QApplication
-        QApplication.processEvents()
-        
-        scrollbar = self.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        try:
+            # Process events to ensure layout is updated
+            QApplication.processEvents()
+            
+            scrollbar = self.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
+        except Exception:
+            pass

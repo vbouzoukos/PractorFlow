@@ -31,13 +31,6 @@ from PySide6.QtGui import QAction, QIcon
 from api.chat_client import ChatClient, SessionSummary, SessionHistory
 from workers.history_worker import ListSessionsWorker, GetHistoryWorker, DeleteSessionWorker
 
-# Try to import lucide icons, fallback to text
-try:
-    from PySide6.QtGui import QIcon
-    HAS_ICONS = True
-except ImportError:
-    HAS_ICONS = False
-
 
 class SessionItemWidget(QWidget):
     """
@@ -94,31 +87,40 @@ class SessionItemWidget(QWidget):
     
     def _update_display(self):
         """Update the display text."""
-        # Format timestamp
         try:
-            dt = datetime.fromisoformat(self.session.updated_at)
-            time_str = dt.strftime("%b %d, %H:%M")
-        except (ValueError, TypeError):
-            time_str = "Unknown"
-        
-        # Create display text
-        msg_count = self.session.message_count
-        msg_text = f"{msg_count} msg" if msg_count == 1 else f"{msg_count} msgs"
-        
-        # Use session ID prefix as placeholder for future title
-        session_preview = self.session.session_id[:16] + "..."
-        
-        display_text = f"<b>{session_preview}</b><br/><small>{time_str} · {msg_text}</small>"
-        self._info_label.setText(display_text)
+            # Format timestamp
+            try:
+                dt = datetime.fromisoformat(self.session.updated_at)
+                time_str = dt.strftime("%b %d, %H:%M")
+            except (ValueError, TypeError):
+                time_str = "Unknown"
+            
+            # Create display text
+            msg_count = self.session.message_count
+            msg_text = f"{msg_count} msg" if msg_count == 1 else f"{msg_count} msgs"
+            
+            # Use session ID prefix as placeholder for future title
+            session_preview = self.session.session_id[:16] + "..."
+            
+            display_text = f"<b>{session_preview}</b><br/><small>{time_str} · {msg_text}</small>"
+            self._info_label.setText(display_text)
+        except Exception:
+            self._info_label.setText("Session")
     
     def _on_delete_clicked(self):
         """Handle delete button click."""
-        self.delete_clicked.emit(self.session.session_id)
+        try:
+            self.delete_clicked.emit(self.session.session_id)
+        except Exception:
+            pass
     
     def mouseDoubleClickEvent(self, event):
         """Handle double click to load session."""
-        self.item_double_clicked.emit(self.session.session_id)
-        super().mouseDoubleClickEvent(event)
+        try:
+            self.item_double_clicked.emit(self.session.session_id)
+            super().mouseDoubleClickEvent(event)
+        except Exception:
+            pass
     
     def get_session_id(self) -> str:
         """Get the session ID."""
@@ -146,11 +148,10 @@ class HistoryPanel(QFrame):
         self._current_session_id = None
         self._is_collapsed = False
         
-        # Workers - use lists to prevent premature garbage collection
+        # Workers
         self._list_worker = None
         self._history_worker = None
         self._delete_worker = None
-        self._finished_workers = []  # Keep references until safely deletable
         
         self._setup_ui()
         self._connect_signals()
@@ -234,210 +235,266 @@ class HistoryPanel(QFrame):
     
     def _toggle_collapse(self):
         """Toggle panel collapsed state."""
-        self._is_collapsed = not self._is_collapsed
-        
-        if self._is_collapsed:
-            self._content_widget.hide()
-            self._collapse_btn.setText("▶")
-            self._collapse_btn.setToolTip("Expand panel")
-            self._title_label.hide()
-            self._refresh_btn.hide()
-            self.setMaximumWidth(32)
-            self.setMinimumWidth(32)
-        else:
-            self._content_widget.show()
-            self._collapse_btn.setText("◀")
-            self._collapse_btn.setToolTip("Collapse panel")
-            self._title_label.show()
-            self._refresh_btn.show()
-            self.setMaximumWidth(280)
-            self.setMinimumWidth(200)
+        try:
+            self._is_collapsed = not self._is_collapsed
+            
+            if self._is_collapsed:
+                self._content_widget.hide()
+                self._collapse_btn.setText("▶")
+                self._collapse_btn.setToolTip("Expand panel")
+                self._title_label.hide()
+                self._refresh_btn.hide()
+                self.setMaximumWidth(32)
+                self.setMinimumWidth(32)
+            else:
+                self._content_widget.show()
+                self._collapse_btn.setText("◀")
+                self._collapse_btn.setToolTip("Collapse panel")
+                self._title_label.show()
+                self._refresh_btn.show()
+                self.setMaximumWidth(280)
+                self.setMinimumWidth(200)
+        except Exception:
+            pass
     
     def refresh_sessions(self):
         """Refresh the session list from the server."""
-        if self._list_worker and self._list_worker.isRunning():
-            return
-        
-        self._status_label.setText("Loading...")
-        self._session_list.setEnabled(False)
-        
-        self._list_worker = ListSessionsWorker(self._client, parent=self)
-        self._list_worker.sessions_loaded.connect(self._on_sessions_loaded)
-        self._list_worker.error_occurred.connect(self._on_list_error)
-        self._list_worker.finished.connect(self._cleanup_list_worker)
-        self._list_worker.start()
+        try:
+            if self._list_worker and self._list_worker.isRunning():
+                return
+            
+            self._status_label.setText("Loading...")
+            self._session_list.setEnabled(False)
+            
+            self._list_worker = ListSessionsWorker(self._client, parent=self)
+            self._list_worker.sessions_loaded.connect(self._on_sessions_loaded)
+            self._list_worker.error_occurred.connect(self._on_list_error)
+            self._list_worker.finished.connect(self._cleanup_list_worker)
+            self._list_worker.start()
+        except Exception:
+            self._status_label.setText("Error")
+            self._session_list.setEnabled(True)
     
     @Slot()
     def _cleanup_list_worker(self):
         """Clean up list worker after it finishes."""
-        if self._list_worker:
-            self._list_worker.deleteLater()
+        try:
+            if self._list_worker:
+                self._list_worker.deleteLater()
+                self._list_worker = None
+        except Exception:
             self._list_worker = None
     
     @Slot(list)
     def _on_sessions_loaded(self, sessions):
         """Handle sessions loaded from server."""
-        self._sessions = sessions
-        self._session_list.clear()
-        self._session_widgets.clear()
-        
-        for session in sessions:
-            # Create custom widget for the item
-            item_widget = SessionItemWidget(session)
-            item_widget.delete_clicked.connect(self._confirm_delete)
-            item_widget.item_double_clicked.connect(self._load_session)
+        try:
+            self._sessions = sessions
+            self._session_list.clear()
+            self._session_widgets.clear()
             
-            # Create list item and set size hint
-            item = QListWidgetItem(self._session_list)
-            item.setSizeHint(item_widget.sizeHint())
-            item.setData(Qt.UserRole, session.session_id)
+            for session in sessions:
+                # Create custom widget for the item
+                item_widget = SessionItemWidget(session)
+                item_widget.delete_clicked.connect(self._confirm_delete)
+                item_widget.item_double_clicked.connect(self._load_session)
+                
+                # Create list item and set size hint
+                item = QListWidgetItem(self._session_list)
+                item.setSizeHint(item_widget.sizeHint())
+                item.setData(Qt.UserRole, session.session_id)
+                
+                # Add widget to list
+                self._session_list.setItemWidget(item, item_widget)
+                self._session_widgets[session.session_id] = item_widget
             
-            # Add widget to list
-            self._session_list.setItemWidget(item, item_widget)
-            self._session_widgets[session.session_id] = item_widget
-        
-        self._session_list.setEnabled(True)
-        self._status_label.setText(f"{len(sessions)} session(s)")
-        
-        # Highlight current session if set
-        self._highlight_current_session()
+            self._session_list.setEnabled(True)
+            self._status_label.setText(f"{len(sessions)} session(s)")
+            
+            # Highlight current session if set
+            self._highlight_current_session()
+        except Exception:
+            self._session_list.setEnabled(True)
+            self._status_label.setText("Error loading")
     
     @Slot(str)
     def _on_list_error(self, error):
         """Handle error loading sessions."""
-        self._session_list.setEnabled(True)
-        self._status_label.setText("Error loading")
+        try:
+            self._session_list.setEnabled(True)
+            self._status_label.setText("Error loading")
+        except Exception:
+            pass
     
     def _on_item_double_clicked(self, item: QListWidgetItem):
         """Handle double click to load session."""
-        session_id = item.data(Qt.UserRole)
-        self._load_session(session_id)
+        try:
+            session_id = item.data(Qt.UserRole)
+            self._load_session(session_id)
+        except Exception:
+            pass
     
     def _load_session(self, session_id: str):
         """Load a session's history."""
-        if self._history_worker and self._history_worker.isRunning():
-            return
-        
-        self._status_label.setText("Loading session...")
-        
-        self._history_worker = GetHistoryWorker(self._client, session_id, parent=self)
-        self._history_worker.history_loaded.connect(self._on_history_loaded)
-        self._history_worker.not_found.connect(self._on_history_not_found)
-        self._history_worker.error_occurred.connect(self._on_history_error)
-        self._history_worker.finished.connect(self._cleanup_history_worker)
-        self._history_worker.start()
+        try:
+            if self._history_worker and self._history_worker.isRunning():
+                return
+            
+            self._status_label.setText("Loading session...")
+            
+            self._history_worker = GetHistoryWorker(self._client, session_id, parent=self)
+            self._history_worker.history_loaded.connect(self._on_history_loaded)
+            self._history_worker.not_found.connect(self._on_history_not_found)
+            self._history_worker.error_occurred.connect(self._on_history_error)
+            self._history_worker.finished.connect(self._cleanup_history_worker)
+            self._history_worker.start()
+        except Exception:
+            self._status_label.setText("Error")
     
     @Slot()
     def _cleanup_history_worker(self):
         """Clean up history worker after it finishes."""
-        if self._history_worker:
-            self._history_worker.deleteLater()
+        try:
+            if self._history_worker:
+                self._history_worker.deleteLater()
+                self._history_worker = None
+        except Exception:
             self._history_worker = None
     
     @Slot(object)
     def _on_history_loaded(self, history: SessionHistory):
         """Handle session history loaded."""
-        self._current_session_id = history.session_id
-        self._status_label.setText(f"{len(self._sessions)} session(s)")
-        
-        self._highlight_current_session()
-        self.session_selected.emit(history)
+        try:
+            self._current_session_id = history.session_id
+            self._status_label.setText(f"{len(self._sessions)} session(s)")
+            
+            self._highlight_current_session()
+            self.session_selected.emit(history)
+        except Exception:
+            pass
     
     @Slot(str)
     def _on_history_not_found(self, session_id: str):
         """Handle session not found."""
-        self._status_label.setText("Session not found")
-        
-        # Refresh list to remove stale entry
-        self.refresh_sessions()
+        try:
+            self._status_label.setText("Session not found")
+            
+            # Refresh list to remove stale entry
+            self.refresh_sessions()
+        except Exception:
+            pass
     
     @Slot(str)
     def _on_history_error(self, error: str):
         """Handle error loading history."""
-        self._status_label.setText("Error loading")
+        try:
+            self._status_label.setText("Error loading")
+        except Exception:
+            pass
     
     def _show_context_menu(self, position):
         """Show context menu for session item."""
-        item = self._session_list.itemAt(position)
-        if item is None:
-            return
-        
-        session_id = item.data(Qt.UserRole)
-        
-        menu = QMenu(self)
-        
-        load_action = QAction("Load Session", self)
-        load_action.triggered.connect(lambda: self._load_session(session_id))
-        menu.addAction(load_action)
-        
-        menu.addSeparator()
-        
-        delete_action = QAction("Delete Session", self)
-        delete_action.triggered.connect(lambda: self._confirm_delete(session_id))
-        menu.addAction(delete_action)
-        
-        menu.exec_(self._session_list.mapToGlobal(position))
+        try:
+            item = self._session_list.itemAt(position)
+            if item is None:
+                return
+            
+            session_id = item.data(Qt.UserRole)
+            
+            menu = QMenu(self)
+            
+            load_action = QAction("Load Session", self)
+            load_action.triggered.connect(lambda: self._load_session(session_id))
+            menu.addAction(load_action)
+            
+            menu.addSeparator()
+            
+            delete_action = QAction("Delete Session", self)
+            delete_action.triggered.connect(lambda: self._confirm_delete(session_id))
+            menu.addAction(delete_action)
+            
+            menu.exec_(self._session_list.mapToGlobal(position))
+        except Exception:
+            pass
     
     @Slot(str)
     def _confirm_delete(self, session_id: str):
         """Show confirmation dialog before deleting."""
-        reply = QMessageBox.question(
-            self,
-            "Delete Session",
-            "Delete this session?\nThis cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply == QMessageBox.Yes:
-            self._delete_session(session_id)
+        try:
+            reply = QMessageBox.question(
+                self,
+                "Delete Session",
+                "Delete this session?\nThis cannot be undone.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                self._delete_session(session_id)
+        except Exception:
+            pass
     
     def _delete_session(self, session_id: str):
         """Delete a session."""
-        if self._delete_worker and self._delete_worker.isRunning():
-            return
-        
-        self._status_label.setText("Deleting...")
-        
-        self._delete_worker = DeleteSessionWorker(self._client, session_id, parent=self)
-        self._delete_worker.session_deleted.connect(self._on_session_deleted)
-        self._delete_worker.error_occurred.connect(self._on_delete_error)
-        self._delete_worker.finished.connect(self._cleanup_delete_worker)
-        self._delete_worker.start()
+        try:
+            if self._delete_worker and self._delete_worker.isRunning():
+                return
+            
+            self._status_label.setText("Deleting...")
+            
+            self._delete_worker = DeleteSessionWorker(self._client, session_id, parent=self)
+            self._delete_worker.session_deleted.connect(self._on_session_deleted)
+            self._delete_worker.error_occurred.connect(self._on_delete_error)
+            self._delete_worker.finished.connect(self._cleanup_delete_worker)
+            self._delete_worker.start()
+        except Exception:
+            self._status_label.setText("Delete failed")
     
     @Slot()
     def _cleanup_delete_worker(self):
         """Clean up delete worker after it finishes."""
-        if self._delete_worker:
-            self._delete_worker.deleteLater()
+        try:
+            if self._delete_worker:
+                self._delete_worker.deleteLater()
+                self._delete_worker = None
+        except Exception:
             self._delete_worker = None
     
     @Slot(str)
     def _on_session_deleted(self, session_id: str):
         """Handle session deleted."""
-        # Clear current session if it was deleted
-        if self._current_session_id == session_id:
-            self._current_session_id = None
-        
-        self.session_deleted.emit(session_id)
-        self.refresh_sessions()
+        try:
+            # Clear current session if it was deleted
+            if self._current_session_id == session_id:
+                self._current_session_id = None
+            
+            self.session_deleted.emit(session_id)
+            self.refresh_sessions()
+        except Exception:
+            pass
     
     @Slot(str)
     def _on_delete_error(self, error: str):
         """Handle error deleting session."""
-        self._status_label.setText("Delete failed")
+        try:
+            self._status_label.setText("Delete failed")
+        except Exception:
+            pass
     
     def _highlight_current_session(self):
         """Highlight the current session in the list."""
-        for i in range(self._session_list.count()):
-            item = self._session_list.item(i)
-            session_id = item.data(Qt.UserRole)
-            
-            if session_id == self._current_session_id:
-                item.setSelected(True)
-                self._session_list.scrollToItem(item)
-            else:
-                item.setSelected(False)
+        try:
+            for i in range(self._session_list.count()):
+                item = self._session_list.item(i)
+                session_id = item.data(Qt.UserRole)
+                
+                if session_id == self._current_session_id:
+                    item.setSelected(True)
+                    self._session_list.scrollToItem(item)
+                else:
+                    item.setSelected(False)
+        except Exception:
+            pass
     
     def set_current_session(self, session_id: Optional[str]):
         """
@@ -446,8 +503,11 @@ class HistoryPanel(QFrame):
         Args:
             session_id: Current session ID or None.
         """
-        self._current_session_id = session_id
-        self._highlight_current_session()
+        try:
+            self._current_session_id = session_id
+            self._highlight_current_session()
+        except Exception:
+            pass
     
     def is_collapsed(self) -> bool:
         """Check if panel is collapsed."""
@@ -455,5 +515,37 @@ class HistoryPanel(QFrame):
     
     def set_collapsed(self, collapsed: bool):
         """Set panel collapsed state."""
-        if collapsed != self._is_collapsed:
-            self._toggle_collapse()
+        try:
+            if collapsed != self._is_collapsed:
+                self._toggle_collapse()
+        except Exception:
+            pass
+    
+    def shutdown(self):
+        """Shutdown all workers - call before destroying."""
+        try:
+            if self._list_worker:
+                if self._list_worker.isRunning():
+                    self._list_worker.wait(2000)
+                self._list_worker.deleteLater()
+                self._list_worker = None
+        except Exception:
+            self._list_worker = None
+        
+        try:
+            if self._history_worker:
+                if self._history_worker.isRunning():
+                    self._history_worker.wait(2000)
+                self._history_worker.deleteLater()
+                self._history_worker = None
+        except Exception:
+            self._history_worker = None
+        
+        try:
+            if self._delete_worker:
+                if self._delete_worker.isRunning():
+                    self._delete_worker.wait(2000)
+                self._delete_worker.deleteLater()
+                self._delete_worker = None
+        except Exception:
+            self._delete_worker = None

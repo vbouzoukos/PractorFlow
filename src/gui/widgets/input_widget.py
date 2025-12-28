@@ -35,14 +35,17 @@ class MessageInput(QTextEdit):
     
     def keyPressEvent(self, event: QKeyEvent):
         """Handle Enter key for submission."""
-        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-            if event.modifiers() & Qt.ShiftModifier:
-                # Shift+Enter: insert newline
-                super().keyPressEvent(event)
+        try:
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                if event.modifiers() & Qt.ShiftModifier:
+                    # Shift+Enter: insert newline
+                    super().keyPressEvent(event)
+                else:
+                    # Enter: submit
+                    self.submit_requested.emit()
             else:
-                # Enter: submit
-                self.submit_requested.emit()
-        else:
+                super().keyPressEvent(event)
+        except Exception:
             super().keyPressEvent(event)
 
 
@@ -117,52 +120,67 @@ class InputWidget(QWidget):
     
     def _on_attach_clicked(self):
         """Handle attach button click."""
-        file_paths, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Select Files",
-            "",
-            "All Files (*);;Documents (*.pdf *.docx *.txt *.md);;Images (*.png *.jpg *.jpeg)"
-        )
-        
-        if file_paths:
-            self._file_paths.extend(file_paths)
-            self._update_files_display()
+        try:
+            file_paths, _ = QFileDialog.getOpenFileNames(
+                self,
+                "Select Files",
+                "",
+                "All Files (*);;Documents (*.pdf *.docx *.txt *.md);;Images (*.png *.jpg *.jpeg)"
+            )
+            
+            if file_paths:
+                self._file_paths.extend(file_paths)
+                self._update_files_display()
+        except Exception:
+            pass
     
     def _on_send_clicked(self):
         """Handle send button click."""
-        message = self._text_input.toPlainText().strip()
-        
-        if not message and not self._file_paths:
-            return
-        
-        # Emit signal with message and files
-        self.message_submitted.emit(message, self._file_paths.copy())
+        try:
+            message = self._text_input.toPlainText().strip()
+            
+            if not message and not self._file_paths:
+                return
+            
+            # Emit signal with message and files
+            self.message_submitted.emit(message, self._file_paths.copy())
+        except Exception:
+            pass
     
     def _update_files_display(self):
         """Update the file attachment display."""
-        if self._file_paths:
-            # Show file names
-            names = []
-            for path in self._file_paths:
-                name = path.split("/")[-1].split("\\")[-1]
-                names.append(name)
-            
-            self._files_label.setText(f"Files: {', '.join(names)}")
-            self._files_label.show()
-            self._clear_files_btn.show()
-        else:
-            self._files_label.hide()
-            self._clear_files_btn.hide()
+        try:
+            if self._file_paths:
+                # Show file names
+                names = []
+                for path in self._file_paths:
+                    name = path.split("/")[-1].split("\\")[-1]
+                    names.append(name)
+                
+                self._files_label.setText(f"Files: {', '.join(names)}")
+                self._files_label.show()
+                self._clear_files_btn.show()
+            else:
+                self._files_label.hide()
+                self._clear_files_btn.hide()
+        except Exception:
+            pass
     
     def _clear_files(self):
         """Clear attached files."""
-        self._file_paths.clear()
-        self._update_files_display()
+        try:
+            self._file_paths.clear()
+            self._update_files_display()
+        except Exception:
+            self._file_paths = []
     
     def clear_input(self):
         """Clear the input text and files."""
-        self._text_input.clear()
-        self._clear_files()
+        try:
+            self._text_input.clear()
+            self._clear_files()
+        except Exception:
+            pass
     
     def set_enabled(self, enabled: bool):
         """
@@ -171,10 +189,16 @@ class InputWidget(QWidget):
         Args:
             enabled: Whether the widget should be enabled.
         """
-        self._text_input.setEnabled(enabled)
-        self._send_btn.setEnabled(enabled)
-        self._attach_btn.setEnabled(enabled)
+        try:
+            self._text_input.setEnabled(enabled)
+            self._send_btn.setEnabled(enabled)
+            self._attach_btn.setEnabled(enabled)
+        except Exception:
+            pass
     
     def set_focus(self):
         """Set focus to the text input."""
-        self._text_input.setFocus()
+        try:
+            self._text_input.setFocus()
+        except Exception:
+            pass

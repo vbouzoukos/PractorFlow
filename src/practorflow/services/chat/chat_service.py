@@ -83,6 +83,8 @@ class ChatService:
             "Use the search_web tool only when the user explicitly asks for current events, news, or web information."
         )
         
+        self.session: Optional[Session] = None
+        
         logger.info("[ChatService] Initialized")
     
     def _generate_session_id(self) -> str:
@@ -92,11 +94,12 @@ class ChatService:
     async def start_chat(
         self,
         instructions: Optional[str] = None,
-    ) -> Session:
+    ) -> str:
         """
         Start a new chat session.
         
-        Creates a new session with a generated unique ID and optional instructions.
+        Generates a unique session ID and returns a Session object.
+        The session is persisted when chat_stream is first called.
         
         Args:
             instructions: Optional system instructions for the assistant.
@@ -107,14 +110,14 @@ class ChatService:
         """
         session_id = self._generate_session_id()
         
-        session = Session(
+        self.session = Session(
             session_id=session_id,
             instructions=instructions or self._instructions,
         )
         
         logger.info(f"[ChatService] Started chat session: {session_id}")
         
-        return session
+        return session_id
     
     async def chat_stream(
         self,
@@ -127,6 +130,7 @@ class ChatService:
         
         Processes the user message, optionally indexes uploaded files,
         and streams the assistant's response using the configured tools.
+        Creates the session on first call if it doesn't exist.
         
         Args:
             session_id: Session ID for the chat.
@@ -135,14 +139,11 @@ class ChatService:
         
         Yields:
             StreamChunk objects with response text and metadata.
-        
-        Raises:
-            ValueError: If session does not exist.
         """
-        if not self._session_store.exists(session_id):
-            raise ValueError(f"Session not found: {session_id}")
+        if not self.session:
+            raise ValueError("No active session. Call start_chat first.")
         
-        session = self._session_store.get(session_id)
+        session = self.session
         
         # Track newly uploaded file names
         new_file_names: List[str] = []
@@ -328,137 +329,79 @@ class ChatService:
             session: Session containing message history.
         
         Returns:
-            List of messages for agent history (excluding last user message).
+            List of message dicts for agent context.
         """
         if len(session.messages) <= 1:
             return []
         
-        # Return all messages except the last one (current user message)
-        history = []
-        for msg in session.messages[:-1]:
-            history.append({
-                "role": msg.role,
-                "content": msg.get_text_content(),
-            })
-        
-        return history
+        return [
+            {"role": msg.role, "content": msg.content}
+            for msg in session.messages[:-1]
+        ]
     
     def _register_tools(self, agent: Agent) -> None:
         """
-        Register tools on the agent.
-        
-        Registers knowledge search (priority) and web search tools.
+        Register tools with the agent.
         
         Args:
-            agent: Pydantic AI agent to register tools on.
+            agent: Agent to register tools with.
         """
-        
         @agent.tool
         async def search_knowledge(
             ctx: RunContext[ChatDeps],
             query: str,
-            top_k: int = 5,
         ) -> str:
-            """Search uploaded documents for relevant information.
+            """
+            Search the knowledge base for relevant information.
             
-            Use this tool FIRST to find information from documents uploaded
-            in this session. Only use search_web if no relevant results are found.
+            Use this tool to find information from uploaded documents.
             
             Args:
-                ctx: Run context with dependencies.
-                query: Search query to find relevant document sections.
-                top_k: Maximum number of results to return (default: 5).
+                query: Search query text.
             
             Returns:
-                Formatted search results or message if no results found.
+                Relevant text from documents or message if none found.
             """
-            document_scope = ctx.deps.document_scope
+            results = ctx.deps.knowledge_store.search(
+                query=query,
+                top_k=5,
+                document_ids=ctx.deps.document_scope,
+            )
             
-            # Do not search if no documents in session
-            if not document_scope:
-                return "No documents have been uploaded in this session. Please upload documents first or use search_web for web information."
+            if not results:
+                return "No relevant information found in the knowledge base."
             
-            top_k = max(1, min(20, top_k))
+            formatted = []
+            for r in results:
+                source = r.get("metadata", {}).get("filename", "Unknown")
+                text = r.get("text", "")
+                formatted.append(f"[Source: {source}]\n{text}")
             
-            knowledge_store = ctx.deps.knowledge_store
-            
-            logger.debug(f"[search_knowledge] Searching {len(document_scope)} documents: '{query}'")
-            
-            try:
-                results = knowledge_store.search_scoped(
-                    query=query,
-                    top_k=top_k,
-                    document_ids=document_scope,
-                )
-                
-                if not results:
-                    return "No relevant information found in uploaded documents. Consider using search_web for current information."
-                
-                return _format_knowledge_results(results, query)
-                
-            except Exception as e:
-                logger.error(f"[search_knowledge] Error: {e}")
-                return f"Search failed: {str(e)}"
+            return "\n\n---\n\n".join(formatted)
         
         @agent.tool
         async def search_web(
             ctx: RunContext[ChatDeps],
             query: str,
-            max_results: int = 5,
         ) -> str:
-            """Search the web for current information.
+            """
+            Search the web for current information.
             
-            Use this tool when:
-            - No relevant documents are uploaded
-            - search_knowledge returned no results
-            - User explicitly asks for web/current information
-            - Query is about recent events or news
+            Use this tool only when explicitly asked for current events,
+            news, or information not in uploaded documents.
             
             Args:
-                ctx: Run context with dependencies.
-                query: Search query for web search.
-                max_results: Maximum number of results (default: 5).
+                query: Search query text.
             
             Returns:
-                Formatted web search results or error message.
+                Web search results or error message.
             """
-            web_tool = ctx.deps.web_search_tool
-            
-            if web_tool is None:
+            if not ctx.deps.web_search_tool:
                 return "Web search is not available."
             
-            logger.debug(f"[search_web] Searching: '{query}'")
-            
-            result = web_tool.execute(query=query, max_results=max_results)
-            
-            if result.success and result.data:
-                return result.data
-            elif result.success:
-                return "No web results found for the query."
-            else:
-                return f"Web search error: {result.error}"
-
-
-def _format_knowledge_results(results: list, query: str) -> str:
-    """
-    Format knowledge search results for agent consumption.
-    
-    Args:
-        results: List of search result dicts.
-        query: Original search query.
-    
-    Returns:
-        Formatted string with search results.
-    """
-    parts = []
-    parts.append(f'Found {len(results)} relevant section(s) for: "{query}"\n')
-    
-    for idx, result in enumerate(results, 1):
-        text = result.get("text", "")
-        filename = result.get("filename") or result.get("metadata", {}).get("filename", "unknown")
-        similarity = result.get("similarity", 0.0)
-        
-        header = f"--- Section {idx} (Source: {filename}, Relevance: {similarity:.2f}) ---"
-        parts.append(f"{header}\n{text}")
-    
-    return "\n\n".join(parts)
+            try:
+                results = ctx.deps.web_search_tool.search(query)
+                return results
+            except Exception as e:
+                logger.warning(f"[ChatService] Web search failed: {e}")
+                return f"Web search failed: {str(e)}"

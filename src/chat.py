@@ -239,11 +239,10 @@ async def main():
     print()
 
     # Start initial session
-    session = await service.start_chat()
-    print(f"[Session started: {session.session_id}]")
+    current_session_id = await service.start_chat()
+    print(f"[Session started: {current_session_id}]")
     print()
 
-    current_session_id = session.session_id
 
     # Main loop
     while True:
@@ -262,8 +261,7 @@ async def main():
             if user_input.lower() == "/new":
                 # Delete old session and start new one
                 await service.delete_chat(current_session_id)
-                session = await service.start_chat()
-                current_session_id = session.session_id
+                current_session_id = await service.start_chat()
                 print(f"[New session started: {current_session_id}]")
                 continue
 

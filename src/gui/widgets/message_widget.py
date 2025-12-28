@@ -136,16 +136,19 @@ class MessageWidget(QFrame):
     
     def _adjust_height(self):
         """Adjust widget height to fit content."""
-        doc = self._content_display.document()
-        doc.setTextWidth(self._content_display.viewport().width())
-        
-        # Calculate required height
-        height = doc.size().height() + 10
-        min_height = 30
-        max_height = 500
-        
-        height = max(min_height, min(height, max_height))
-        self._content_display.setFixedHeight(int(height))
+        try:
+            doc = self._content_display.document()
+            doc.setTextWidth(self._content_display.viewport().width())
+            
+            # Calculate required height
+            height = doc.size().height() + 10
+            min_height = 30
+            max_height = 500
+            
+            height = max(min_height, min(height, max_height))
+            self._content_display.setFixedHeight(int(height))
+        except Exception:
+            pass
     
     def set_content(self, content: str):
         """

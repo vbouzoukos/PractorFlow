@@ -52,10 +52,10 @@ async def start_session(
 
     session = await chat_service.start_chat()
 
-    logger.info(f"[Chat API] Session created: {session.session_id}")
+    logger.info(f"[Chat API] Session created: {session}")
 
     return SessionResponse(
-        session_id=session.session_id,
+        session_id=session,
         message="Session created successfully",
     )
 
@@ -88,12 +88,6 @@ async def chat_message(
         HTTPException: If session not found or other errors occur.
     """
     logger.info(f"[Chat API] Message received for session: {session_id}")
-
-    # Validate session exists
-    session = chat_service.get_session(session_id)
-    if session is None:
-        logger.warning(f"[Chat API] Session not found: {session_id}")
-        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
     # Log file info if present
     if files:
