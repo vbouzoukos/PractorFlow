@@ -188,3 +188,5 @@ cython_debug/
 /chroma_db
 /knowledge_db
 /samples
+/data/session
+/data
