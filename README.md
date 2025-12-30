@@ -266,7 +266,7 @@ config = appConfiguration.ModelConfiguration
 
 ### Configuration Files
 
-#### 1. Logger Configuration (`config/logger.env`)
+#### 1. Logger Configuration (`config/llm/options/logger.env`)
 
 Controls logging verbosity for different components. Useful for debugging specific parts of the system or reducing log noise in production.
 
@@ -301,7 +301,7 @@ LOG_AGENT_LEVEL=DEBUG
 
 ---
 
-#### 2. Model Configuration (`config/model.env`)
+#### 2. Model Configuration (`config/llm/options/model.env`)
 
 Configures the LLM model, backend, and inference parameters.
 
@@ -381,7 +381,7 @@ LLM_WARMUP_ON_LOAD=true
 
 ---
 
-#### 3. Knowledge Database Configuration (`config/knowledge.env`)
+#### 3. Knowledge Database Configuration (`config/llm/options/knowledge.env`)
 
 Configures the ChromaDB-based knowledge store for RAG (Retrieval-Augmented Generation).
 
@@ -465,7 +465,7 @@ KB_CHROMA_CONTEXT_CHUNK_OVERLAP=100
 
 ### Sample Model Configurations
 
-Sample configurations for various models are provided in `config/samples/models/`. Copy these to your `config/` directory as `model.env`:
+Sample configurations for various models are provided in `config/llm/samples/models/`. Copy these to your `config/llm/options` directory as `model.env`:
 
 | File | Model | Backend | Notes |
 |------|-------|---------|-------|

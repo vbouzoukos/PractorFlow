@@ -3,7 +3,7 @@ Chat API client.
 
 HTTP client for communicating with the PractorFlow FastAPI backend.
 Supports session management, message sending with file uploads,
-and SSE streaming responses.
+SSE streaming responses, and JWT authentication.
 """
 
 import json
@@ -60,11 +60,20 @@ class SessionHistory:
             self.messages = []
 
 
+@dataclass
+class AuthStatus:
+    """Authentication status information."""
+    provider: str
+    requires_credentials: bool
+    is_open_mode: bool
+
+
 class ChatClient:
     """
     HTTP client for the PractorFlow Chat API.
     
     Provides synchronous methods for:
+    - Authentication (obtaining JWT tokens)
     - Starting chat sessions
     - Sending messages with optional file uploads
     - Streaming responses via SSE
@@ -73,16 +82,129 @@ class ChatClient:
     - Retrieving session history
     """
     
-    def __init__(self, base_url: str, timeout: float = 30.0):
+    def __init__(
+        self,
+        base_url: str,
+        timeout: float = 30.0,
+        app_secret: Optional[str] = None,
+        username: Optional[str] = None,
+    ):
         """
         Initialize the chat client.
         
         Args:
             base_url: API base URL (e.g., "http://localhost:8000").
             timeout: Request timeout in seconds.
+            app_secret: Optional app secret for local authentication.
+            username: Optional username for token subject.
         """
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
+        self._app_secret = app_secret
+        self._username = username
+        self._access_token: Optional[str] = None
+        self._auth_status: Optional[AuthStatus] = None
+    
+    def _get_auth_headers(self) -> dict:
+        """
+        Get authorization headers for API requests.
+        
+        Returns:
+            Dictionary with Authorization header if token is available.
+        """
+        if self._access_token:
+            return {"Authorization": f"Bearer {self._access_token}"}
+        return {}
+    
+    def get_auth_status(self) -> AuthStatus:
+        """
+        Get authentication status from the server.
+        
+        Returns:
+            AuthStatus with provider and mode information.
+        
+        Raises:
+            httpx.HTTPError: If the request fails.
+        """
+        url = f"{self._base_url}/auth/status"
+        
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.get(url)
+            response.raise_for_status()
+            
+            data = response.json()
+            self._auth_status = AuthStatus(
+                provider=data.get("provider", "unknown"),
+                requires_credentials=data.get("requires_credentials", False),
+                is_open_mode=data.get("is_open_mode", True),
+            )
+            return self._auth_status
+    
+    def authenticate(
+        self,
+        app_secret: Optional[str] = None,
+        username: Optional[str] = None,
+        identity_token: Optional[str] = None,
+    ) -> str:
+        """
+        Authenticate and obtain a JWT token.
+        
+        Args:
+            app_secret: App secret for local authentication.
+            username: Optional username for token subject.
+            identity_token: Identity token for OIDC authentication.
+        
+        Returns:
+            JWT access token.
+        
+        Raises:
+            httpx.HTTPError: If authentication fails.
+        """
+        url = f"{self._base_url}/auth/token"
+        
+        # Use provided credentials or fall back to instance defaults
+        secret = app_secret if app_secret is not None else self._app_secret
+        user = username if username is not None else self._username
+        
+        payload = {}
+        if secret:
+            payload["app_secret"] = secret
+        if user:
+            payload["username"] = user
+        if identity_token:
+            payload["identity_token"] = identity_token
+        
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.post(url, json=payload)
+            response.raise_for_status()
+            
+            data = response.json()
+            self._access_token = data.get("access_token")
+            return self._access_token
+    
+    def ensure_authenticated(self) -> None:
+        """
+        Ensure the client has a valid authentication token.
+        
+        In open mode, obtains a token without credentials.
+        In secure mode, uses configured app_secret.
+        
+        Raises:
+            httpx.HTTPError: If authentication fails.
+        """
+        if self._access_token:
+            return
+        
+        # Get auth status to determine mode
+        if self._auth_status is None:
+            self.get_auth_status()
+        
+        # Authenticate (works for both open mode and secure mode)
+        self.authenticate()
+    
+    def clear_token(self) -> None:
+        """Clear the current authentication token."""
+        self._access_token = None
     
     def start_session(self) -> str:
         """
@@ -94,10 +216,12 @@ class ChatClient:
         Raises:
             httpx.HTTPError: If the request fails.
         """
+        self.ensure_authenticated()
+        
         url = f"{self._base_url}/chat"
         
         with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url)
+            response = client.get(url, headers=self._get_auth_headers())
             response.raise_for_status()
             
             data = response.json()
@@ -116,10 +240,12 @@ class ChatClient:
         Raises:
             httpx.HTTPError: If the request fails.
         """
+        self.ensure_authenticated()
+        
         url = f"{self._base_url}/chat/{session_id}"
         
         with httpx.Client(timeout=self._timeout) as client:
-            response = client.delete(url)
+            response = client.delete(url, headers=self._get_auth_headers())
             response.raise_for_status()
             
             data = response.json()
@@ -138,13 +264,19 @@ class ChatClient:
         Raises:
             httpx.HTTPError: If the request fails.
         """
+        self.ensure_authenticated()
+        
         url = f"{self._base_url}/chat/sessions"
         params = {}
         if user is not None:
             params["user"] = user
         
         with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url, params=params)
+            response = client.get(
+                url,
+                params=params,
+                headers=self._get_auth_headers(),
+            )
             response.raise_for_status()
             
             data = response.json()
@@ -174,10 +306,12 @@ class ChatClient:
         Raises:
             httpx.HTTPError: If the request fails (except 404).
         """
+        self.ensure_authenticated()
+        
         url = f"{self._base_url}/chat/{session_id}/history"
         
         with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url)
+            response = client.get(url, headers=self._get_auth_headers())
             
             if response.status_code == 404:
                 return None
@@ -225,6 +359,8 @@ class ChatClient:
         Raises:
             httpx.HTTPError: If the request fails.
         """
+        self.ensure_authenticated()
+        
         url = f"{self._base_url}/chat/{session_id}"
         
         data = {"message": message}
@@ -245,7 +381,8 @@ class ChatClient:
                     "POST",
                     url,
                     data=data,
-                    files=files if files else None
+                    files=files if files else None,
+                    headers=self._get_auth_headers(),
                 ) as event_source:
                     for sse in event_source.iter_sse():
                         if sse.data == "[DONE]":

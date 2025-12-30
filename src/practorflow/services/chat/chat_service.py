@@ -94,6 +94,7 @@ class ChatService:
     async def start_chat(
         self,
         instructions: Optional[str] = None,
+        user: Optional[str] = None,
     ) -> str:
         """
         Start a new chat session.
@@ -104,6 +105,7 @@ class ChatService:
         Args:
             instructions: Optional system instructions for the assistant.
                          Uses default instructions if not provided.
+            user: Optional user identifier to associate with the session.
         
         Returns:
             The created Session object with generated session_id.
@@ -113,9 +115,10 @@ class ChatService:
         self.session = Session(
             session_id=session_id,
             instructions=instructions or self._instructions,
+            user=user,
         )
         
-        logger.info(f"[ChatService] Started chat session: {session_id}")
+        logger.info(f"[ChatService] Started chat session: {session_id} for user: {user}")
         
         return session_id
     
@@ -362,12 +365,12 @@ class ChatService:
             Returns:
                 Relevant text from documents or message if none found.
             """
-            results = ctx.deps.knowledge_store.search(
+            results = ctx.deps.knowledge_store.search_scoped(
                 query=query,
                 top_k=5,
                 document_ids=ctx.deps.document_scope,
             )
-            
+                    
             if not results:
                 return "No relevant information found in the knowledge base."
             

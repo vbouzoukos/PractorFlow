@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import StreamingResponse
 
 from api.dependencies import get_chat_service, get_session_history
+from api.auth import get_current_user, UserContext
 from api.schemas import (
     DeleteResponse,
     SessionResponse,
@@ -40,17 +41,22 @@ router = APIRouter(prefix="/chat", tags=["chat"])
     description="Creates a new chat session and returns the session ID.",
 )
 async def start_session(
+    current_user: UserContext = Depends(get_current_user),
     chat_service: ChatService = Depends(get_chat_service),
 ) -> SessionResponse:
     """
     Start a new chat session.
 
+    Args:
+        current_user: Authenticated user context.
+        chat_service: Chat service instance.
+
     Returns:
         SessionResponse with the new session_id.
     """
-    logger.info("[Chat API] Starting new session")
+    logger.info(f"[Chat API] Starting new session for user: {current_user.user_id}")
 
-    session = await chat_service.start_chat()
+    session = await chat_service.start_chat(user=current_user.user_id)
 
     logger.info(f"[Chat API] Session created: {session}")
 
@@ -71,6 +77,7 @@ async def chat_message(
     files: Optional[List[UploadFile]] = File(
         default=None, description="Optional files to upload"
     ),
+    current_user: UserContext = Depends(get_current_user),
     chat_service: ChatService = Depends(get_chat_service),
 ) -> StreamingResponse:
     """
@@ -80,6 +87,8 @@ async def chat_message(
         session_id: Session identifier.
         message: User message text.
         files: Optional list of files to upload and index.
+        current_user: Authenticated user context.
+        chat_service: Chat service instance.
 
     Returns:
         SSE streaming response with chat chunks.
@@ -87,7 +96,7 @@ async def chat_message(
     Raises:
         HTTPException: If session not found or other errors occur.
     """
-    logger.info(f"[Chat API] Message received for session: {session_id}")
+    logger.info(f"[Chat API] Message received for session: {session_id} from user: {current_user.user_id}")
 
     # Log file info if present
     if files:
@@ -148,6 +157,7 @@ async def chat_message(
 )
 async def delete_session(
     session_id: str,
+    current_user: UserContext = Depends(get_current_user),
     chat_service: ChatService = Depends(get_chat_service),
 ) -> DeleteResponse:
     """
@@ -155,6 +165,8 @@ async def delete_session(
 
     Args:
         session_id: Session identifier to delete.
+        current_user: Authenticated user context.
+        chat_service: Chat service instance.
 
     Returns:
         DeleteResponse with deletion status.
@@ -162,7 +174,7 @@ async def delete_session(
     Raises:
         HTTPException: If session not found.
     """
-    logger.info(f"[Chat API] Deleting session: {session_id}")
+    logger.info(f"[Chat API] Deleting session: {session_id} by user: {current_user.user_id}")
 
     deleted = await chat_service.delete_chat(session_id)
 
@@ -187,6 +199,7 @@ async def delete_session(
 )
 async def list_sessions(
     user: Optional[str] = Query(default=None, description="Filter sessions by user"),
+    current_user: UserContext = Depends(get_current_user),
     session_history: SessionHistory = Depends(get_session_history),
 ) -> List[SessionSummary]:
     """
@@ -194,13 +207,18 @@ async def list_sessions(
 
     Args:
         user: Optional user identifier to filter sessions.
+        current_user: Authenticated user context.
+        session_history: Session history instance.
 
     Returns:
         List of SessionSummary objects sorted by updated_at descending.
     """
-    logger.info(f"[Chat API] Listing sessions (user={user})")
+    # If no user filter provided, default to current user's sessions
+    filter_user = user if user is not None else current_user.user_id
+    
+    logger.info(f"[Chat API] Listing sessions for user: {filter_user} (requested by: {current_user.user_id})")
 
-    sessions = session_history.list_sessions(user=user)
+    sessions = session_history.list_sessions(user=filter_user)
 
     summaries = []
     for session in sessions:
@@ -228,6 +246,7 @@ async def list_sessions(
 )
 async def get_history(
     session_id: str,
+    current_user: UserContext = Depends(get_current_user),
     session_history: SessionHistory = Depends(get_session_history),
 ) -> SessionHistoryResponse:
     """
@@ -235,6 +254,8 @@ async def get_history(
 
     Args:
         session_id: Session identifier.
+        current_user: Authenticated user context.
+        session_history: Session history instance.
 
     Returns:
         SessionHistoryResponse with full message history.
@@ -242,7 +263,7 @@ async def get_history(
     Raises:
         HTTPException: If session not found.
     """
-    logger.info(f"[Chat API] Getting history for session: {session_id}")
+    logger.info(f"[Chat API] Getting history for session: {session_id} by user: {current_user.user_id}")
 
     session = session_history.get_history(session_id)
 

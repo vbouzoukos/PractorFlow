@@ -6,6 +6,7 @@ from typing import Optional
 
 from practorflow.services.chat import ChatService
 from session_store.session_history import SessionHistory
+from api.auth.service import AuthService
 
 
 class ServiceContainer:
@@ -17,6 +18,7 @@ class ServiceContainer:
     
     chat_service: Optional[ChatService] = None
     session_history: Optional[SessionHistory] = None
+    auth_service: Optional[AuthService] = None
 
 
 # Global service container instance
@@ -51,3 +53,18 @@ def get_session_history() -> SessionHistory:
     if container.session_history is None:
         raise RuntimeError("SessionHistory not initialized. Application not started properly.")
     return container.session_history
+
+
+def get_auth_service() -> AuthService:
+    """
+    Dependency to get AuthService instance.
+    
+    Returns:
+        AuthService instance.
+    
+    Raises:
+        RuntimeError: If AuthService is not initialized.
+    """
+    if container.auth_service is None:
+        raise RuntimeError("AuthService not initialized. Application not started properly.")
+    return container.auth_service

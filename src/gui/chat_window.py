@@ -40,7 +40,7 @@ class ChatWindow(QMainWindow):
         super().__init__(parent)
         
         self._api_url = api_url
-        self._client = ChatClient(api_url)
+        self._client = ChatClient(base_url=api_url, username="practorFlowClient")
         self._session_id = None
         self._stream_worker = None
         self._session_worker = None

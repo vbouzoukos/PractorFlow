@@ -173,6 +173,7 @@ class TinyDBSessionStore(SessionStore):
             "metadata": session.metadata,
             "created_at": self._serialize_datetime(session.created_at),
             "updated_at": self._serialize_datetime(session.updated_at),
+            "user": session.user,
         }
     
     def _deserialize_session(self, data: Dict[str, Any]) -> Session:
@@ -193,6 +194,7 @@ class TinyDBSessionStore(SessionStore):
             metadata=data.get("metadata", {}),
             created_at=self._deserialize_datetime(data.get("created_at")),
             updated_at=self._deserialize_datetime(data.get("updated_at")),
+            user=data.get("user"),
         )
     
     def _serialize_message(self, message: Message) -> Dict[str, Any]:

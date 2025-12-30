@@ -3,6 +3,7 @@ FastAPI application entry point.
 
 Sets up the FastAPI application with:
 - Lifespan management for service initialization/cleanup
+- Authentication configuration and service
 - Chat routes
 - CORS middleware
 """
@@ -15,6 +16,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.dependencies import container
+from api.config import load_api_configuration, get_api_configuration
+from api.auth import AuthService, set_auth_service
+from api.routes.auth import router as auth_router
 from api.routes.chat import router as chat_router
 from practorflow.llm import ModelPool
 from practorflow.llm.knowledge.chroma_knowledge_store import ChromaKnowledgeStore
@@ -34,6 +38,25 @@ async def lifespan(app: FastAPI):
     Initializes services on startup and cleans up on shutdown.
     """
     logger.info("[API] Starting application...")
+
+    # Load API configuration (auth settings)
+    logger.info("[API] Loading API configuration...")
+    load_api_configuration("../config/api")
+    api_config = get_api_configuration()
+    
+    # Log authentication mode
+    if api_config.auth.is_open_mode:
+        logger.info("[API] Authentication: Open mode (no credentials required)")
+    elif api_config.auth.is_oidc_mode:
+        logger.info(f"[API] Authentication: OIDC mode (issuer: {api_config.auth.oidc.issuer_url})")
+    else:
+        logger.info("[API] Authentication: Local mode (app secret required)")
+
+    # Initialize authentication service
+    auth_service = AuthService(api_config.auth)
+    container.auth_service = auth_service
+    set_auth_service(auth_service)
+    logger.info("[API] Authentication service initialized")
 
     # Initialize configuration
     model_config = appConfiguration.ModelConfiguration
@@ -55,9 +78,6 @@ async def lifespan(app: FastAPI):
         f"[API] Knowledge store initialized: {knowledge_store.count_documents()} documents"
     )
 
-    session_env = os.path.join("../config/options", "session.env")
-
-    load_dotenv(dotenv_path=session_env, override=True)
     # Initialize session store
     session_store = create_session_store()
     # Initialize session history
@@ -106,6 +126,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth_router)
 app.include_router(chat_router)
 
 

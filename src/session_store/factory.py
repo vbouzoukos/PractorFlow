@@ -10,6 +10,8 @@ Environment Variables:
 
 import os
 
+from dotenv import load_dotenv
+
 from session_store.memory_session_store import InMemorySessionStore
 from session_store.persist_session_store import TinyDBSessionStore
 from session_store.memory_session_history import InMemorySessionHistory
@@ -26,8 +28,7 @@ STORE_TYPE_LOCAL = "local"
 DEFAULT_STORE_TYPE = STORE_TYPE_MEMORY
 DEFAULT_DB_PATH = "./sessions.json"
 
-
-def create_session_store() -> SessionStore:
+def create_session_store(config_path: str = "../config/llm/options") -> SessionStore:
     """
     Create a session store based on configuration.
     
@@ -37,6 +38,9 @@ def create_session_store() -> SessionStore:
     Raises:
         ValueError: If store_type is not supported.
     """
+    session_env = os.path.join(config_path, "session.env")
+    load_dotenv(dotenv_path=session_env, override=True)
+
     store_type = os.getenv("STORE_SESSION", DEFAULT_STORE_TYPE)
     
     # Normalize to lowercase for case-insensitive comparison
@@ -56,7 +60,7 @@ def create_session_store() -> SessionStore:
     )
 
 
-def create_session_history() -> SessionHistory:
+def create_session_history(config_path: str = "../config/llm/options") -> SessionHistory:
     """
     Create a session history based on configuration.
     
@@ -66,8 +70,10 @@ def create_session_history() -> SessionHistory:
     Raises:
         ValueError: If store_type is not supported.
     """
-    store_type = os.getenv("STORE_SESSION", DEFAULT_STORE_TYPE)
+    session_env = os.path.join(config_path, "session.env")
+    load_dotenv(dotenv_path=session_env, override=True)
     
+    store_type = os.getenv("STORE_SESSION", DEFAULT_STORE_TYPE)
     # Normalize to lowercase for case-insensitive comparison
     store_type_normalized = store_type.strip().lower()
     

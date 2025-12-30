@@ -98,7 +98,7 @@ class AppConfig:
 appConfiguration: Optional[AppConfig] = None
 
 
-def load_configuration(config_path: str = "../config/options") -> None:
+def load_configuration(config_path: str = "../config/llm/options") -> None:
     """
     Load configuration from .env files and initialize the global appConfiguration singleton.
     
