@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from tinydb import TinyDB, Query
 
 from practorflow.llm.base.session import Message, Session
-from session_store.session_history import SessionHistory
+from practorflow.session_store.session_history import SessionHistory
 
 
 class PersistSessionHistory(SessionHistory):

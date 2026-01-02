@@ -3,15 +3,15 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "practorflow"
+name = "practorflow-gui"
 version = "0.1.0"
-description = "PractorFlow - Private AI Service for local LLM inference with RAG support"
+description = "PractorFlow GUI - Desktop chat client for PractorFlow API"
 readme = "README.md"
 license = { text = "Apache License 2.0" }
 requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -19,49 +19,24 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Environment :: X11 Applications :: Qt",
 ]
-keywords = ["llm", "ai", "rag", "inference", "local", "private"]
+keywords = ["llm", "ai", "chat", "gui", "desktop", "qt"]
 
 dependencies = [
-    "llama-cpp-python",
-    "torch",
-    "transformers",
-    "accelerate",
-    "protobuf",
-    "docling",
-    "chardet",
-    "mistral-common",
-    "sentence-transformers",
-    "chromadb",
-    "bitsandbytes",
-    "ddgs",
-    "serpapi",
-    "pydantic-ai",
+    "PySide6",
+    "httpx",
+    "httpx-sse",
     "python-dotenv",
-    "numpy",
-    "huggingface-hub",
 ]
 
 [project.optional-dependencies]
-llama-cpp = [
-    "llama-cpp-python",
-]
 dev = [
     "pytest",
-    "pytest-asyncio",
-    "pytest-cov",
+    "pytest-qt",
     "black",
     "isort",
     "mypy",
-    # API testing
-    "fastapi",
-    "uvicorn[standard]",
-    "python-multipart",
-    "httpx",
-    # GUI testing
-    "pytest-qt",
-    "PySide6",
-    "httpx-sse",
 ]
 
 [project.urls]
@@ -70,12 +45,18 @@ Documentation = "https://github.com/vbouzoukos/PractorFlow#readme"
 Repository = "https://github.com/vbouzoukos/PractorFlow"
 Issues = "https://github.com/vbouzoukos/PractorFlow/issues"
 
+[project.scripts]
+practorflow-gui = "gui.main:main"
+
+[project.gui-scripts]
+practorflow-chat = "gui.main:main"
+
 [tool.setuptools.packages.find]
-where = ["src"]
-include = ["practorflow*"]
+where = ["."]
+include = ["gui*"]
 
 [tool.setuptools.package-data]
-practorflow = ["py.typed"]
+gui = ["py.typed"]
 
 [tool.black]
 line-length = 88
@@ -90,19 +71,3 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src", "tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-asyncio_mode = "auto"
-addopts = [
-    "-v",
-    "--tb=short",
-    "--cov=practorflow",
-    "--cov-report=term-missing",
-    "--cov-report=xml",
-    "--ignore=tests/practorflow/common",
-]

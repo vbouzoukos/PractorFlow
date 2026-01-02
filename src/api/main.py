@@ -25,7 +25,7 @@ from practorflow.llm.knowledge.chroma_knowledge_store import ChromaKnowledgeStor
 from practorflow.services.chat import ChatService
 from practorflow.settings.app_settings import appConfiguration
 from practorflow.logger.logger import get_logger
-from session_store.factory import create_session_history, create_session_store
+from practorflow.session_store.factory import create_session_history, create_session_store
 
 logger = get_logger("agent-api", level="INFO")
 
@@ -134,3 +134,25 @@ app.include_router(chat_router)
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+def _run(reload: bool = False):
+    import uvicorn
+    from api.config import load_api_configuration, get_api_configuration
+    
+    load_api_configuration()
+    config = get_api_configuration()
+    
+    uvicorn.run(
+        "api.main:app",
+        host=config.host,
+        port=config.port,
+        reload=reload,
+    )
+
+
+def run():
+    _run(reload=False)
+
+
+def run_debug():
+    _run(reload=True)

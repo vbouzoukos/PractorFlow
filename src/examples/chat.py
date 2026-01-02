@@ -20,7 +20,7 @@ from practorflow.llm import ModelPool
 from practorflow.llm.knowledge.chroma_knowledge_store import ChromaKnowledgeStore
 from practorflow.services.chat import ChatService
 from practorflow.settings.app_settings import appConfiguration
-from session_store.factory import create_session_store
+from practorflow.session_store.factory import create_session_store
 
 
 # Console user identifier

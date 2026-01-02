@@ -12,11 +12,11 @@ import os
 
 from dotenv import load_dotenv
 
-from session_store.memory_session_store import InMemorySessionStore
-from session_store.persist_session_store import TinyDBSessionStore
-from session_store.memory_session_history import InMemorySessionHistory
-from session_store.persist_session_history import PersistSessionHistory
-from session_store.session_history import SessionHistory
+from practorflow.session_store.memory_session_store import InMemorySessionStore
+from practorflow.session_store.persist_session_store import TinyDBSessionStore
+from practorflow.session_store.memory_session_history import InMemorySessionHistory
+from practorflow.session_store.persist_session_history import PersistSessionHistory
+from practorflow.session_store.session_history import SessionHistory
 from practorflow.llm.base.session_store import SessionStore
 
 

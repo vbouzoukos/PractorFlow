@@ -26,7 +26,7 @@ from api.schemas import (
     StreamChunkData,
 )
 from practorflow.services.chat import ChatService
-from session_store.session_history import SessionHistory
+from practorflow.session_store.session_history import SessionHistory
 from practorflow.logger.logger import get_logger
 
 logger = get_logger("agent-api", level="INFO")

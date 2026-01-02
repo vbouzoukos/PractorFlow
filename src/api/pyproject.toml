@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "practorflow"
+name = "practorflow-api"
 version = "0.1.0"
-description = "PractorFlow - Private AI Service for local LLM inference with RAG support"
+description = "PractorFlow API - FastAPI server for PractorFlow LLM inference service"
 readme = "README.md"
 license = { text = "Apache License 2.0" }
 requires-python = ">=3.10"
@@ -19,49 +19,26 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Framework :: FastAPI",
 ]
-keywords = ["llm", "ai", "rag", "inference", "local", "private"]
+keywords = ["llm", "ai", "rag", "inference", "api", "fastapi"]
 
 dependencies = [
-    "llama-cpp-python",
-    "torch",
-    "transformers",
-    "accelerate",
-    "protobuf",
-    "docling",
-    "chardet",
-    "mistral-common",
-    "sentence-transformers",
-    "chromadb",
-    "bitsandbytes",
-    "ddgs",
-    "serpapi",
-    "pydantic-ai",
-    "python-dotenv",
-    "numpy",
-    "huggingface-hub",
+    "practorflow",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
 ]
 
 [project.optional-dependencies]
-llama-cpp = [
-    "llama-cpp-python",
-]
 dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-cov",
+    "httpx",
     "black",
     "isort",
     "mypy",
-    # API testing
-    "fastapi",
-    "uvicorn[standard]",
-    "python-multipart",
-    "httpx",
-    # GUI testing
-    "pytest-qt",
-    "PySide6",
-    "httpx-sse",
 ]
 
 [project.urls]
@@ -70,12 +47,16 @@ Documentation = "https://github.com/vbouzoukos/PractorFlow#readme"
 Repository = "https://github.com/vbouzoukos/PractorFlow"
 Issues = "https://github.com/vbouzoukos/PractorFlow/issues"
 
+[project.scripts]
+practorflow-api = "api.main:run"
+practorflow-api-debug = "api.main:run_debug"
+
 [tool.setuptools.packages.find]
-where = ["src"]
-include = ["practorflow*"]
+where = ["."]
+include = ["api*"]
 
 [tool.setuptools.package-data]
-practorflow = ["py.typed"]
+api = ["py.typed"]
 
 [tool.black]
 line-length = 88
@@ -90,19 +71,3 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src", "tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-asyncio_mode = "auto"
-addopts = [
-    "-v",
-    "--tb=short",
-    "--cov=practorflow",
-    "--cov-report=term-missing",
-    "--cov-report=xml",
-    "--ignore=tests/practorflow/common",
-]

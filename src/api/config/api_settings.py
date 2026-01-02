@@ -34,11 +34,11 @@ from dotenv import load_dotenv
 @dataclass
 class JWTConfig:
     """JWT configuration settings."""
-    
+
     algorithm: str = "HS256"
     secret_key: str = ""
     token_expiry_minutes: int = 60
-    
+
     @property
     def is_configured(self) -> bool:
         """Check if JWT is properly configured with a secret key."""
@@ -48,12 +48,12 @@ class JWTConfig:
 @dataclass
 class OIDCConfig:
     """OIDC provider configuration settings."""
-    
+
     issuer_url: str = ""
     audience: str = ""
     client_id: str = ""
     client_secret: str = ""
-    
+
     @property
     def is_configured(self) -> bool:
         """Check if OIDC is properly configured."""
@@ -63,39 +63,39 @@ class OIDCConfig:
 @dataclass
 class AuthConfig:
     """Authentication configuration settings."""
-    
+
     app_secret: str = ""
     jwt: JWTConfig = field(default_factory=JWTConfig)
     oidc: OIDCConfig = field(default_factory=OIDCConfig)
-    
+
     @property
     def is_oidc_mode(self) -> bool:
         """
         Check if authentication uses OIDC mode.
-        
+
         OIDC mode is active when OIDC_ISSUER_URL is configured.
         """
         return bool(self.oidc.issuer_url)
-    
+
     @property
     def is_local_mode(self) -> bool:
         """
         Check if authentication uses local mode.
-        
+
         Local mode is active when OIDC_ISSUER_URL is empty.
         """
         return not self.is_oidc_mode
-    
+
     @property
     def is_open_mode(self) -> bool:
         """
         Check if authentication is in open mode.
-        
+
         Open mode is active when in local mode and APP_SECRET is empty.
         In this mode, JWT tokens are issued without credential validation.
         """
         return self.is_local_mode and not self.app_secret
-    
+
     @property
     def requires_credentials(self) -> bool:
         """Check if authentication requires credential validation."""
@@ -106,17 +106,19 @@ class AuthConfig:
 class APIConfig:
     """
     API configuration container.
-    
+
     Aggregates all API-specific configuration settings.
     """
-    
+
     auth: AuthConfig = field(default_factory=AuthConfig)
+    host: str = "0.0.0.0"
+    port: int = 8000
 
 
 def _load_auth_config() -> AuthConfig:
     """
     Load authentication configuration from environment variables.
-    
+
     Returns:
         AuthConfig instance populated from environment.
     """
@@ -125,14 +127,14 @@ def _load_auth_config() -> AuthConfig:
         secret_key=os.getenv("JWT_SECRET_KEY", ""),
         token_expiry_minutes=int(os.getenv("JWT_TOKEN_EXPIRY_MINUTES", "60")),
     )
-    
+
     oidc_config = OIDCConfig(
         issuer_url=os.getenv("OIDC_ISSUER_URL", ""),
         audience=os.getenv("OIDC_AUDIENCE", ""),
         client_id=os.getenv("OIDC_CLIENT_ID", ""),
         client_secret=os.getenv("OIDC_CLIENT_SECRET", ""),
     )
-    
+
     return AuthConfig(
         app_secret=os.getenv("APP_SECRET", ""),
         jwt=jwt_config,
@@ -147,37 +149,39 @@ apiConfiguration: Optional[APIConfig] = None
 def load_api_configuration(config_path: str = "../config/api") -> None:
     """
     Load API configuration from .env files and initialize the global singleton.
-    
+
     Args:
         config_path: Path to the API config folder containing options/ and secrets/.
                     Default is "../config/api" (for running from src/).
     """
     global apiConfiguration
-    
+
     # Load environment files
     options_env = os.path.join(config_path, "options", "config.env")
     secrets_env = os.path.join(config_path, "secrets", "config.env")
-    
+
     # Load options first, then secrets (secrets override options)
     if os.path.exists(options_env):
         load_dotenv(dotenv_path=options_env, override=True)
-    
+
     if os.path.exists(secrets_env):
         load_dotenv(dotenv_path=secrets_env, override=True)
-    
+
     # Create configuration instance
     apiConfiguration = APIConfig(
         auth=_load_auth_config(),
+        host=os.getenv("API_HOST", "0.0.0.0"),
+        port=int(os.getenv("API_PORT", "8000")),
     )
 
 
 def get_api_configuration() -> APIConfig:
     """
     Get the API configuration singleton.
-    
+
     Returns:
         APIConfig instance.
-    
+
     Raises:
         RuntimeError: If configuration has not been loaded.
     """

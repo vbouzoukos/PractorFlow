@@ -39,23 +39,22 @@ PractorFlow is a production-ready, self-hosted AI service designed for real busi
 
 ## 🚀 Installation
 
-### Option 1: Install as Package (Recommended)
+### Core Library (practorflow)
 
-Install PractorFlow as an editable package using `pyproject.toml`:
+#### Option 1: Install as Package
 
 ```bash
 # Clone the repository
 git clone https://github.com/vbouzoukos/PractorFlow.git
 cd PractorFlow
 
-# Install as editable package
-cd src/practorflow
-pip install -e .
+# Install the package
+pip install .
 ```
 
 This installs all dependencies defined in `pyproject.toml` and makes the `practorflow` package available system-wide.
 
-### Option 2: Install from Requirements
+#### Option 2: Install from Requirements
 
 ```bash
 # Clone the repository
@@ -68,14 +67,23 @@ pip install -r requirements.txt
 
 The requirements.txt includes llama-cpp-python with CUDA 12.1 support. If you need a different CUDA version or CPU-only installation, modify the llama-cpp-python line accordingly.
 
-### Development Installation
+#### Development Installation
 
 For development with additional tools (pytest, black, mypy, etc.):
 
 ```bash
-cd src/practorflow
 pip install -e ".[dev]"
 ```
+
+### API Server (practorflow-api)
+
+Install the FastAPI server as a separate package:
+
+```bash
+pip install ./src/api
+```
+
+This automatically installs the core `practorflow` library as a dependency.
 
 ### Enabling Qwen3 and Mistral3 Support
 
@@ -111,7 +119,50 @@ For Python 3.10 (CUDA 12.8, Linux/WSL2):
 llama-cpp-python @ https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.18-cu128-AVX2-linux-20251220/llama_cpp_python-0.3.18-cp310-cp310-linux_x86_64.whl
 ```
 
-**Option 2: Build from Source (Advanced)**
+**Option 2: Prebuilt Wheels with pyproject.toml**
+
+The standard `pip install .` installs llama-cpp-python from PyPI, which does **NOT** support Qwen3VL and Mistral3. You need to remove llama-cpp-python from pyproject.toml and install it separately:
+
+```bash
+# Step 1: Clone the repository
+git clone https://github.com/vbouzoukos/PractorFlow.git
+cd PractorFlow
+
+# Step 2: Edit pyproject.toml - remove "llama-cpp-python" from the dependencies list
+
+# Step 3: Install custom llama-cpp-python
+
+# For Python 3.12 (CUDA 12.8, Linux/WSL2):
+pip install https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.18-cu128-AVX2-linux-20251220/llama_cpp_python-0.3.18-cp312-cp312-linux_x86_64.whl
+
+# For Python 3.10 (CUDA 12.8, Linux/WSL2):
+pip install https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.18-cu128-AVX2-linux-20251220/llama_cpp_python-0.3.18-cp310-cp310-linux_x86_64.whl
+
+# Step 4: Install PractorFlow
+pip install .
+```
+
+**Build from Source with pyproject.toml:**
+
+```bash
+# Steps 1-2: Same as above (clone, remove "llama-cpp-python" from pyproject.toml)
+
+# Step 3: Build and install custom llama-cpp-python (replace '89' with your GPU compute capability)
+CMAKE_ARGS="-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89 -DCMAKE_CUDA_COMPILER=$(which nvcc)" \
+pip install git+https://github.com/JamePeng/llama-cpp-python.git --no-cache-dir
+
+# Step 4: Install PractorFlow
+pip install .
+```
+
+**If you already ran `pip install .` without Qwen3/Mistral3 support:**
+
+```bash
+pip uninstall llama-cpp-python
+pip install https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.18-cu128-AVX2-linux-20251220/llama_cpp_python-0.3.18-cp312-cp312-linux_x86_64.whl
+```
+
+**Option 3: Build from Source (Advanced)**
 
 If prebuilt wheels don't work for your system:
 
@@ -224,6 +275,8 @@ nvcc --version
 
 To revert to standard llama-cpp-python for other models:
 
+**For requirements.txt users:**
+
 ```bash
 # Edit requirements.txt - comment out custom wheel
 # Uncomment standard version:
@@ -232,6 +285,21 @@ llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/wh
 # Reinstall:
 pip install --force-reinstall -r requirements.txt
 ```
+
+**For pyproject.toml users:**
+
+```bash
+# Uninstall custom wheel
+pip uninstall llama-cpp-python
+
+# Install standard version FIRST
+pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
+
+# Then reinstall PractorFlow (pip will skip llama-cpp-python since it's already installed)
+pip install .
+```
+
+
 
 #### Additional Resources
 
@@ -242,6 +310,7 @@ pip install --force-reinstall -r requirements.txt
 - [Mistral Documentation](https://docs.mistral.ai/)
 
 **Note:** The custom llama-cpp-python builds are community-maintained until official support is merged. Always verify the source and use official releases when available for production deployments.
+
 
 ## ⚙️ Configuration
 

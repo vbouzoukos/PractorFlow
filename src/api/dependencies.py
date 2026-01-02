@@ -5,7 +5,7 @@ FastAPI dependencies for dependency injection.
 from typing import Optional
 
 from practorflow.services.chat import ChatService
-from session_store.session_history import SessionHistory
+from practorflow.session_store.session_history import SessionHistory
 from api.auth.service import AuthService
 
 

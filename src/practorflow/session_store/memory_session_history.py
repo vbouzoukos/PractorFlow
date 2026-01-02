@@ -8,7 +8,7 @@ Sessions are stored in memory and lost on application restart.
 from typing import Dict, List, Optional
 
 from practorflow.llm.base.session import Session
-from session_store.session_history import SessionHistory
+from practorflow.session_store.session_history import SessionHistory
 
 
 class InMemorySessionHistory(SessionHistory):
