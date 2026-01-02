@@ -23,6 +23,10 @@ from practorflow.settings.app_settings import appConfiguration
 from session_store.factory import create_session_store
 
 
+# Console user identifier
+CONSOLE_USER = "console_user"
+
+
 @dataclass
 class LocalChatFile:
     """Local file implementation of ChatFile protocol."""
@@ -175,7 +179,10 @@ async def handle_chat(
 
         received_text = False
         async for chunk in service.chat_stream(
-            session_id, message, files=files if files else None
+            session_id=session_id,
+            message=message,
+            user=CONSOLE_USER,
+            files=files if files else None,
         ):
             if not chunk.finished:
                 print(chunk.text, end="", flush=True)
@@ -242,7 +249,6 @@ async def main():
     current_session_id = await service.start_chat()
     print(f"[Session started: {current_session_id}]")
     print()
-
 
     # Main loop
     while True:

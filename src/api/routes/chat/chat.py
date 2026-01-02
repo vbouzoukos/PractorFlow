@@ -56,12 +56,12 @@ async def start_session(
     """
     logger.info(f"[Chat API] Starting new session for user: {current_user.user_id}")
 
-    session = await chat_service.start_chat(user=current_user.user_id)
+    session_id = await chat_service.start_chat()
 
-    logger.info(f"[Chat API] Session created: {session}")
+    logger.info(f"[Chat API] Session created: {session_id}")
 
     return SessionResponse(
-        session_id=session,
+        session_id=session_id,
         message="Session created successfully",
     )
 
@@ -109,6 +109,7 @@ async def chat_message(
             async for chunk in chat_service.chat_stream(
                 session_id=session_id,
                 message=message,
+                user=current_user.user_id,
                 files=files,
             ):
                 chunk_data = StreamChunkData(

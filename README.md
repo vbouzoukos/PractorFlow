@@ -874,3 +874,211 @@ For questions, issues, or feature requests, please [open an issue](https://githu
 ---
 
 **Privacy by Design**: PractorFlow is built for organizations where AI must run where the data already lives. All inference, document processing, and reasoning happens entirely within your infrastructure. No data ever leaves your environment.
+
+## 🌐 API Server
+
+PractorFlow includes a standalone FastAPI server that exposes the library's capabilities via HTTP endpoints. The API provides session-based chat with streaming responses, file uploads for RAG, and JWT-based authentication.
+
+### Running the API Server
+
+```bash
+cd src
+
+# Start the server
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+
+# Or with auto-reload for development
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+The API will be available at `http://localhost:8000`. Interactive documentation is available at `http://localhost:8000/docs` (Swagger UI) and `http://localhost:8000/redoc` (ReDoc).
+
+### Authentication
+
+The API supports three authentication modes, configured via environment variables in `config/api/`:
+
+| Mode | Configuration | Description |
+|------|---------------|-------------|
+| **Open** | `APP_SECRET` empty, `OIDC_ISSUER_URL` empty | No credentials required. Tokens issued freely. Suitable for development or trusted networks. |
+| **Local** | `APP_SECRET` set, `OIDC_ISSUER_URL` empty | Requires app secret to obtain tokens. Simple shared-secret authentication. |
+| **OIDC** | `OIDC_ISSUER_URL` set | External identity provider authentication. Enterprise SSO integration. |
+
+#### Configuration Files
+
+Create configuration files in `config/api/`:
+
+**`config/api/options/config.env`** - Non-sensitive settings:
+```bash
+JWT_ALGORITHM=HS256
+JWT_TOKEN_EXPIRY_MINUTES=60
+```
+
+**`config/api/secrets/config.env`** - Sensitive settings:
+```bash
+# Local mode authentication
+JWT_SECRET_KEY=your-secret-key-for-signing-tokens
+APP_SECRET=your-app-secret-for-authentication
+
+# OIDC mode (optional - leave empty for local mode)
+OIDC_ISSUER_URL=
+OIDC_AUDIENCE=
+OIDC_CLIENT_ID=
+OIDC_CLIENT_SECRET=
+```
+
+### API Endpoints
+
+#### Health Check
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Returns server health status |
+
+```bash
+curl http://localhost:8000/health
+# Response: {"status": "healthy"}
+```
+
+#### Authentication (`/auth`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/auth/token` | Obtain JWT access token |
+| `GET` | `/auth/me` | Get current authenticated user |
+| `GET` | `/auth/status` | Get authentication configuration status |
+
+**Obtain Token (Open Mode):**
+```bash
+curl -X POST http://localhost:8000/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+**Obtain Token (Local Mode with Secret):**
+```bash
+curl -X POST http://localhost:8000/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"app_secret": "your-app-secret"}'
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_in": 3600
+}
+```
+
+#### Chat (`/chat`)
+
+All chat endpoints require authentication. Include the token in the `Authorization` header:
+```bash
+-H "Authorization: Bearer <access_token>"
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/chat` | Start a new chat session |
+| `POST` | `/chat/{session_id}` | Send message with optional files (SSE streaming response) |
+| `DELETE` | `/chat/{session_id}` | Delete a chat session |
+| `GET` | `/chat/sessions` | List all chat sessions |
+| `GET` | `/chat/{session_id}/history` | Get full session message history |
+
+**Start a New Session:**
+```bash
+curl -X GET http://localhost:8000/chat \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response:**
+```json
+{
+  "session_id": "abc123-def456-...",
+  "message": "Session created successfully"
+}
+```
+
+**Send a Message (Streaming):**
+```bash
+curl -X POST "http://localhost:8000/chat/{session_id}" \
+  -H "Authorization: Bearer <access_token>" \
+  -F "message=What is Python?"
+```
+
+The response is a Server-Sent Events (SSE) stream:
+```
+data: {"text": "Python", "finished": false}
+data: {"text": " is", "finished": false}
+data: {"text": " a", "finished": false}
+...
+data: {"text": "", "finished": true, "finish_reason": "stop", "usage": {"prompt_tokens": 10, "completion_tokens": 150}}
+data: [DONE]
+```
+
+**Send a Message with File Upload:**
+```bash
+curl -X POST "http://localhost:8000/chat/{session_id}" \
+  -H "Authorization: Bearer <access_token>" \
+  -F "message=Summarize this document" \
+  -F "files=@document.pdf"
+```
+
+Uploaded files are indexed into the knowledge store and scoped to the session for RAG queries.
+
+**List Sessions:**
+```bash
+curl -X GET "http://localhost:8000/chat/sessions" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response:**
+```json
+[
+  {
+    "session_id": "abc123-...",
+    "user": "anonymous",
+    "message_count": 5,
+    "document_count": 2,
+    "created_at": "2025-01-01T10:00:00Z",
+    "updated_at": "2025-01-01T10:30:00Z"
+  }
+]
+```
+
+**Get Session History:**
+```bash
+curl -X GET "http://localhost:8000/chat/{session_id}/history" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response:**
+```json
+{
+  "session_id": "abc123-...",
+  "user": "anonymous",
+  "instructions": null,
+  "messages": [
+    {"id": "msg1", "role": "user", "content": "Hello", "timestamp": "2025-01-01T10:00:00Z"},
+    {"id": "msg2", "role": "assistant", "content": "Hi! How can I help?", "timestamp": "2025-01-01T10:00:01Z"}
+  ],
+  "document_count": 0,
+  "created_at": "2025-01-01T10:00:00Z",
+  "updated_at": "2025-01-01T10:00:01Z"
+}
+```
+
+**Delete a Session:**
+```bash
+curl -X DELETE "http://localhost:8000/chat/{session_id}" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response:**
+```json
+{
+  "session_id": "abc123-...",
+  "deleted": true,
+  "message": "Session deleted successfully"
+}
+```

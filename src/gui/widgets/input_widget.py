@@ -16,37 +16,21 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeyEvent
 
 
 class MessageInput(QTextEdit):
     """
-    Text input that submits on Enter (Shift+Enter for newline).
+    Markdown text input.
     """
     
     submit_requested = Signal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setPlaceholderText("Type a message... (Enter to send, Shift+Enter for new line)")
+        self.setPlaceholderText("Type a message ...")
         self.setAcceptRichText(False)
         self.setMaximumHeight(100)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-    
-    def keyPressEvent(self, event: QKeyEvent):
-        """Handle Enter key for submission."""
-        try:
-            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-                if event.modifiers() & Qt.ShiftModifier:
-                    # Shift+Enter: insert newline
-                    super().keyPressEvent(event)
-                else:
-                    # Enter: submit
-                    self.submit_requested.emit()
-            else:
-                super().keyPressEvent(event)
-        except Exception:
-            super().keyPressEvent(event)
 
 
 class InputWidget(QWidget):
@@ -137,7 +121,7 @@ class InputWidget(QWidget):
     def _on_send_clicked(self):
         """Handle send button click."""
         try:
-            message = self._text_input.toPlainText().strip()
+            message = self._text_input.toMarkdown().strip()
             
             if not message and not self._file_paths:
                 return

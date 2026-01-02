@@ -14,6 +14,13 @@ from dataclasses import dataclass
 from typing import AsyncIterator, List, Optional, Set
 
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    UserPromptPart,
+    TextPart,
+)
 
 from practorflow.llm import ModelPool, create_runner, StreamChunk
 from practorflow.llm.llm_config import LLMConfig
@@ -42,6 +49,79 @@ class ChatDeps:
     document_scope: Optional[Set[str]] = None
     web_search_tool: Optional[DuckDuckGoSearchTool] = None
 
+# Base system instructions (always applied, not overridable by user)
+_SYSTEM_INSTRUCTIONS = """<system_rules>
+You are a helpful AI assistant operating within a retrieval-augmented environment.
+
+CRITICAL BEHAVIORAL RULES:
+1. NEVER mention, reference, or explain internal tools (search_knowledge, search_web, or any other tool names) to the user. These are internal mechanisms invisible to the user.
+2. NEVER say phrases like "I will use the search tool" or "Let me search the knowledge base". Simply provide the answer as if you naturally know it.
+3. When you cannot find information, say "I don't have information about that in the provided documents" NOT "the search tool returned no results".
+
+TOOL USAGE PROTOCOL:
+- When files/documents are attached or referenced: ALWAYS call search_knowledge FIRST and retrieve relevant content BEFORE formulating any response. Do not respond based on assumptions.
+- For questions about attached documents: Use search_knowledge. Do not guess or paraphrase without retrieving actual content.
+- For explicit requests about current events, live data, or web lookups: Use search_web.
+- For general knowledge questions (no files involved, no web request): Respond from your training knowledge.
+
+RESPONSE BEHAVIOR:
+- Ground all document-related answers in retrieved content.
+- If search_knowledge returns empty or irrelevant results, acknowledge the limitation naturally without exposing tool mechanics.
+- Cite or quote document content when relevant to build user trust.
+</system_rules>"""
+
+# User-customizable instructions (injected after system rules)
+_DEFAULT_USER_INSTRUCTIONS = """<assistant_persona>
+You are a knowledgeable, precise, and professional AI assistant.
+
+COMMUNICATION STYLE:
+- Be concise but thorough. Avoid unnecessary filler words and preambles like "Great question!" or "Sure, I'd be happy to help!".
+- Match the user's tone: formal questions receive formal answers, casual questions receive conversational responses.
+- Use clear, direct language. Prefer active voice over passive voice.
+- Structure complex answers with logical flow. Use formatting (headers, lists, code blocks) only when it genuinely aids comprehension, not by default.
+
+RESPONSE QUALITY STANDARDS:
+- Accuracy over speed: verify your reasoning before responding.
+- When answering from documents, stay faithful to the source material. Do not embellish or infer beyond what the content states.
+- Distinguish clearly between facts from documents, general knowledge, and your own reasoning/interpretation.
+- If a question has multiple valid interpretations, address the most likely one first, then briefly acknowledge alternatives.
+
+HANDLING UNCERTAINTY AND LIMITATIONS:
+- If information is incomplete or ambiguous, state what you know, what you don't, and what assumptions you're making.
+- Never fabricate information. If you don't know, say so plainly.
+- When documents lack the answer, be explicit: "The provided documents don't contain information about X" rather than guessing.
+
+CONVERSATION BEHAVIOR:
+- Maintain context across the conversation. Reference earlier messages when relevant.
+- Ask clarifying questions when the user's request is ambiguous, but avoid excessive back-and-forth for simple queries.
+- If the user provides corrections, acknowledge and adapt without defensiveness.
+- Stay on topic. Do not volunteer unrelated information unless it's directly useful.
+
+PROHIBITED BEHAVIORS:
+- Do not apologize excessively. One brief acknowledgment of a mistake is sufficient.
+- Do not repeat the user's question back to them as filler.
+- Do not provide unsolicited warnings, disclaimers, or ethical commentary unless the situation genuinely warrants it.
+- Do not hedge excessively with phrases like "It's important to note that..." or "It depends on various factors...". Be direct.
+</assistant_persona>"""
+
+def build_instructions(user_instructions: str | None = None) -> str:
+    """
+    Build the complete instruction set.
+    
+    Args:
+        user_instructions: Optional custom instructions from the user.
+                          These augment (not replace) the system rules.
+    
+    Returns:
+        Complete instruction string with system rules + user customization.
+    """
+    custom_section = user_instructions if user_instructions else _DEFAULT_USER_INSTRUCTIONS
+    
+    return f"""{_SYSTEM_INSTRUCTIONS}
+
+<user_instructions>
+{custom_section}
+</user_instructions>"""
 
 class ChatService:
     """
@@ -49,6 +129,9 @@ class ChatService:
     
     Manages chat sessions with document context and provides
     streaming responses using local LLM models.
+    
+    This service is stateless - sessions are retrieved from the
+    session store on each request, making it safe for concurrent users.
     """
     
     def __init__(
@@ -76,14 +159,7 @@ class ChatService:
         self._knowledge_store = knowledge_store
         self._session_store = session_store
         self._web_search_tool = web_search_tool or DuckDuckGoSearchTool()
-        self._instructions = default_instructions or (
-            "You are a helpful AI assistant. "
-            "When the user attaches files, you MUST use the search_knowledge tool to read and retrieve their content before answering. "
-            "Use the search_knowledge tool to find information from uploaded documents. "
-            "Use the search_web tool only when the user explicitly asks for current events, news, or web information."
-        )
-        
-        self.session: Optional[Session] = None
+        self._instructions = build_instructions(user_instructions=default_instructions)
         
         logger.info("[ChatService] Initialized")
     
@@ -91,34 +167,19 @@ class ChatService:
         """Generate a unique session ID."""
         return f"session_{uuid.uuid4().hex}"
     
-    async def start_chat(
-        self,
-        instructions: Optional[str] = None,
-        user: Optional[str] = None,
-    ) -> str:
+    async def start_chat(self) -> str:
         """
         Start a new chat session.
         
-        Generates a unique session ID and returns a Session object.
-        The session is persisted when chat_stream is first called.
-        
-        Args:
-            instructions: Optional system instructions for the assistant.
-                         Uses default instructions if not provided.
-            user: Optional user identifier to associate with the session.
+        Generates a unique session ID and returns it. The session is not
+        persisted until the first message is sent via chat_stream.
         
         Returns:
-            The created Session object with generated session_id.
+            The generated session_id.
         """
         session_id = self._generate_session_id()
         
-        self.session = Session(
-            session_id=session_id,
-            instructions=instructions or self._instructions,
-            user=user,
-        )
-        
-        logger.info(f"[ChatService] Started chat session: {session_id} for user: {user}")
+        logger.info(f"[ChatService] Generated session ID: {session_id}")
         
         return session_id
     
@@ -126,6 +187,7 @@ class ChatService:
         self,
         session_id: str,
         message: str,
+        user: str,
         files: Optional[List[ChatFile]] = None,
     ) -> AsyncIterator[StreamChunk]:
         """
@@ -138,15 +200,22 @@ class ChatService:
         Args:
             session_id: Session ID for the chat.
             message: User message text.
+            user: User identifier for the session.
             files: Optional list of files to upload and index for this session.
         
         Yields:
             StreamChunk objects with response text and metadata.
         """
-        if not self.session:
-            raise ValueError("No active session. Call start_chat first.")
-        
-        session = self.session
+        # Get or create session
+        if self._session_store.exists(session_id):
+            session = self._session_store.get(session_id)
+        else:
+            session = Session(
+                session_id=session_id,
+                instructions=self._instructions,
+                user=user,
+            )
+            logger.info(f"[ChatService] Created new session: {session_id} for user: {user}")
         
         # Track newly uploaded file names
         new_file_names: List[str] = []
@@ -158,7 +227,6 @@ class ChatService:
                 session.add_document(doc_info)
                 new_file_names.append(doc_info['filename'])
                 logger.info(f"[ChatService] Indexed file: {doc_info['filename']} -> {doc_info['id']}")
-            self._session_store.save(session)
         
         # Get document scope from session
         document_scope = self._get_document_scope(session)
@@ -214,15 +282,12 @@ class ChatService:
                     yield StreamChunk(text=text, finished=False)
                 
                 # Extract usage if available
-                try:
-                    usage_obj = response.usage()
-                    usage = {
-                        "prompt_tokens": getattr(usage_obj, 'input_tokens', 0),
-                        "completion_tokens": getattr(usage_obj, 'output_tokens', 0),
-                        "total_tokens": getattr(usage_obj, 'input_tokens', 0) + getattr(usage_obj, 'output_tokens', 0),
-                    }
-                except Exception:
-                    pass
+                usage_obj = response.usage()
+                usage = {
+                    "prompt_tokens": getattr(usage_obj, 'input_tokens', 0),
+                    "completion_tokens": getattr(usage_obj, 'output_tokens', 0),
+                    "total_tokens": getattr(usage_obj, 'input_tokens', 0) + getattr(usage_obj, 'output_tokens', 0),
+                }
             
             # Yield final chunk BEFORE exiting model context
             yield StreamChunk(
@@ -236,6 +301,8 @@ class ChatService:
         full_response = "".join(accumulated_response)
         assistant_message = Message(role="assistant", content=full_response)
         session.messages.append(assistant_message)
+        
+        # Save session with both user and assistant messages
         self._session_store.save(session)
         
         logger.debug(f"[ChatService] Completed response for session: {session_id}")
@@ -322,25 +389,40 @@ class ChatService:
         
         return {doc["id"] for doc in session.documents if "id" in doc}
     
-    def _build_message_history(self, session: Session) -> list:
+    def _build_message_history(self, session: Session) -> List[ModelMessage]:
         """
         Build message history for agent context.
         
+        Converts session messages to pydantic_ai ModelMessage format.
         Excludes the last user message as it will be passed directly.
         
         Args:
             session: Session containing message history.
         
         Returns:
-            List of message dicts for agent context.
+            List of ModelMessage objects (ModelRequest/ModelResponse) for agent context.
         """
         if len(session.messages) <= 1:
             return []
         
-        return [
-            {"role": msg.role, "content": msg.content}
-            for msg in session.messages[:-1]
-        ]
+        history: List[ModelMessage] = []
+        
+        for msg in session.messages[:-1]:
+            # Extract text content from message
+            content = msg.get_text_content()
+            
+            if msg.role == "user":
+                # User messages become ModelRequest with UserPromptPart
+                history.append(
+                    ModelRequest(parts=[UserPromptPart(content=content)])
+                )
+            elif msg.role == "assistant":
+                # Assistant messages become ModelResponse with TextPart
+                history.append(
+                    ModelResponse(parts=[TextPart(content=content)])
+                )
+        
+        return history
     
     def _register_tools(self, agent: Agent) -> None:
         """
