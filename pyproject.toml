@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "PractorFlow"
-version = "0.0.1"
+version = "0.1.0"
 description = "PractorFlow - Private AI Service for local LLM inference with RAG support"
 readme = "README.md"
-license = {text = "MIT"}
+license = { text = "Apache License 2.0" }
 requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -49,6 +49,7 @@ llama-cpp = [
 dev = [
     "pytest",
     "pytest-asyncio",
+    "pytest-cov",
     "black",
     "isort",
     "mypy",
@@ -61,8 +62,8 @@ Repository = "https://github.com/vbouzoukos/PractorFlow"
 Issues = "https://github.com/vbouzoukos/PractorFlow/issues"
 
 [tool.setuptools.packages.find]
-where = ["src"]
-
+where = ["src/practorflow"]
+ 
 [tool.setuptools.package-data]
 practorflow = ["py.typed"]
 
@@ -79,3 +80,19 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = [
+    "-v",
+    "--tb=short",
+    "--cov=practorflow",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+    "--ignore=tests/practorflow/common",
+]
