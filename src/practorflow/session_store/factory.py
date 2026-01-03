@@ -19,6 +19,11 @@ from practorflow.session_store.persist_session_history import PersistSessionHist
 from practorflow.session_store.session_history import SessionHistory
 from practorflow.llm.base.session_store import SessionStore
 
+from practorflow.logger.logger import get_logger
+from practorflow.settings.app_settings import appConfiguration
+logger = get_logger(
+    "session_store", level=appConfiguration.LoggerConfiguration.RunnerLevel
+)
 
 # Supported store types
 STORE_TYPE_MEMORY = "memory"
@@ -27,6 +32,16 @@ STORE_TYPE_LOCAL = "local"
 # Default configuration
 DEFAULT_STORE_TYPE = STORE_TYPE_MEMORY
 DEFAULT_DB_PATH = "./sessions.json"
+
+def validate_store_path(path:str):
+    """
+    Validates if the path for tinyDB exists
+    
+    :param path: Path loaded from configuration
+    :type path: str
+    """
+    if not os.path.exists(path):
+        logger.warning(f"STORE_SESSION_DB_PATH does not exist in: \"{path}\". If first run it will be created")
 
 def create_session_store(config_path: str = "../config/llm/options") -> SessionStore:
     """
@@ -51,6 +66,7 @@ def create_session_store(config_path: str = "../config/llm/options") -> SessionS
     
     if store_type_normalized == STORE_TYPE_LOCAL:
         path = os.getenv("STORE_SESSION_DB_PATH", DEFAULT_DB_PATH)
+        validate_store_path(path)
         return TinyDBSessionStore(db_path=path)
     
     supported_types = [STORE_TYPE_MEMORY, STORE_TYPE_LOCAL]
@@ -82,6 +98,7 @@ def create_session_history(config_path: str = "../config/llm/options") -> Sessio
     
     if store_type_normalized == STORE_TYPE_LOCAL:
         path = os.getenv("STORE_SESSION_DB_PATH", DEFAULT_DB_PATH)
+        validate_store_path(path)
         return PersistSessionHistory(db_path=path)
     
     supported_types = [STORE_TYPE_MEMORY, STORE_TYPE_LOCAL]

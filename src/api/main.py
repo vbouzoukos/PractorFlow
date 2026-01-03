@@ -8,18 +8,40 @@ Sets up the FastAPI application with:
 - CORS middleware
 """
 
-from contextlib import asynccontextmanager
 import os
 
-from dotenv import load_dotenv
+# Load configuration FIRST, before any other practorflow imports
+from practorflow.settings.app_settings import load_configuration
+from api.config import load_api_configuration
+# Set config path first
+os.environ.setdefault("_PRACTORFLOW_CONFIG_PATH", "./config")
+
+# Import directly from module path, not through practorflow package
+from practorflow.settings import app_settings
+from api.config import api_settings
+
+config_path = os.environ.get("_PRACTORFLOW_CONFIG_PATH", "./config")
+app_settings.load_configuration(os.path.join(config_path, "llm/options"))
+api_settings.load_api_configuration(os.path.join(config_path, "api"))
+
+# Now safe to import other modules
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+config_path = os.environ.get("_PRACTORFLOW_CONFIG_PATH", "../config")
+llm_options_path = os.path.join(config_path, "llm/options")
+llm_api_path = os.path.join(config_path, "api")
+load_configuration(llm_options_path)
+load_api_configuration(llm_api_path)
+
 from api.dependencies import container
-from api.config import load_api_configuration, get_api_configuration
+from api.config import get_api_configuration
 from api.auth import AuthService, set_auth_service
 from api.routes.auth import router as auth_router
 from api.routes.chat import router as chat_router
+
 from practorflow.llm import ModelPool
 from practorflow.llm.knowledge.chroma_knowledge_store import ChromaKnowledgeStore
 from practorflow.services.chat import ChatService
@@ -28,7 +50,6 @@ from practorflow.logger.logger import get_logger
 from practorflow.session_store.factory import create_session_history, create_session_store
 
 logger = get_logger("agent-api", level="INFO")
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,9 +60,7 @@ async def lifespan(app: FastAPI):
     """
     logger.info("[API] Starting application...")
 
-    # Load API configuration (auth settings)
-    logger.info("[API] Loading API configuration...")
-    load_api_configuration("../config/api")
+    # Get configuration (already loaded at module level)
     api_config = get_api_configuration()
     
     # Log authentication mode
@@ -79,9 +98,9 @@ async def lifespan(app: FastAPI):
     )
 
     # Initialize session store
-    session_store = create_session_store()
+    session_store = create_session_store(llm_options_path)
     # Initialize session history
-    session_history = create_session_history()
+    session_history = create_session_history(llm_options_path)
 
     # Initialize chat service
     chat_service = ChatService(
@@ -135,17 +154,20 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
+
 def _run(reload: bool = False):
     import uvicorn
-    from api.config import load_api_configuration, get_api_configuration
     
-    load_api_configuration()
-    config = get_api_configuration()
+    # Set config path for module-level loading
+    os.environ["_PRACTORFLOW_CONFIG_PATH"] = "./config"
+    
+    host = os.environ.get("PRACTORFLOW_API_HOST", "localhost")
+    port = int(os.environ.get("PRACTORFLOW_API_PORT", "8000"))
     
     uvicorn.run(
         "api.main:app",
-        host=config.host,
-        port=config.port,
+        host=host,
+        port=port,
         reload=reload,
     )
 

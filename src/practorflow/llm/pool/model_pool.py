@@ -30,6 +30,18 @@ logger = get_logger(
 verbose_runner = appConfiguration.LoggerConfiguration.RunnerLevel == "DEBUG"
 
 
+def validate_model_path(path: str):
+    """
+    Validates if the model directory exists
+
+    :param path: Path loaded from configuration
+    :type path: str
+    """
+    if not os.path.exists(path):
+        logger.warning(
+            f'LLM_MODELS_DIR does not exist in: "{path}". If first run it will be created'
+        )
+
 class ModelPool:
     """
     Async model pool with configurable max concurrent models.
@@ -134,6 +146,7 @@ class ModelPool:
         from llama_cpp import Llama
         from huggingface_hub import hf_hub_download
 
+        validate_model_path(config.models_dir)
         os.makedirs(config.models_dir, exist_ok=True)
 
         model_path = None
@@ -197,21 +210,21 @@ class ModelPool:
     def _compile_model(self, model, config: LLMConfig):
         """
         Apply torch.compile() to the model for faster inference.
-        
+
         Args:
             model: The transformers model to compile
             config: LLM configuration
-            
+
         Returns:
             Compiled model or original if compilation fails
         """
         use_compile = getattr(config, "use_torch_compile", True)
         compile_mode = getattr(config, "compile_mode", "reduce-overhead")
-        
+
         if not use_compile:
             logger.info("[ModelPool] torch.compile() disabled by config")
             return model
-        
+
         torch_version = tuple(map(int, torch.__version__.split("+")[0].split(".")[:2]))
         if torch_version < (2, 0):
             logger.warning(
@@ -219,24 +232,24 @@ class ModelPool:
                 f"found {torch.__version__}"
             )
             return model
-        
+
         if not torch.cuda.is_available():
             logger.info("[ModelPool] CUDA not available, skipping torch.compile()")
             return model
-        
+
         try:
             logger.info(f"[ModelPool] Compiling model with mode='{compile_mode}'...")
-            
+
             compiled_model = torch.compile(
                 model,
                 mode=compile_mode,
                 fullgraph=False,
                 dynamic=True,
             )
-            
+
             logger.info("[ModelPool] Model compiled successfully")
             return compiled_model
-            
+
         except Exception as e:
             logger.warning(f"[ModelPool] torch.compile() failed: {e}")
             logger.warning("[ModelPool] Falling back to eager mode")
@@ -245,9 +258,9 @@ class ModelPool:
     def _warmup_model(self, model, tokenizer, device, config: LLMConfig) -> None:
         """
         Run warmup inference to trigger JIT compilation.
-        
+
         This ensures the first real request doesn't pay the compilation cost.
-        
+
         Args:
             model: The loaded model
             tokenizer: The tokenizer
@@ -255,42 +268,42 @@ class ModelPool:
             config: LLM configuration for generation parameters
         """
         logger.info("[ModelPool] Running warmup inference...")
-        
+
         try:
             warmup_text = "Hello, how are you?"
-            
+
             inputs = tokenizer(
                 warmup_text,
                 return_tensors="pt",
                 padding=True,
             ).to(device)
-            
+
             do_sample = config.temperature > 0
-            
+
             gen_config_kwargs = {
                 "max_new_tokens": min(config.max_new_tokens, 10),  # Limit warmup tokens
                 "do_sample": do_sample,
                 "pad_token_id": tokenizer.pad_token_id,
                 "eos_token_id": tokenizer.eos_token_id,
             }
-            
+
             if do_sample:
                 gen_config_kwargs["temperature"] = config.temperature
                 gen_config_kwargs["top_p"] = config.top_p
-            
+
             warmup_gen_config = GenerationConfig(**gen_config_kwargs)
-            
+
             with torch.inference_mode():
                 _ = model.generate(
                     **inputs,
                     generation_config=warmup_gen_config,
                 )
-            
+
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
-            
+
             logger.info("[ModelPool] Warmup complete")
-            
+
         except Exception as e:
             logger.warning(f"[ModelPool] Warmup failed (non-fatal): {e}")
 
@@ -298,6 +311,7 @@ class ModelPool:
         """Load a transformers model with optimizations."""
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
+        validate_model_path(config.models_dir)
         os.makedirs(config.models_dir, exist_ok=True)
 
         logger.info(f"[ModelPool] Loading transformers model: {config.model_name}")
@@ -365,7 +379,9 @@ class ModelPool:
         if warmup_on_load and getattr(config, "use_torch_compile", True):
             self._warmup_model(model, tokenizer, device, config)
 
-        if hasattr(model, "config") and hasattr(model.config, "max_position_embeddings"):
+        if hasattr(model, "config") and hasattr(
+            model.config, "max_position_embeddings"
+        ):
             max_ctx = model.config.max_position_embeddings
         else:
             max_ctx = config.n_ctx

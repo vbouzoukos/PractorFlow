@@ -72,7 +72,7 @@ The requirements.txt includes llama-cpp-python with CUDA 12.1 support. If you ne
 For development with additional tools (pytest, black, mypy, etc.):
 
 ```bash
-pip install -e ".[dev]"
+CMAKE_ARGS="-DGGML_OPENMP=OFF" pip install -e ".[dev]"
 ```
 
 ### API Server (practorflow-api)
@@ -85,6 +85,13 @@ pip install ./src/api
 
 This automatically installs the core `practorflow` library as a dependency.
 
+#### Development Installation
+
+For development with additional tools (pytest, black, mypy, etc.):
+
+```bash
+pip install -e ".[dev]" ./src/api
+```
 ### Enabling Qwen3 and Mistral3 Support
 
 PractorFlow supports the latest Qwen3VL and Mistral3 models, which require a specialized build of llama-cpp-python.
@@ -417,6 +424,12 @@ These settings only apply when `LLM_BACKEND=transformers`:
 
 **Example - GGUF model with llama.cpp:**
 
+In this example we use as working directory the src folder
+
+```bash
+cd src
+```
+
 ```bash
 LLM_MODEL=bartowski/Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf
 LLM_BACKEND=llama_cpp
@@ -432,6 +445,12 @@ LLM_MAX_SEARCH_RESULTS=5
 ```
 
 **Example - HuggingFace model with transformers:**
+
+In this example we use as working directory the src folder
+
+```bash
+cd src
+```
 
 ```bash
 LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
@@ -504,6 +523,12 @@ PractorFlow uses a two-tier chunking approach for optimal RAG performance:
 
 **Example:**
 
+In this example we use as working directory the src folder
+
+```bash
+cd src
+```
+
 ```bash
 # Knowledge store type
 KB_TYPE=chromadb
@@ -528,6 +553,37 @@ KB_CHROMA_RETRIEVAL_CHUNK_SIZE=128
 KB_CHROMA_RETRIEVAL_CHUNK_OVERLAP=20
 KB_CHROMA_CONTEXT_CHUNK_SIZE=1024
 KB_CHROMA_CONTEXT_CHUNK_OVERLAP=100
+```
+
+#### 4. Session Storage Configuration (`session.env`)
+
+The application supports persistent session storage via TinyDB. Configure the following environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `STORE_SESSION` | Storage backend type. Use `LOCAL` for TinyDB file-based persistence or `MEMORY` for in-memory storage. | `LOCAL` |
+| `STORE_SESSION_DB_PATH` | File path for the TinyDB database when using `LOCAL` storage. | `data/session/session.json` |
+
+**Example configuration:**
+In this example we use as working directory the src folder
+
+```bash
+cd src
+```
+
+```env
+STORE_SESSION=LOCAL
+STORE_SESSION_DB_PATH=..data/session/session.json
+```
+
+#### 5. Path Notes:
+
+Note the following parameters should be relative to execution path
+
+```
+LLM_MODELS_DIR
+KB_CHROMA_PERSIST_DIRECTORY
+KB_CHROMA_EMBEDDING_MODEL_DIR
 ```
 
 ---

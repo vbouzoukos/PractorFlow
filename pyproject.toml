@@ -38,8 +38,7 @@ dependencies = [
     "serpapi",
     "pydantic-ai",
     "python-dotenv",
-    "numpy",
-    "huggingface-hub",
+    "tinydb",
 ]
 
 [project.optional-dependencies]

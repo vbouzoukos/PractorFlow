@@ -111,8 +111,6 @@ class APIConfig:
     """
 
     auth: AuthConfig = field(default_factory=AuthConfig)
-    host: str = "0.0.0.0"
-    port: int = 8000
 
 
 def _load_auth_config() -> AuthConfig:
@@ -170,8 +168,6 @@ def load_api_configuration(config_path: str = "../config/api") -> None:
     # Create configuration instance
     apiConfiguration = APIConfig(
         auth=_load_auth_config(),
-        host=os.getenv("API_HOST", "0.0.0.0"),
-        port=int(os.getenv("API_PORT", "8000")),
     )
 
 
