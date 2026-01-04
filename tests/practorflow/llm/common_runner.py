@@ -11,6 +11,18 @@ from unittest.mock import MagicMock
 from practorflow.llm.pool.model_handle import ModelHandle
 
 
+class MockTokenizerOutput(dict):
+    """Mock tokenizer output that supports both dict access and .to() method."""
+    
+    def __init__(self, input_ids, attention_mask):
+        super().__init__()
+        self["input_ids"] = input_ids
+        self["attention_mask"] = attention_mask
+    
+    def to(self, device, non_blocking=False):
+        return self
+
+
 def create_mock_model_handle(
     backend: str = "llama_cpp",
     model_name: str = "test-model",
@@ -51,11 +63,15 @@ def create_mock_model_handle(
     handle.config.max_search_results = 5
     handle.config.stop_tokens = None
     
-    handle.model = create_mock_llama_model(
-        chat_template=chat_template,
-        metadata=metadata,
-    )
-    handle.tokenizer = None
+    if backend == "llama_cpp":
+        handle.model = create_mock_llama_model(
+            chat_template=chat_template,
+            metadata=metadata,
+        )
+        handle.tokenizer = None
+    else:
+        handle.model = create_mock_transformers_model(chat_template=chat_template)
+        handle.tokenizer = create_mock_transformers_tokenizer(chat_template=chat_template)
     
     handle.get_chat_template = MagicMock(return_value=chat_template)
     
@@ -89,6 +105,82 @@ def create_mock_llama_model(
     model.n_ctx = MagicMock(return_value=4096)
     
     return model
+
+
+def create_mock_transformers_model(
+    chat_template: Optional[str] = None,
+    supports_function_calling: bool = False,
+) -> MagicMock:
+    """
+    Create a mock HuggingFace transformers model.
+    
+    Args:
+        chat_template: Optional chat template string.
+        supports_function_calling: Whether model config indicates function calling support.
+    
+    Returns:
+        MagicMock configured as a transformers model.
+    """
+    import torch
+    
+    model = MagicMock()
+    model.device = torch.device("cpu")
+    model.generate = MagicMock()
+    model.eval = MagicMock()
+    
+    model.config = MagicMock()
+    model.config.to_dict = MagicMock(return_value={
+        "supports_function_calling": supports_function_calling,
+    })
+    
+    mock_param = MagicMock()
+    mock_param.device = torch.device("cpu")
+    model.parameters = MagicMock(return_value=iter([mock_param]))
+    
+    return model
+
+
+def create_mock_transformers_tokenizer(
+    chat_template: Optional[str] = None,
+    pad_token_id: int = 0,
+    eos_token_id: int = 1,
+) -> MagicMock:
+    """
+    Create a mock HuggingFace transformers tokenizer.
+    
+    Args:
+        chat_template: Optional chat template string.
+        pad_token_id: Pad token ID.
+        eos_token_id: EOS token ID.
+    
+    Returns:
+        MagicMock configured as a transformers tokenizer.
+    """
+    import torch
+    
+    tokenizer = MagicMock()
+    tokenizer.pad_token_id = pad_token_id
+    tokenizer.eos_token_id = eos_token_id
+    tokenizer.chat_template = chat_template
+    
+    def mock_call(text, return_tensors=None, truncation=False, max_length=None):
+        input_ids = torch.tensor([[1, 2, 3, 4, 5]])
+        attention_mask = torch.tensor([[1, 1, 1, 1, 1]])
+        return MockTokenizerOutput(input_ids, attention_mask)
+    
+    tokenizer.side_effect = mock_call
+    tokenizer.return_value = mock_call("test")
+    
+    def apply_chat_template(messages, tokenize=False, add_generation_prompt=True):
+        parts = []
+        for msg in messages:
+            parts.append(f"{msg['role']}: {msg['content']}")
+        return "\n".join(parts)
+    
+    tokenizer.apply_chat_template = MagicMock(side_effect=apply_chat_template)
+    tokenizer.decode = MagicMock(return_value="Generated response text")
+    
+    return tokenizer
 
 
 def create_llama_completion_response(
@@ -343,3 +435,22 @@ def create_incremental_tool_call_stream_chunks(
     })
     
     return chunks
+
+
+def create_transformers_generate_output(
+    input_length: int = 5,
+    output_length: int = 10,
+):
+    """
+    Create a mock output tensor from transformers model.generate().
+    
+    Args:
+        input_length: Number of input tokens.
+        output_length: Total output length (input + generated).
+    
+    Returns:
+        Tensor with shape [1, output_length].
+    """
+    import torch
+    
+    return torch.tensor([[i for i in range(output_length)]])

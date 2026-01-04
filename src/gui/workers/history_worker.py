@@ -9,7 +9,7 @@ from typing import List, Optional
 
 from PySide6.QtCore import QThread, Signal
 
-from api.chat_client import ChatClient, SessionSummary, SessionHistory
+from gui.api.chat_client import ChatClient, SessionSummary, SessionHistory
 
 
 class ListSessionsWorker(QThread):

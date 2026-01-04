@@ -9,7 +9,7 @@ from typing import Optional
 
 from PySide6.QtCore import QThread, Signal
 
-from api.chat_client import ChatClient
+from gui.api.chat_client import ChatClient
 
 
 class StreamWorker(QThread):

@@ -20,12 +20,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Slot
 
-from widgets.chat_display import ChatDisplay
-from widgets.input_widget import InputWidget
-from widgets.history_panel import HistoryPanel
-from api.chat_client import ChatClient, SessionHistory
-from workers.stream_worker import StreamWorker
-from workers.session_worker import StartSessionWorker, DeleteSessionWorker
+from gui.widgets.chat_display import ChatDisplay
+from gui.widgets.input_widget import InputWidget
+from gui.widgets.history_panel import HistoryPanel
+from gui.api.chat_client import ChatClient, SessionHistory
+from gui.workers.stream_worker import StreamWorker
+from gui.workers.session_worker import StartSessionWorker, DeleteSessionWorker
 
 
 class ChatWindow(QMainWindow):

@@ -28,8 +28,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 from PySide6.QtGui import QAction, QIcon
 
-from api.chat_client import ChatClient, SessionSummary, SessionHistory
-from workers.history_worker import ListSessionsWorker, GetHistoryWorker, DeleteSessionWorker
+from gui.api.chat_client import ChatClient, SessionSummary, SessionHistory
+from gui.workers.history_worker import ListSessionsWorker, GetHistoryWorker, DeleteSessionWorker
 
 
 class SessionItemWidget(QWidget):

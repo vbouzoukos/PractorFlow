@@ -7,7 +7,7 @@ to keep the UI responsive.
 
 from PySide6.QtCore import QThread, Signal
 
-from api.chat_client import ChatClient
+from gui.api.chat_client import ChatClient
 
 
 class StartSessionWorker(QThread):

@@ -48,13 +48,6 @@ Issues = "https://github.com/vbouzoukos/PractorFlow/issues"
 [project.scripts]
 practorflow-gui = "gui.main:main"
 
-[project.gui-scripts]
-practorflow-chat = "gui.main:main"
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["gui*"]
-
 [tool.setuptools.package-data]
 gui = ["py.typed"]
 

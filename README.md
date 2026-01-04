@@ -49,7 +49,7 @@ git clone https://github.com/vbouzoukos/PractorFlow.git
 cd PractorFlow
 
 # Install the package
-pip install .
+pip install -e .
 ```
 
 This installs all dependencies defined in `pyproject.toml` and makes the `practorflow` package available system-wide.
@@ -80,7 +80,7 @@ CMAKE_ARGS="-DGGML_OPENMP=OFF" pip install -e ".[dev]"
 Install the FastAPI server as a separate package:
 
 ```bash
-pip install ./src/api
+pip install -e ./src/api
 ```
 
 This automatically installs the core `practorflow` library as a dependency.

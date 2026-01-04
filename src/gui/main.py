@@ -61,7 +61,7 @@ def main():
         app.setStyle("Fusion")
         
         # Import here to ensure QApplication exists first
-        from chat_window import ChatWindow
+        from gui.chat_window import ChatWindow
         
         # Create and show main window
         window = ChatWindow(api_url=api_url)

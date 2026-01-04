@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from widgets.message_widget import MessageWidget
+from gui.widgets.message_widget import MessageWidget
 
 
 class ChatDisplay(QScrollArea):
