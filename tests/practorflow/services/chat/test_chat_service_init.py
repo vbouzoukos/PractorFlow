@@ -13,8 +13,8 @@ import pytest
 from practorflow.llm.tools.base_web_search import DuckDuckGoSearchTool
 from practorflow.services.chat.chat_service import ChatService
 
+from tests.practorflow.common.fixtures import mock_knowledge_store
 from tests.practorflow.services.chat.common_chat_service import (
-    mock_knowledge_store,
     mock_model_config,
     mock_model_pool,
     mock_session_store,

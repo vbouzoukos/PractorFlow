@@ -13,7 +13,6 @@ import pytest
 from practorflow.llm import ModelPool
 from practorflow.llm.base.session import Message, Session
 from practorflow.llm.base.session_store import SessionStore
-from practorflow.llm.knowledge.knowledge_store import KnowledgeStore
 from practorflow.llm.llm_config import LLMConfig
 from practorflow.llm.tools.base_web_search import DuckDuckGoSearchTool
 from practorflow.services.chat.chat_service import ChatService
@@ -40,26 +39,6 @@ def mock_model_config():
     config.temperature = 0.7
     config.top_p = 0.9
     return config
-
-
-@pytest.fixture
-def mock_knowledge_store():
-    """
-    Mock KnowledgeStore for testing.
-    
-    Includes common method mocks used across tests.
-    """
-    store = MagicMock(spec=KnowledgeStore)
-    store.add_document_from_stream = MagicMock(
-        return_value={
-            "id": "doc-123",
-            "filename": "test.txt",
-            "content": "test content",
-        }
-    )
-    store.delete_document = MagicMock()
-    store.search_scoped = MagicMock(return_value=[])
-    return store
 
 
 @pytest.fixture

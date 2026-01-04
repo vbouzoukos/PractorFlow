@@ -12,18 +12,17 @@ import pytest
 
 from practorflow.services.dto.chat_file import ChatFile
 
+from tests.practorflow.common.fixtures import mock_knowledge_store
 from tests.practorflow.services.chat.common_chat_service import (
     chat_service,
     create_mock_model_pool_context,
     create_mock_streaming_context,
-    mock_knowledge_store,
     mock_model_config,
     mock_model_pool,
     mock_session_store,
     mock_web_search_tool,
     sample_session,
 )
-
 
 @pytest.mark.asyncio
 async def test_chat_stream_new_session(

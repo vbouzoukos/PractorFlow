@@ -11,16 +11,15 @@ import pytest
 
 from practorflow.llm.base.session import Session
 
+from tests.practorflow.common.fixtures import mock_knowledge_store
 from tests.practorflow.services.chat.common_chat_service import (
     chat_service,
-    mock_knowledge_store,
     mock_model_config,
     mock_model_pool,
     mock_session_store,
     mock_web_search_tool,
     sample_session,
 )
-
 
 # ============================================================================
 # Test ChatService.start_chat
