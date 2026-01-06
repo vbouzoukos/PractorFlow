@@ -60,31 +60,39 @@ def get_logger(
     Returns:
         logging.Logger: Configured and reusable logger instance.
     """
-    if not stdout:
-    # Ensure logs directory always exists (only used if file logging is enabled)
-        os.makedirs("logs", exist_ok=True)
-
-    if logger_name in _logger_cache:
-        return _logger_cache[logger_name]
-
     log_level = _normalize_level(level)
 
-    logger = logging.getLogger(logger_name)
-    logger.setLevel(log_level)
-    logger.propagate = False
+    if logger_name in _logger_cache:
+        logger = _logger_cache[logger_name]
+    else:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(log_level)
+        logger.propagate = False
+        _logger_cache[logger_name] = logger
 
-    if not logger.handlers:
-        base_format = "%(asctime)s - %(levelname)s - %(message)s"
+    base_format = "%(asctime)s - %(levelname)s - %(message)s"
 
-        # Stdout handler (default)
-        if stdout:
+    # Stdout handler
+    if stdout:
+        has_stdout_handler = any(
+            isinstance(h, logging.StreamHandler) and h.stream is sys.stdout
+            for h in logger.handlers
+        )
+        if not has_stdout_handler:
             stream_handler = logging.StreamHandler(sys.stdout)
             stream_handler.setLevel(log_level)
             stream_handler.setFormatter(ColorFormatter(base_format))
             logger.addHandler(stream_handler)
 
-        # Optional file handler
-        if log_file:
+    # File handler
+    if log_file:
+        os.makedirs(os.path.dirname(log_file) or ".", exist_ok=True)
+
+        has_file_handler = any(
+            isinstance(h, RotatingFileHandler) and h.baseFilename == os.path.abspath(log_file)
+            for h in logger.handlers
+        )
+        if not has_file_handler:
             file_handler = RotatingFileHandler(
                 log_file,
                 mode="w",
@@ -96,5 +104,4 @@ def get_logger(
             file_handler.setFormatter(logging.Formatter(base_format))
             logger.addHandler(file_handler)
 
-    _logger_cache[logger_name] = logger
     return logger

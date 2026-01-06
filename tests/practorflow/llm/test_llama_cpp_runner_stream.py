@@ -35,6 +35,7 @@ class TestLlamaCppRunnerGenerateStream:
             chunks.append(chunk)
 
         text_chunks = [c for c in chunks if c.text]
+        # 4 content chunks + 1 part
         assert len(text_chunks) == 4
         assert text_chunks[0].text == "Hello"
         assert text_chunks[1].text == " "

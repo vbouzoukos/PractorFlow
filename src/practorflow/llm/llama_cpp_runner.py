@@ -1,7 +1,8 @@
 import asyncio
 import json
+import re
 import time
-from typing import Dict, Any, Optional, List, AsyncIterator
+from typing import Dict, Any, Optional, List, AsyncIterator, Tuple
 
 from practorflow.llm.base.llm_runner import LLMRunner, StreamChunk
 from practorflow.llm.pool.model_handle import ModelHandle
@@ -24,9 +25,61 @@ class LlamaCppRunner(LLMRunner):
             raise ValueError(f"Expected llama_cpp handle, got {handle.backend}")
 
         super().__init__(handle, knowledge_store)
+        self._thinking_model = self._chat_template_starts_with_think()
         logger.info(
             f"[LlamaCppRunner] Initialized with pooled model: {self.model_name}"
+            f" (thinking_model={self._thinking_model})"
         )
+
+    def _chat_template_starts_with_think(self) -> bool:
+        """
+        Detect if the chat template prepends <think> in the generation prompt.
+        
+        This checks the chat template for patterns that indicate the model
+        starts its response with a <think> tag (e.g., DeepSeek-R1, QwQ models).
+        
+        Returns:
+            True if the chat template prepends <think> to assistant responses.
+        """
+        try:
+            metadata = self.model.metadata if hasattr(self.model, 'metadata') else {}
+            chat_template = metadata.get("tokenizer.chat_template", "") if metadata else ""
+            
+            if not chat_template:
+                return False
+            
+            template_str = str(chat_template)
+            
+            # Pattern 1: Look for generation_prompt that ends with <think>
+            # Common pattern: {%- if add_generation_prompt %}...<think>{%- endif %}
+            gen_prompt_think_pattern = re.compile(
+                r'add_generation_prompt.*?<think>\s*\{%-?\s*endif\s*-?%\}',
+                re.IGNORECASE | re.DOTALL
+            )
+            if gen_prompt_think_pattern.search(template_str):
+                logger.info("[LlamaCppRunner] Detected thinking model (generation_prompt ends with <think>)")
+                return True
+            
+            # Pattern 2: Assistant prefix contains <think> within 50 chars
+            # e.g., assistant header like "<|assistant|>\n<think>"
+            for match in re.finditer(r'assistant', template_str, re.IGNORECASE):
+                start_pos = match.end()
+                end_pos = min(start_pos + 50, len(template_str))
+                snippet = template_str[start_pos:end_pos]
+                if '<think>' in snippet:
+                    logger.info("[LlamaCppRunner] Detected thinking model (assistant prefix contains <think>)")
+                    return True
+            
+            # Pattern 3: Explicit think tag at end of template
+            if template_str.rstrip().endswith('<think>'):
+                logger.info("[LlamaCppRunner] Detected thinking model (template ends with <think>)")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"[LlamaCppRunner] Error detecting thinking model: {e}")
+            return False
 
     def supports_function_calling(self) -> bool:
         """
@@ -55,6 +108,65 @@ class LlamaCppRunner(LLMRunner):
         except Exception as e:
             logger.warning(f"[LlamaCppRunner] Error detecting function calling support: {e}")
             return False
+
+    def _parse_thinking_response(self, text: str) -> Tuple[Optional[str], str]:
+        """
+        Parse response text to extract thinking/reasoning traces.
+        
+        Handles models like Nemotron 3 that use <think>...</think> tags
+        for chain-of-thought reasoning.
+        
+        Args:
+            text: Raw response text from the model
+            
+        Returns:
+            Tuple of (thinking_content, reply_content):
+                - thinking_content: Content inside <think> tags, or None if not present
+                - reply_content: Content outside <think> tags (the actual response)
+        """
+        if not text:
+            return None, ""
+        
+        # Pattern to match <think>...</think> blocks (handles multiline)
+        think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL)
+        
+        # Find all thinking blocks
+        think_matches = think_pattern.findall(text)
+        
+        if not think_matches:
+            # No thinking tags found, return original text as reply
+            return None, text.strip()
+        
+        # Combine all thinking content
+        thinking_content = "\n".join(match.strip() for match in think_matches if match.strip())
+        
+        # Remove thinking blocks from text to get the reply
+        reply_content = think_pattern.sub('', text).strip()
+        
+        # Handle empty thinking (e.g., <think></think>)
+        if not thinking_content:
+            thinking_content = None
+        
+        logger.debug(f"[LlamaCppRunner] Parsed thinking: {len(thinking_content) if thinking_content else 0} chars, reply: {len(reply_content)} chars")
+        
+        return thinking_content, reply_content
+
+    def _extract_content_from_response(self, response: Dict[str, Any]) -> str:
+        """
+        Extract text content from llama.cpp response.
+        
+        Args:
+            response: Response from create_chat_completion
+            
+        Returns:
+            Text content from the response
+        """
+        choices = response.get("choices", [])
+        if not choices:
+            return ""
+        
+        message = choices[0].get("message", {})
+        return message.get("content", "") or ""
 
     def _convert_tools_to_llama_format(self, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -229,7 +341,7 @@ class LlamaCppRunner(LLMRunner):
             tools: Optional list of tool definitions for native function calling
             
         Returns:
-            Dictionary with reply, latency_seconds, and optionally tool_calls
+            Dictionary with reply, latency_seconds, and optional thinking/tool_calls/context
         """
         start_time = time.time()
 
@@ -250,11 +362,10 @@ class LlamaCppRunner(LLMRunner):
         temp = self._get_temperature(temperature)
         tp = self._get_top_p(top_p)
 
-        logger.info("[LlamaCppRunner] Generating (async)...")
+        logger.info("[LlamaCppRunner] Generating (async non-streaming)...")
         if tools:
             logger.info(f"[LlamaCppRunner] With {len(tools)} native tools")
 
-        # Run blocking inference in thread pool
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None, self._generate_sync, chat_messages, temp, tp, tools
@@ -262,13 +373,43 @@ class LlamaCppRunner(LLMRunner):
 
         latency = time.time() - start_time
 
+        # Extract content and parse thinking
+        raw_content = self._extract_content_from_response(result)
+        
+        # For thinking models, handle case where response starts mid-thinking
+        # (template already added <think>, so content may start with thinking)
+        if self._thinking_model and '</think>' in raw_content:
+            # Split on </think> - content before is thinking, after is reply
+            parts = raw_content.split('</think>', 1)
+            thinking_part = parts[0].strip()
+            reply_part = parts[1].strip() if len(parts) > 1 else ""
+            # Remove leading <think> if present
+            if thinking_part.startswith('<think>'):
+                thinking_part = thinking_part[7:].strip()
+            thinking = thinking_part if thinking_part else None
+            reply = reply_part
+        elif self._thinking_model and '</think>' not in raw_content:
+            # No closing tag found - this is a normal model response
+            thinking = None
+            reply = raw_content.strip()
+            # Remove leading <think> if present (from template)
+            if reply.startswith('<think>'):
+                reply = reply[7:].strip()
+        else:
+            thinking, reply = self._parse_thinking_response(raw_content)
+
         # Extract tool calls if present
         tool_calls = self._extract_tool_calls_from_response(result)
-        
+
         response = {
-            "reply": result,
+            "reply": reply,
             "latency_seconds": latency,
         }
+
+        # Include thinking if present
+        if thinking:
+            response["thinking"] = thinking
+            logger.info(f"[LlamaCppRunner] Extracted thinking trace ({len(thinking)} chars)")
 
         if tool_calls:
             response["tool_calls"] = tool_calls
@@ -328,6 +469,9 @@ class LlamaCppRunner(LLMRunner):
         if tools:
             logger.info(f"[LlamaCppRunner] With {len(tools)} native tools")
 
+        # Detect if this is a thinking model (template prepends <think>)
+        is_thinking_model = self._thinking_model
+
         # Create async queue to bridge sync generator to async
         queue: asyncio.Queue[Optional[StreamChunk]] = asyncio.Queue()
 
@@ -354,6 +498,12 @@ class LlamaCppRunner(LLMRunner):
 
                 finish_reason = None
                 accumulated_tool_calls = []
+                accumulated_text = ""  # Track full response for thinking extraction
+                accumulated_thinking = ""  # Track thinking content separately
+                # For thinking models, start in thinking mode
+                in_thinking = is_thinking_model
+                saw_think_close = False  # Track if we ever saw </think>
+                pending_text = ""  # Buffer for handling partial tags
 
                 for chunk in self.model.create_chat_completion(**completion_kwargs):
                     choices = chunk.get("choices", [])
@@ -387,10 +537,82 @@ class LlamaCppRunner(LLMRunner):
                                     accumulated_tool_calls[idx]["function"]["arguments"] += tc["function"]["arguments"]
 
                     if content:
-                        # Put chunk in queue (blocking call from thread)
-                        asyncio.run_coroutine_threadsafe(
-                            queue.put(StreamChunk(text=content, finished=False)), loop
-                        ).result()
+                        # Accumulate full text for reference
+                        accumulated_text += content
+                        
+                        # Add to pending buffer for tag processing
+                        pending_text += content
+                        
+                        # Process pending text for <think> tags
+                        text_to_yield = ""
+                        while pending_text:
+                            if not in_thinking:
+                                # Look for <think> tag
+                                think_start = pending_text.find("<think>")
+                                if think_start == -1:
+                                    # No <think> tag, check if we might have partial tag at end
+                                    # Keep last 6 chars in case of partial "<think"
+                                    if len(pending_text) > 6 and pending_text[-6:].startswith("<"):
+                                        text_to_yield += pending_text[:-6]
+                                        pending_text = pending_text[-6:]
+                                    else:
+                                        text_to_yield += pending_text
+                                        pending_text = ""
+                                elif think_start > 0:
+                                    # Text before <think> tag
+                                    text_to_yield += pending_text[:think_start]
+                                    pending_text = pending_text[think_start:]
+                                else:
+                                    # Starts with <think>
+                                    in_thinking = True
+                                    pending_text = pending_text[7:]  # Skip "<think>"
+                            else:
+                                # Inside thinking block, look for </think>
+                                think_end = pending_text.find("</think>")
+                                if think_end == -1:
+                                    # No </think> yet, accumulate thinking content
+                                    # But keep buffer in case of partial "</think"
+                                    if len(pending_text) > 7 and pending_text[-7:].startswith("<"):
+                                        accumulated_thinking += pending_text[:-7]
+                                        pending_text = pending_text[-7:]
+                                    else:
+                                        accumulated_thinking += pending_text
+                                        pending_text = ""
+                                    break
+                                else:
+                                    # Found </think>, capture thinking content before it
+                                    accumulated_thinking += pending_text[:think_end]
+                                    saw_think_close = True
+                                    in_thinking = False
+                                    pending_text = pending_text[think_end + 8:]  # Skip "</think>"
+                        
+                        if text_to_yield:
+                            # Put chunk in queue (blocking call from thread)
+                            asyncio.run_coroutine_threadsafe(
+                                queue.put(StreamChunk(text=text_to_yield, finished=False)), loop
+                            ).result()
+
+                # Handle remaining pending_text at end of stream
+                if pending_text or accumulated_thinking:
+                    if in_thinking and not saw_think_close and is_thinking_model:
+                        # Thinking model but no </think> found - treat as normal model
+                        # Yield all accumulated content as regular text
+                        all_text = accumulated_thinking + pending_text
+                        if all_text:
+                            asyncio.run_coroutine_threadsafe(
+                                queue.put(StreamChunk(text=all_text, finished=False)), loop
+                            ).result()
+                        # Clear thinking since this is normal output
+                        accumulated_thinking = ""
+                    elif in_thinking and not is_thinking_model:
+                        # Non-thinking model with incomplete thinking block
+                        # Yield the pending content as regular text
+                        all_text = accumulated_thinking + pending_text
+                        if all_text:
+                            asyncio.run_coroutine_threadsafe(
+                                queue.put(StreamChunk(text=all_text, finished=False)), loop
+                            ).result()
+                        accumulated_thinking = ""
 
                 # Process accumulated tool calls
                 tool_calls_result = []
@@ -411,6 +633,20 @@ class LlamaCppRunner(LLMRunner):
                             "tool_call_id": tc.get("id", f"call_{len(tool_calls_result)}")
                         })
 
+                # Determine thinking result for final metadata
+                thinking_result = None
+                if saw_think_close and accumulated_thinking.strip():
+                    # We found proper thinking blocks
+                    thinking_result = accumulated_thinking.strip()
+                elif not is_thinking_model and accumulated_text:
+                    # Non-thinking model, parse from accumulated text
+                    thinking_result, _ = self._parse_thinking_response(accumulated_text)
+
+                # Build final search_metadata including thinking if present
+                final_metadata = context_metadata.copy() if context_metadata else {}
+                if thinking_result:
+                    final_metadata["thinking"] = thinking_result
+
                 # Put final chunk
                 latency = time.time() - start_time
                 final_chunk = StreamChunk(
@@ -419,7 +655,7 @@ class LlamaCppRunner(LLMRunner):
                     finish_reason=finish_reason,
                     latency_seconds=latency,
                     context_used=context,
-                    search_metadata=context_metadata,
+                    search_metadata=final_metadata if final_metadata else context_metadata,
                 )
                 
                 # Attach tool calls to final chunk if present
