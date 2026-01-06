@@ -37,7 +37,7 @@ class KnowledgeStore(ABC):
         Returns:
             Document info dict with id, filename, chunk counts, etc.
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def add_document_from_bytes(
@@ -59,7 +59,7 @@ class KnowledgeStore(ABC):
         Returns:
             Document info dict
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def add_document_from_base64(
@@ -81,7 +81,7 @@ class KnowledgeStore(ABC):
         Returns:
             Document info dict
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def add_document_from_stream(
@@ -105,7 +105,7 @@ class KnowledgeStore(ABC):
         Returns:
             Document info dict
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def search(
@@ -125,7 +125,7 @@ class KnowledgeStore(ABC):
         Returns:
             List of result dicts with id, text, similarity, metadata
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def search_scoped(
@@ -154,7 +154,7 @@ class KnowledgeStore(ABC):
             - metadata: Chunk metadata including document_id, filename
             - document_id: Source document ID
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def search_by_vector(
@@ -174,7 +174,7 @@ class KnowledgeStore(ABC):
         Returns:
             List of result dicts with id, text, similarity, metadata
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def get_document(self, document_id: str) -> Optional[Dict[str, Any]]:
@@ -187,7 +187,7 @@ class KnowledgeStore(ABC):
         Returns:
             Document dict or None if not found
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def get_chunk(self, chunk_id: str) -> Optional[Dict[str, Any]]:
@@ -200,7 +200,7 @@ class KnowledgeStore(ABC):
         Returns:
             Chunk dict or None if not found
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def get_context_chunk(self, parent_key: str) -> Optional[Dict[str, Any]]:
@@ -213,7 +213,7 @@ class KnowledgeStore(ABC):
         Returns:
             Context chunk dict or None if not found
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def delete_document(self, document_id: str) -> bool:
@@ -226,7 +226,7 @@ class KnowledgeStore(ABC):
         Returns:
             True if deleted, False if not found
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def list_documents(self) -> List[Dict[str, Any]]:
@@ -236,7 +236,7 @@ class KnowledgeStore(ABC):
         Returns:
             List of document summary dicts with id, filename, metadata
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def count_documents(self) -> int:
@@ -246,7 +246,7 @@ class KnowledgeStore(ABC):
         Returns:
             Document count
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def count_chunks(self) -> int:
@@ -256,7 +256,7 @@ class KnowledgeStore(ABC):
         Returns:
             Chunk count
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def get_stats(self) -> Dict[str, Any]:
@@ -266,11 +266,11 @@ class KnowledgeStore(ABC):
         Returns:
             Dict with counts, dimensions, storage info, etc.
         """
-        pass
+        pass # pragma: no cover
     
     @abstractmethod
     def clear(self) -> None:
         """
         Clear all documents and chunks from the store.
         """
-        pass
+        pass # pragma: no cover

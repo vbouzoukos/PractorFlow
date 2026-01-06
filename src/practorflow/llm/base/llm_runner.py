@@ -138,7 +138,7 @@ class LLMRunner(ABC):
         Returns:
             True if model supports native function calling, False otherwise
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     async def generate(
@@ -178,7 +178,7 @@ class LLMRunner(ABC):
             
         Note: Either messages or prompt must be provided, not both.
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     async def generate_stream(
@@ -223,11 +223,11 @@ class LLMRunner(ABC):
             
         Note: Either messages or prompt must be provided, not both.
         """
-        pass
+        pass  # pragma: no cover
         # This is needed to make it a valid async generator signature
         # Actual implementations will use 'yield'
-        if False:
-            yield StreamChunk(text="")
+        if False:  # pragma: no cover
+            yield StreamChunk(text="")  # pragma: no cover
 
     def get_chat_reply_structure(self) -> Optional[str]:
         """

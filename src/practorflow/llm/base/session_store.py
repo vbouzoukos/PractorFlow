@@ -7,19 +7,19 @@ class SessionStore(ABC):
     @abstractmethod
     def get(self, session_id: str) -> Session:
         """Get a session by ID. Implementation decides behavior if not found."""
-        pass
+        pass  # pragma: no cover
     
     @abstractmethod
     def save(self, session: Session):
         """Save a session. Implementation handles persistence."""
-        pass
+        pass  # pragma: no cover
     
     @abstractmethod
     def delete(self, session_id: str):
         """Delete a session. Implementation handles cleanup."""
-        pass
+        pass  # pragma: no cover
     
     @abstractmethod
     def exists(self, session_id: str) -> bool:
         """Check if a session exists."""
-        pass
+        pass  # pragma: no cover
