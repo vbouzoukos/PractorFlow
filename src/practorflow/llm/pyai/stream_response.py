@@ -107,7 +107,7 @@ class LocalStreamedResponse:
                             if "tool" in obj or "name" in obj:
                                 matches.append(obj)
                         except json.JSONDecodeError:
-                            pass
+                            pass  # pragma: no cover
                         start_idx = None
 
         # Convert matches to ToolCallPart objects

@@ -61,6 +61,14 @@ class SessionHistory:
 
 
 @dataclass
+class DocumentInfo:
+    """Document information for a session document."""
+    id: str
+    filename: str
+    file_type: str = "unknown"
+
+
+@dataclass
 class AuthStatus:
     """Authentication status information."""
     provider: str
@@ -80,6 +88,8 @@ class ChatClient:
     - Deleting sessions
     - Listing all sessions
     - Retrieving session history
+    - Listing session documents
+    - Deleting session documents
     """
     
     def __init__(
@@ -121,7 +131,7 @@ class ChatClient:
         Get authentication status from the server.
         
         Returns:
-            AuthStatus with provider and mode information.
+            AuthStatus object with provider info.
         
         Raises:
             httpx.HTTPError: If the request fails.
@@ -140,51 +150,40 @@ class ChatClient:
             )
             return self._auth_status
     
-    def authenticate(
-        self,
-        app_secret: Optional[str] = None,
-        username: Optional[str] = None,
-        identity_token: Optional[str] = None,
-    ) -> str:
+    def authenticate(self, app_secret: Optional[str] = None) -> str:
         """
         Authenticate and obtain a JWT token.
         
         Args:
-            app_secret: App secret for local authentication.
-            username: Optional username for token subject.
-            identity_token: Identity token for OIDC authentication.
+            app_secret: Optional app secret (uses instance default if not provided).
         
         Returns:
-            JWT access token.
+            Access token string.
         
         Raises:
             httpx.HTTPError: If authentication fails.
         """
         url = f"{self._base_url}/auth/token"
         
-        # Use provided credentials or fall back to instance defaults
-        secret = app_secret if app_secret is not None else self._app_secret
-        user = username if username is not None else self._username
-        
+        secret = app_secret or self._app_secret
         payload = {}
+        
         if secret:
             payload["app_secret"] = secret
-        if user:
-            payload["username"] = user
-        if identity_token:
-            payload["identity_token"] = identity_token
+        if self._username:
+            payload["username"] = self._username
         
         with httpx.Client(timeout=self._timeout) as client:
             response = client.post(url, json=payload)
             response.raise_for_status()
             
             data = response.json()
-            self._access_token = data.get("access_token")
+            self._access_token = data["access_token"]
             return self._access_token
     
     def ensure_authenticated(self) -> None:
         """
-        Ensure the client has a valid authentication token.
+        Ensure we have a valid authentication token.
         
         In open mode, obtains a token without credentials.
         In secure mode, uses configured app_secret.
@@ -339,6 +338,71 @@ class ChatClient:
                 updated_at=data.get("updated_at", ""),
             )
     
+    def list_session_documents(self, session_id: str) -> Optional[List[DocumentInfo]]:
+        """
+        List all documents in a session.
+        
+        Args:
+            session_id: Session ID to retrieve documents for.
+        
+        Returns:
+            List of DocumentInfo objects, or None if session not found.
+        
+        Raises:
+            httpx.HTTPError: If the request fails (except 404).
+        """
+        self.ensure_authenticated()
+        
+        url = f"{self._base_url}/chat/{session_id}/documents"
+        
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.get(url, headers=self._get_auth_headers())
+            
+            if response.status_code == 404:
+                return None
+            
+            response.raise_for_status()
+            
+            data = response.json()
+            return [
+                DocumentInfo(
+                    id=doc.get("id", ""),
+                    filename=doc.get("filename", ""),
+                    file_type=doc.get("file_type", "unknown"),
+                )
+                for doc in data.get("documents", [])
+            ]
+    
+    def delete_session_document(self, session_id: str, document_id: str) -> Optional[bool]:
+        """
+        Delete a document from a session.
+        
+        Args:
+            session_id: Session ID containing the document.
+            document_id: Document ID to delete.
+        
+        Returns:
+            True if deleted successfully.
+            None if session or document not found.
+        
+        Raises:
+            httpx.HTTPError: If the request fails (except 404).
+        """
+        self.ensure_authenticated()
+        
+        url = f"{self._base_url}/chat/{session_id}/documents/{document_id}"
+        
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.delete(url, headers=self._get_auth_headers())
+            
+            if response.status_code == 404:
+                return None
+            
+            response.raise_for_status()
+            
+            data = response.json()
+            return data.get("deleted", False)
+    
     def send_message_stream(
         self,
         session_id: str,
@@ -363,67 +427,46 @@ class ChatClient:
         
         url = f"{self._base_url}/chat/{session_id}"
         
-        data = {"message": message}
+        # Build multipart form data
         files = []
-        file_handles = []
+        if file_paths:
+            for path in file_paths:
+                files.append(("files", open(path, "rb")))
         
         try:
-            if file_paths:
-                for path in file_paths:
-                    f = open(path, "rb")
-                    file_handles.append(f)
-                    filename = path.split("/")[-1].split("\\")[-1]
-                    files.append(("files", (filename, f)))
-            
             with httpx.Client(timeout=None) as client:
                 with connect_sse(
                     client,
                     "POST",
                     url,
-                    data=data,
+                    data={"message": message},
                     files=files if files else None,
                     headers=self._get_auth_headers(),
                 ) as event_source:
-                    for sse in event_source.iter_sse():
-                        if sse.data == "[DONE]":
+                    for event in event_source.iter_sse():
+                        if event.data == "[DONE]":
                             break
                         
                         try:
-                            chunk_data = json.loads(sse.data)
+                            data = json.loads(event.data)
                             
-                            if "error" in chunk_data:
+                            if "error" in data:
                                 yield StreamChunk(
                                     text="",
                                     finished=True,
-                                    error=chunk_data["error"]
+                                    error=data.get("error"),
                                 )
                                 break
                             
                             yield StreamChunk(
-                                text=chunk_data.get("text", ""),
-                                finished=chunk_data.get("finished", False),
-                                finish_reason=chunk_data.get("finish_reason"),
-                                usage=chunk_data.get("usage")
+                                text=data.get("text", ""),
+                                finished=data.get("finished", False),
+                                finish_reason=data.get("finish_reason"),
+                                usage=data.get("usage"),
                             )
                         except json.JSONDecodeError:
                             continue
-        
         finally:
-            for f in file_handles:
+            # Close any open file handles
+            for _, f in files:
                 f.close()
-    
-    def health_check(self) -> bool:
-        """
-        Check if the API is healthy.
-        
-        Returns:
-            True if API is reachable and healthy.
-        """
-        url = f"{self._base_url}/health"
-        
-        try:
-            with httpx.Client(timeout=5.0) as client:
-                response = client.get(url)
-                return response.status_code == 200
-        except httpx.HTTPError:
-            return False

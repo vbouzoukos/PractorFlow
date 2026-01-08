@@ -22,6 +22,7 @@ Environment Variables:
     OIDC_AUDIENCE: Expected audience claim for OIDC tokens
     OIDC_CLIENT_ID: OIDC client identifier
     OIDC_CLIENT_SECRET: OIDC client secret
+    CLEANUP_INTERVAL_MINUTES: Interval for orphan document cleanup (default: 60, 0 to disable)
 """
 
 import os
@@ -103,6 +104,18 @@ class AuthConfig:
 
 
 @dataclass
+class CleanupConfig:
+    """Cleanup job configuration settings."""
+
+    interval_minutes: int = 60
+
+    @property
+    def is_enabled(self) -> bool:
+        """Check if cleanup job is enabled."""
+        return self.interval_minutes > 0
+
+
+@dataclass
 class APIConfig:
     """
     API configuration container.
@@ -111,6 +124,7 @@ class APIConfig:
     """
 
     auth: AuthConfig = field(default_factory=AuthConfig)
+    cleanup: CleanupConfig = field(default_factory=CleanupConfig)
 
 
 def _load_auth_config() -> AuthConfig:
@@ -137,6 +151,18 @@ def _load_auth_config() -> AuthConfig:
         app_secret=os.getenv("APP_SECRET", ""),
         jwt=jwt_config,
         oidc=oidc_config,
+    )
+
+
+def _load_cleanup_config() -> CleanupConfig:
+    """
+    Load cleanup configuration from environment variables.
+
+    Returns:
+        CleanupConfig instance populated from environment.
+    """
+    return CleanupConfig(
+        interval_minutes=int(os.getenv("CLEANUP_INTERVAL_MINUTES", 0)),
     )
 
 
@@ -168,6 +194,7 @@ def load_api_configuration(config_path: str = "../config/api") -> None:
     # Create configuration instance
     apiConfiguration = APIConfig(
         auth=_load_auth_config(),
+        cleanup=_load_cleanup_config(),
     )
 
 

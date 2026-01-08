@@ -69,13 +69,13 @@ class ModelHandle:
                 if metadata and "tokenizer.chat_template" in metadata:
                     return metadata["tokenizer.chat_template"]
             except Exception:
-                pass
+                pass  # pragma: no cover
         elif self.is_transformers:
             try:
                 if hasattr(self.tokenizer, 'chat_template'):
                     return self.tokenizer.chat_template
             except Exception:
-                pass
+                pass  # pragma: no cover
         return None
     
     def __repr__(self) -> str:

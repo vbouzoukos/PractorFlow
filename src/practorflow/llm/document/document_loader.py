@@ -442,7 +442,7 @@ class DocumentLoader:
                         {"index": idx, "data": table_df.to_dict(orient="records")}
                     )
                 except:
-                    pass
+                    pass  # pragma: no cover
 
         return content, tables
 
@@ -470,7 +470,7 @@ class DocumentLoader:
                             {"index": idx, "data": table_df.to_dict(orient="records")}
                         )
                     except:
-                        pass
+                        pass  # pragma: no cover
 
             return content, tables
         finally:

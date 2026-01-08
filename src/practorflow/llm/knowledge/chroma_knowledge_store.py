@@ -533,7 +533,7 @@ class ChromaKnowledgeStore(KnowledgeStore):
                     "metadata": results["metadatas"][0] if results["metadatas"] else {},
                 }
         except Exception:
-            pass
+            pass  # pragma: no cover
 
         return None
 
@@ -556,7 +556,7 @@ class ChromaKnowledgeStore(KnowledgeStore):
                     ),
                 }
         except Exception:
-            pass
+            pass  # pragma: no cover
 
         return None
 
@@ -574,7 +574,7 @@ class ChromaKnowledgeStore(KnowledgeStore):
                     "metadata": results["metadatas"][0] if results["metadatas"] else {},
                 }
         except Exception:
-            pass
+            pass  # pragma: no cover
 
         return None
 

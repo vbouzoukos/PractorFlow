@@ -40,7 +40,7 @@ class AuthProvider(ABC):
         Returns:
             Provider name string (e.g., "local", "oidc").
         """
-        pass
+        pass  # pragma: no cover
     
     @abstractmethod
     async def validate(
@@ -58,7 +58,7 @@ class AuthProvider(ABC):
         Returns:
             AuthResult with success status and user information or error details.
         """
-        pass
+        pass  # pragma: no cover
     
     @property
     @abstractmethod
@@ -69,4 +69,4 @@ class AuthProvider(ABC):
         Returns:
             True if credentials must be validated, False for open mode.
         """
-        pass
+        pass  # pragma: no cover

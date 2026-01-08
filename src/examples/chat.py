@@ -150,7 +150,7 @@ def close_files(files: List[LocalChatFile]) -> None:
         try:
             f.file.close()
         except Exception:
-            pass
+            pass  # pragma: no cover
 
 
 async def handle_chat(

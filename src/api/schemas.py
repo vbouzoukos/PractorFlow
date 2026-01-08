@@ -53,6 +53,23 @@ class DocumentInfo(BaseModel):
     file_type: str = Field(..., description="File type/extension")
 
 
+class DocumentListResponse(BaseModel):
+    """Response model for listing session documents."""
+    
+    session_id: str = Field(..., description="Session identifier")
+    documents: List[DocumentInfo] = Field(..., description="List of documents in session")
+    count: int = Field(..., description="Total number of documents")
+
+
+class DocumentDeleteResponse(BaseModel):
+    """Response model for document deletion."""
+    
+    session_id: str = Field(..., description="Session identifier")
+    document_id: str = Field(..., description="Deleted document identifier")
+    deleted: bool = Field(..., description="Whether deletion was successful")
+    message: str = Field(..., description="Status message")
+
+
 class DeleteResponse(BaseModel):
     """Response model for session deletion."""
     

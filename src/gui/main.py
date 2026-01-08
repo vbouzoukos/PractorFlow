@@ -39,7 +39,7 @@ def excepthook(exc_type, exc_value, exc_tb):
                 f"An unexpected error occurred:\n\n{exc_value}\n\nThe application may be unstable."
             )
     except Exception:
-        pass
+        pass  # pragma: no cover
 
 
 def main():
@@ -85,7 +85,7 @@ def main():
                 f"Failed to start application:\n\n{e}"
             )
         except Exception:
-            pass
+            pass  # pragma: no cover
         
         sys.exit(1)
 

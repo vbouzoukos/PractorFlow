@@ -6,6 +6,7 @@ Provides the primary chat interface with:
 - Message input with file attachment
 - Session management (async)
 - Collapsible history panel for past sessions
+- Foldable documents panel for session documents
 """
 
 from PySide6.QtWidgets import (
@@ -17,12 +18,15 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QStatusBar,
+    QSplitter,
 )
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QSize
+from PySide6.QtGui import QIcon
 
 from gui.widgets.chat_display import ChatDisplay
 from gui.widgets.input_widget import InputWidget
 from gui.widgets.history_panel import HistoryPanel
+from gui.widgets.documents_panel import DocumentsPanel
 from gui.api.chat_client import ChatClient, SessionHistory
 from gui.workers.stream_worker import StreamWorker
 from gui.workers.session_worker import StartSessionWorker, DeleteSessionWorker
@@ -85,6 +89,24 @@ class ChatWindow(QMainWindow):
         self._session_label = QLabel("Session: Connecting...")
         header_layout.addWidget(self._session_label)
         
+        # Documents button (icon)
+        self._documents_btn = QPushButton()
+        self._documents_btn.setFixedSize(28, 28)
+        self._documents_btn.setToolTip("Show session documents")
+        self._documents_btn.setCursor(Qt.PointingHandCursor)
+        
+        # Try to use document icon, fallback to emoji
+        doc_icon = QIcon.fromTheme("folder-documents")
+        if doc_icon.isNull():
+            doc_icon = QIcon.fromTheme("document-multiple")
+        if doc_icon.isNull():
+            self._documents_btn.setText("📄")
+        else:
+            self._documents_btn.setIcon(doc_icon)
+            self._documents_btn.setIconSize(QSize(18, 18))
+        
+        header_layout.addWidget(self._documents_btn)
+        
         self._reconnect_btn = QPushButton("Reconnect")
         self._reconnect_btn.setToolTip("Reconnect to server")
         self._reconnect_btn.hide()
@@ -98,14 +120,34 @@ class ChatWindow(QMainWindow):
         
         chat_layout.addLayout(header_layout)
         
-        # Chat display area
+        # Documents panel (foldable, below header)
+        self._documents_panel = DocumentsPanel(self._client)
+        chat_layout.addWidget(self._documents_panel)
+        
+        # Create a vertical splitter so the user can resize widgets vertically
+        splitter = QSplitter(Qt.Vertical)
+
+        # Create the chat message display (top area)
         self._chat_display = ChatDisplay()
-        chat_layout.addWidget(self._chat_display, stretch=1)
-        
-        # Input area
+
+        # Create the input widget (bottom area)
         self._input_widget = InputWidget()
-        chat_layout.addWidget(self._input_widget)
-        
+
+        # Add chat display as the first (top) splitter pane
+        splitter.addWidget(self._chat_display)
+
+        # Add input widget as the second (bottom) splitter pane
+        splitter.addWidget(self._input_widget)
+
+        # Set initial splitter sizes:
+        # - first value = chat area (larger)
+        # - second value = input area (~100px relative size)
+        # These values are relative weights, not exact pixels
+        splitter.setSizes([500, 100])
+
+        # Add the splitter to the chat layout so it becomes visible
+        chat_layout.addWidget(splitter)
+
         main_layout.addWidget(chat_container, stretch=1)
         
         # Status bar
@@ -121,10 +163,14 @@ class ChatWindow(QMainWindow):
         self._new_session_btn.clicked.connect(self._on_new_session_clicked)
         self._input_widget.message_submitted.connect(self._on_message_submitted)
         self._reconnect_btn.clicked.connect(self._on_reconnect_clicked)
+        self._documents_btn.clicked.connect(self._on_documents_btn_clicked)
         
         # History panel signals
         self._history_panel.session_selected.connect(self._on_session_selected)
         self._history_panel.session_deleted.connect(self._on_session_deleted_from_history)
+        
+        # Documents panel signals
+        self._documents_panel.document_deleted.connect(self._on_document_deleted)
     
     def _start_new_session(self):
         """Start a new chat session asynchronously."""
@@ -136,6 +182,10 @@ class ChatWindow(QMainWindow):
             
             # Clear chat display
             self._chat_display.clear_messages()
+            
+            # Collapse documents panel and clear session
+            self._documents_panel.collapse()
+            self._documents_panel.set_session(None)
             
             # Start worker with parent to prevent premature garbage collection
             self._session_worker = StartSessionWorker(self._client, parent=self)
@@ -171,6 +221,9 @@ class ChatWindow(QMainWindow):
             
             # Update history panel current session
             self._history_panel.set_current_session(session_id)
+            
+            # Update documents panel with new session
+            self._documents_panel.set_session(session_id)
             
             # Refresh history to show the new session
             self._history_panel.refresh_sessions()
@@ -250,6 +303,22 @@ class ChatWindow(QMainWindow):
         except Exception:
             pass
     
+    @Slot()
+    def _on_documents_btn_clicked(self):
+        """Handle documents button click - toggle documents panel."""
+        try:
+            self._documents_panel.toggle_expanded()
+        except Exception:
+            pass
+    
+    @Slot(str)
+    def _on_document_deleted(self, document_id: str):
+        """Handle document deleted from documents panel."""
+        try:
+            self._status_bar.showMessage(f"Document deleted", 3000)
+        except Exception:
+            pass
+    
     @Slot(object)
     def _on_session_selected(self, history: SessionHistory):
         """Handle session selected from history panel."""
@@ -269,6 +338,12 @@ class ChatWindow(QMainWindow):
                     self._chat_display.finalize_last_message()
                 elif msg.role == "system":
                     self._chat_display.add_system_message(msg.content)
+            
+            # Update documents panel with selected session
+            self._documents_panel.set_session(history.session_id)
+            
+            # Collapse documents panel when switching sessions
+            self._documents_panel.collapse()
             
             # Enable input
             self._input_widget.set_enabled(True)
@@ -381,6 +456,10 @@ class ChatWindow(QMainWindow):
             
             # Refresh history to update message counts
             self._history_panel.refresh_sessions()
+            
+            # Refresh documents panel if expanded (new files may have been added)
+            if self._documents_panel.is_expanded():
+                self._documents_panel.refresh_documents()
         except Exception:
             pass
     
@@ -422,6 +501,9 @@ class ChatWindow(QMainWindow):
             
             # Shutdown history panel workers
             self._history_panel.shutdown()
+            
+            # Shutdown documents panel workers
+            self._documents_panel.shutdown()
             
         except Exception:
             pass

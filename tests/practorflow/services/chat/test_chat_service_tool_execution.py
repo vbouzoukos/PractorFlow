@@ -58,8 +58,8 @@ async def test_search_knowledge_returns_formatted_results(
 ):
     """Test search_knowledge returns formatted results from knowledge store."""
     mock_knowledge_store.search_scoped.return_value = [
-        {"text": "First result text", "metadata": {"filename": "doc1.txt"}},
-        {"text": "Second result text", "metadata": {"filename": "doc2.pdf"}},
+        {"text": "First result text", "metadata": {"filename": "doc1.txt"}, "similarity": 0.95},
+        {"text": "Second result text", "metadata": {"filename": "doc2.pdf"}, "similarity": 0.85},
     ]
 
     tools = _capture_tools(chat_service)
@@ -71,10 +71,12 @@ async def test_search_knowledge_returns_formatted_results(
 
     result = await tools["search_knowledge"](ctx, "test query")
 
-    assert "[Source: doc1.txt]" in result
+    assert "--- Section 1 (Source: doc1.txt, Relevance: 0.95) ---" in result
     assert "First result text" in result
-    assert "[Source: doc2.pdf]" in result
+    assert "--- Section 2 (Source: doc2.pdf, Relevance: 0.85) ---" in result
     assert "Second result text" in result
+    assert 'Search results for: "test query"' in result
+    assert "Found 2 relevant section(s):" in result
     mock_knowledge_store.search_scoped.assert_called_once_with(
         query="test query",
         top_k=5,
@@ -116,7 +118,7 @@ async def test_search_knowledge_missing_metadata(
 
     result = await tools["search_knowledge"](ctx, "query")
 
-    assert "[Source: Unknown]" in result
+    assert "(Source: unknown, Relevance: 0.00)" in result
     assert "Result without metadata" in result
     assert "Result with empty metadata" in result
 
@@ -160,16 +162,40 @@ async def test_search_web_returns_results(
     mock_knowledge_store,
     mock_web_search_tool,
 ):
-    """Test search_web returns results from web search tool."""
-    mock_web_search_tool.search.return_value = "Web search results for query"
+    """Test search_web returns formatted results from web search tool."""
+    mock_web_search_tool.search.return_value = [
+        {"title": "Result 1", "snippet": "Snippet 1", "url": "https://example.com/1"},
+        {"title": "Result 2", "snippet": "Snippet 2", "url": "https://example.com/2"},
+    ]
 
     tools = _capture_tools(chat_service)
     ctx = _create_mock_run_context(mock_knowledge_store, mock_web_search_tool)
 
     result = await tools["search_web"](ctx, "latest news")
 
-    assert result == "Web search results for query"
+    assert 'Web search results for: "latest news"' in result
+    assert "1. Result 1" in result
+    assert "Snippet 1" in result
+    assert "https://example.com/1" in result
+    assert "2. Result 2" in result
     mock_web_search_tool.search.assert_called_once_with("latest news")
+
+
+@pytest.mark.asyncio
+async def test_search_web_no_results(
+    chat_service,
+    mock_knowledge_store,
+    mock_web_search_tool,
+):
+    """Test search_web returns message when no results found."""
+    mock_web_search_tool.search.return_value = []
+
+    tools = _capture_tools(chat_service)
+    ctx = _create_mock_run_context(mock_knowledge_store, mock_web_search_tool)
+
+    result = await tools["search_web"](ctx, "obscure query")
+
+    assert "No web results found" in result
 
 
 @pytest.mark.asyncio
@@ -202,3 +228,24 @@ async def test_search_web_handles_exception(
 
     assert "Web search failed" in result
     assert "Network error" in result
+
+
+@pytest.mark.asyncio
+async def test_search_web_limits_results_to_five(
+    chat_service,
+    mock_knowledge_store,
+    mock_web_search_tool,
+):
+    """Test search_web limits results to 5 items."""
+    mock_web_search_tool.search.return_value = [
+        {"title": f"Result {i}", "snippet": f"Snippet {i}", "url": f"https://example.com/{i}"}
+        for i in range(10)
+    ]
+
+    tools = _capture_tools(chat_service)
+    ctx = _create_mock_run_context(mock_knowledge_store, mock_web_search_tool)
+
+    result = await tools["search_web"](ctx, "many results")
+
+    assert "5. Result 4" in result
+    assert "6. Result 5" not in result

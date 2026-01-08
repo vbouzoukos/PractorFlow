@@ -23,18 +23,18 @@ class BaseEmbeddingModel(ABC):
     @abstractmethod
     def embed(self, text: Union[str, List[str]]) -> np.ndarray:
         """Generate embeddings for text."""
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     def embed_batch(self, texts: List[str], batch_size: int = 32) -> np.ndarray:
         """Generate embeddings for batches of text."""
-        pass
+        pass  # pragma: no cover
 
     @property
     @abstractmethod
     def embedding_dimension(self) -> int:
         """Get the dimension of embeddings."""
-        pass
+        pass  # pragma: no cover
 
 
 class SentenceTransformerEmbeddingModel(BaseEmbeddingModel):

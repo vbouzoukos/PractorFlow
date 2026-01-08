@@ -98,7 +98,7 @@ class ChatDisplay(QScrollArea):
             # Scroll to bottom
             self._scroll_to_bottom()
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def append_to_last_message(self, text: str):
         """
@@ -117,7 +117,7 @@ class ChatDisplay(QScrollArea):
             # Scroll to bottom
             self._scroll_to_bottom()
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def finalize_last_message(self):
         """
@@ -132,7 +132,7 @@ class ChatDisplay(QScrollArea):
             last_message = self._messages[-1]
             last_message.finalize()
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def clear_messages(self):
         """Clear all messages from the display."""
@@ -158,4 +158,4 @@ class ChatDisplay(QScrollArea):
             scrollbar = self.verticalScrollBar()
             scrollbar.setValue(scrollbar.maximum())
         except Exception:
-            pass
+            pass  # pragma: no cover

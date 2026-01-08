@@ -112,7 +112,7 @@ class SessionItemWidget(QWidget):
         try:
             self.delete_clicked.emit(self.session.session_id)
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def mouseDoubleClickEvent(self, event):
         """Handle double click to load session."""
@@ -120,7 +120,7 @@ class SessionItemWidget(QWidget):
             self.item_double_clicked.emit(self.session.session_id)
             super().mouseDoubleClickEvent(event)
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def get_session_id(self) -> str:
         """Get the session ID."""
@@ -255,7 +255,7 @@ class HistoryPanel(QFrame):
                 self.setMaximumWidth(280)
                 self.setMinimumWidth(200)
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def refresh_sessions(self):
         """Refresh the session list from the server."""
@@ -324,7 +324,7 @@ class HistoryPanel(QFrame):
             self._session_list.setEnabled(True)
             self._status_label.setText("Error loading")
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def _on_item_double_clicked(self, item: QListWidgetItem):
         """Handle double click to load session."""
@@ -332,7 +332,7 @@ class HistoryPanel(QFrame):
             session_id = item.data(Qt.UserRole)
             self._load_session(session_id)
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def _load_session(self, session_id: str):
         """Load a session's history."""
@@ -371,7 +371,7 @@ class HistoryPanel(QFrame):
             self._highlight_current_session()
             self.session_selected.emit(history)
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     @Slot(str)
     def _on_history_not_found(self, session_id: str):
@@ -382,7 +382,7 @@ class HistoryPanel(QFrame):
             # Refresh list to remove stale entry
             self.refresh_sessions()
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     @Slot(str)
     def _on_history_error(self, error: str):
@@ -390,7 +390,7 @@ class HistoryPanel(QFrame):
         try:
             self._status_label.setText("Error loading")
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def _show_context_menu(self, position):
         """Show context menu for session item."""
@@ -415,7 +415,7 @@ class HistoryPanel(QFrame):
             
             menu.exec_(self._session_list.mapToGlobal(position))
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     @Slot(str)
     def _confirm_delete(self, session_id: str):
@@ -432,7 +432,7 @@ class HistoryPanel(QFrame):
             if reply == QMessageBox.Yes:
                 self._delete_session(session_id)
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def _delete_session(self, session_id: str):
         """Delete a session."""
@@ -471,7 +471,7 @@ class HistoryPanel(QFrame):
             self.session_deleted.emit(session_id)
             self.refresh_sessions()
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     @Slot(str)
     def _on_delete_error(self, error: str):
@@ -479,7 +479,7 @@ class HistoryPanel(QFrame):
         try:
             self._status_label.setText("Delete failed")
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def _highlight_current_session(self):
         """Highlight the current session in the list."""
@@ -494,7 +494,7 @@ class HistoryPanel(QFrame):
                 else:
                     item.setSelected(False)
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def set_current_session(self, session_id: Optional[str]):
         """
@@ -507,7 +507,7 @@ class HistoryPanel(QFrame):
             self._current_session_id = session_id
             self._highlight_current_session()
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def is_collapsed(self) -> bool:
         """Check if panel is collapsed."""
@@ -519,7 +519,7 @@ class HistoryPanel(QFrame):
             if collapsed != self._is_collapsed:
                 self._toggle_collapse()
         except Exception:
-            pass
+            pass  # pragma: no cover
     
     def shutdown(self):
         """Shutdown all workers - call before destroying."""

@@ -7,6 +7,8 @@ Provides endpoints for:
 - Deleting chat sessions
 - Listing all sessions
 - Retrieving session history
+- Listing session documents
+- Deleting session documents
 """
 
 import json
@@ -19,10 +21,13 @@ from api.dependencies import get_chat_service, get_session_history
 from api.auth import get_current_user, UserContext
 from api.schemas import (
     DeleteResponse,
+    DocumentDeleteResponse,
+    DocumentInfo,
+    DocumentListResponse,
+    MessageResponse,
+    SessionHistoryResponse,
     SessionResponse,
     SessionSummary,
-    SessionHistoryResponse,
-    MessageResponse,
     StreamChunkData,
 )
 from practorflow.services.chat import ChatService
@@ -98,7 +103,6 @@ async def chat_message(
     """
     logger.info(f"[Chat API] Message received for session: {session_id} from user: {current_user.user_id}")
 
-    # Log file info if present
     if files:
         filenames = [f.filename for f in files]
         logger.info(f"[Chat API] Files uploaded: {filenames}")
@@ -119,12 +123,10 @@ async def chat_message(
                     usage=chunk.usage,
                 )
 
-                # Format as SSE event
                 data = json.dumps(chunk_data.model_dump())
                 yield f"data: {data}\n\n"
 
                 if chunk.finished:
-                    # Send done event
                     yield "data: [DONE]\n\n"
 
         except ValueError as e:
@@ -214,9 +216,8 @@ async def list_sessions(
     Returns:
         List of SessionSummary objects sorted by updated_at descending.
     """
-    # If no user filter provided, default to current user's sessions
     filter_user = user if user is not None else current_user.user_id
-    
+
     logger.info(f"[Chat API] Listing sessions for user: {filter_user} (requested by: {current_user.user_id})")
 
     sessions = session_history.list_sessions(user=filter_user)
@@ -294,4 +295,108 @@ async def get_history(
         document_count=len(session.documents),
         created_at=session.created_at.isoformat(),
         updated_at=session.updated_at.isoformat(),
+    )
+
+
+@router.get(
+    "/{session_id}/documents",
+    response_model=DocumentListResponse,
+    summary="List session documents",
+    description="Returns a list of all documents in the session.",
+)
+async def list_session_documents(
+    session_id: str,
+    current_user: UserContext = Depends(get_current_user),
+    session_history: SessionHistory = Depends(get_session_history),
+) -> DocumentListResponse:
+    """
+    List all documents in a session.
+
+    Args:
+        session_id: Session identifier.
+        current_user: Authenticated user context.
+        session_history: Session history instance.
+
+    Returns:
+        DocumentListResponse with list of documents.
+
+    Raises:
+        HTTPException: If session not found.
+    """
+    logger.info(f"[Chat API] Listing documents for session: {session_id} by user: {current_user.user_id}")
+
+    session = session_history.get_history(session_id)
+
+    if session is None:
+        logger.warning(f"[Chat API] Session not found: {session_id}")
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+
+    documents = [
+        DocumentInfo(
+            id=doc["id"],
+            filename=doc["filename"],
+            file_type=doc.get("file_type", "unknown"),
+        )
+        for doc in session.documents
+    ]
+
+    logger.info(f"[Chat API] Found {len(documents)} documents for session: {session_id}")
+
+    return DocumentListResponse(
+        session_id=session_id,
+        documents=documents,
+        count=len(documents),
+    )
+
+
+@router.delete(
+    "/{session_id}/documents/{document_id}",
+    response_model=DocumentDeleteResponse,
+    summary="Delete a session document",
+    description="Deletes a document from the session and knowledge store.",
+)
+async def delete_session_document(
+    session_id: str,
+    document_id: str,
+    current_user: UserContext = Depends(get_current_user),
+    chat_service: ChatService = Depends(get_chat_service),
+) -> DocumentDeleteResponse:
+    """
+    Delete a document from a session.
+
+    Removes the document from both the session and the knowledge store.
+
+    Args:
+        session_id: Session identifier.
+        document_id: Document identifier to delete.
+        current_user: Authenticated user context.
+        chat_service: Chat service instance.
+
+    Returns:
+        DocumentDeleteResponse with deletion status.
+
+    Raises:
+        HTTPException: If session or document not found.
+    """
+    logger.info(
+        f"[Chat API] Deleting document: {document_id} from session: {session_id} by user: {current_user.user_id}"
+    )
+
+    deleted = await chat_service.delete_session_document(session_id, document_id)
+
+    if deleted is None:
+        logger.warning(f"[Chat API] Session not found: {session_id}")
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+
+    if not deleted:
+        logger.warning(f"[Chat API] Document not found: {document_id}")
+        raise HTTPException(status_code=404, detail=f"Document not found: {document_id}")
+
+    logger.info(f"[Chat API] Document deleted: {document_id} from session: {session_id}")
+
+    return DocumentDeleteResponse(
+        session_id=session_id,
+        document_id=document_id,
+        deleted=True,
+        message="Document deleted successfully",
     )

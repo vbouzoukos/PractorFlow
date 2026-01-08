@@ -6,6 +6,7 @@ Sets up the FastAPI application with:
 - Authentication configuration and service
 - Chat routes
 - CORS middleware
+- Background cleanup scheduler for orphaned documents
 """
 
 import os
@@ -41,6 +42,8 @@ from api.config import get_api_configuration
 from api.auth import AuthService, set_auth_service
 from api.routes.auth import router as auth_router
 from api.routes.chat import router as chat_router
+from api.services.maintenance.orphan_cleanup_service import OrphanCleanupService
+from api.scheduler.cleanup_scheduler import CleanupScheduler
 
 from practorflow.llm import ModelPool
 from practorflow.llm.knowledge.chroma_knowledge_store import ChromaKnowledgeStore
@@ -51,6 +54,9 @@ from practorflow.session_store.factory import create_session_history, create_ses
 
 logger = get_logger("agent-api", level="INFO")
 
+# Module-level scheduler reference for cleanup on shutdown
+_cleanup_scheduler = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -58,6 +64,8 @@ async def lifespan(app: FastAPI):
 
     Initializes services on startup and cleans up on shutdown.
     """
+    global _cleanup_scheduler
+    
     logger.info("[API] Starting application...")
 
     # Get configuration (already loaded at module level)
@@ -114,12 +122,35 @@ async def lifespan(app: FastAPI):
     container.chat_service = chat_service
     # Set session history in container
     container.session_history = session_history
+
+    # Initialize and start cleanup scheduler if enabled
+    if api_config.cleanup.is_enabled:
+        cleanup_service = OrphanCleanupService(
+            knowledge_store=knowledge_store,
+            session_history=session_history,
+        )
+        _cleanup_scheduler = CleanupScheduler(
+            cleanup_service=cleanup_service,
+            interval_minutes=api_config.cleanup.interval_minutes,
+        )
+        _cleanup_scheduler.start()
+        logger.info(
+            f"[API] Cleanup scheduler started (interval: {api_config.cleanup.interval_minutes} minutes)"
+        )
+    else:
+        logger.info("[API] Cleanup scheduler disabled")
+
     logger.info("[API] Application started successfully")
 
     yield
 
     # Cleanup on shutdown
     logger.info("[API] Shutting down application...")
+
+    # Stop cleanup scheduler
+    if _cleanup_scheduler is not None:
+        await _cleanup_scheduler.stop()
+        logger.info("[API] Cleanup scheduler stopped")
 
     # Unload all models
     await model_pool.unload_all()

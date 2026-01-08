@@ -34,7 +34,7 @@ class SessionHistory(ABC):
             messages list for performance; use get_history()
             to retrieve full message history.
         """
-        pass
+        pass  # pragma: no cover
     
     @abstractmethod
     def get_history(self, session_id: str) -> Optional[Session]:
@@ -48,4 +48,4 @@ class SessionHistory(ABC):
             Session object with full message history,
             or None if session not found.
         """
-        pass
+        pass  # pragma: no cover

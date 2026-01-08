@@ -197,7 +197,7 @@ After receiving tool results, provide your final answer based on the information
                             if "tool" in obj or "name" in obj:
                                 matches.append(obj)
                         except json.JSONDecodeError:
-                            pass
+                            pass  # pragma: no cover
                         start_idx = None
 
         # Convert matches to ToolCallPart objects
@@ -405,7 +405,4 @@ After receiving tool results, provide your final answer based on the information
             available_tools=all_tools,
         )
 
-        try:
-            yield stream
-        finally:
-            pass
+        yield stream

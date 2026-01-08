@@ -6,7 +6,7 @@ Provides a high-level service for chat workflows with:
 - Document upload and indexing scoped to sessions
 - Knowledge search with session document scope (priority)
 - Web search fallback
-- Streaming response generation
+- Streaming response generation via agentic loop
 """
 
 import uuid
@@ -20,6 +20,12 @@ from pydantic_ai.messages import (
     ModelResponse,
     UserPromptPart,
     TextPart,
+    PartDeltaEvent,
+    PartStartEvent,
+    FinalResultEvent,
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    TextPartDelta,
 )
 
 from practorflow.llm import ModelPool, create_runner, StreamChunk
@@ -33,107 +39,118 @@ from practorflow.services.dto.chat_file import ChatFile
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
 
-logger = get_logger("chat_service", level=appConfiguration.LoggerConfiguration.AgentLevel)
+logger = get_logger(
+    "chat_service", level=appConfiguration.LoggerConfiguration.AgentLevel
+)
 
 
 @dataclass
 class ChatDeps:
     """
     Dependencies for chat agent tools.
-    
+
     Contains knowledge store, document scope, and web search tool
     for use by registered agent tools.
     """
-    
+
     knowledge_store: KnowledgeStore
     document_scope: Optional[Set[str]] = None
     web_search_tool: Optional[DuckDuckGoSearchTool] = None
 
+
 # Base system instructions (always applied, not overridable by user)
 _SYSTEM_INSTRUCTIONS = """<system_rules>
-You are a helpful AI assistant operating within a retrieval-augmented environment.
+You are a helpful AI assistant operating within a retrieval-augmented environment with access to tools.
 
-CRITICAL BEHAVIORAL RULES:
-1. NEVER mention, reference, or explain internal tools (search_knowledge, search_web, or any other tool names) to the user. These are internal mechanisms invisible to the user.
-2. NEVER say phrases like "I will use the search tool" or "Let me search the knowledge base". Simply provide the answer as if you naturally know it.
-3. When you cannot find information, say "I don't have information about that in the provided documents" NOT "the search tool returned no results".
+CRITICAL TOOL USAGE RULES - YOU MUST FOLLOW THESE:
+1. You have access to two tools: search_knowledge and search_web.
+2. When the user attaches files or documents, you MUST call search_knowledge with a relevant query BEFORE responding. This is MANDATORY - do not skip this step.
+3. You cannot see file contents directly. The ONLY way to access file content is by calling search_knowledge.
+4. If you respond about files without first calling search_knowledge, your response will be incorrect.
 
-TOOL USAGE PROTOCOL:
-- When files/documents are attached or referenced: ALWAYS call search_knowledge FIRST and retrieve relevant content BEFORE formulating any response. Do not respond based on assumptions.
-- For questions about attached documents: Use search_knowledge. Do not guess or paraphrase without retrieving actual content.
-- For explicit requests about current events, live data, or web lookups: Use search_web.
-- For general knowledge questions (no files involved, no web request): Respond from your training knowledge.
+MANDATORY TOOL CALLING PROTOCOL:
+- Files/documents attached or referenced → MUST call search_knowledge first. No exceptions.
+- Questions about attached documents → MUST call search_knowledge first. Do not guess or assume content.
+- Current events, news, live data → Call search_web.
+- General knowledge (no files, no web request) → Respond from training knowledge.
 
-RESPONSE BEHAVIOR:
-- Ground all document-related answers in retrieved content.
-- If search_knowledge returns empty or irrelevant results, acknowledge the limitation naturally without exposing tool mechanics.
-- Cite or quote document content when relevant to build user trust.
+RESPONSE RULES:
+1. Always be helpful, accurate, and concise.
+2. If you used a tool, synthesize the information naturally - don't just dump raw results.
+3. If search_knowledge returns no results, tell the user you couldn't find relevant information in their documents.
+4. Cite sources when using information from tools.
 </system_rules>"""
 
-# User-customizable instructions (injected after system rules)
-_DEFAULT_USER_INSTRUCTIONS = """<assistant_persona>
-You are a knowledgeable, precise, and professional AI assistant.
 
-COMMUNICATION STYLE:
-- Be concise but thorough. Avoid unnecessary filler words and preambles like "Great question!" or "Sure, I'd be happy to help!".
-- Match the user's tone: formal questions receive formal answers, casual questions receive conversational responses.
-- Use clear, direct language. Prefer active voice over passive voice.
-- Structure complex answers with logical flow. Use formatting (headers, lists, code blocks) only when it genuinely aids comprehension, not by default.
-
-RESPONSE QUALITY STANDARDS:
-- Accuracy over speed: verify your reasoning before responding.
-- When answering from documents, stay faithful to the source material. Do not embellish or infer beyond what the content states.
-- Distinguish clearly between facts from documents, general knowledge, and your own reasoning/interpretation.
-- If a question has multiple valid interpretations, address the most likely one first, then briefly acknowledge alternatives.
-
-HANDLING UNCERTAINTY AND LIMITATIONS:
-- If information is incomplete or ambiguous, state what you know, what you don't, and what assumptions you're making.
-- Never fabricate information. If you don't know, say so plainly.
-- When documents lack the answer, be explicit: "The provided documents don't contain information about X" rather than guessing.
-
-CONVERSATION BEHAVIOR:
-- Maintain context across the conversation. Reference earlier messages when relevant.
-- Ask clarifying questions when the user's request is ambiguous, but avoid excessive back-and-forth for simple queries.
-- If the user provides corrections, acknowledge and adapt without defensiveness.
-- Stay on topic. Do not volunteer unrelated information unless it's directly useful.
-
-PROHIBITED BEHAVIORS:
-- Do not apologize excessively. One brief acknowledgment of a mistake is sufficient.
-- Do not repeat the user's question back to them as filler.
-- Do not provide unsolicited warnings, disclaimers, or ethical commentary unless the situation genuinely warrants it.
-- Do not hedge excessively with phrases like "It's important to note that..." or "It depends on various factors...". Be direct.
-</assistant_persona>"""
-
-def build_instructions(user_instructions: str | None = None) -> str:
+def build_instructions(user_instructions: Optional[str] = None) -> str:
     """
-    Build the complete instruction set.
-    
+    Build complete system instructions.
+
+    Combines base system rules with optional user instructions.
+
     Args:
-        user_instructions: Optional custom instructions from the user.
-                          These augment (not replace) the system rules.
-    
-    Returns:
-        Complete instruction string with system rules + user customization.
-    """
-    custom_section = user_instructions if user_instructions else _DEFAULT_USER_INSTRUCTIONS
-    
-    return f"""{_SYSTEM_INSTRUCTIONS}
+        user_instructions: Optional additional instructions from user.
 
-<user_instructions>
-{custom_section}
-</user_instructions>"""
+    Returns:
+        Combined system instructions string.
+    """
+    if user_instructions:
+        return f"{_SYSTEM_INSTRUCTIONS}\n\n<user_instructions>\n{user_instructions}\n</user_instructions>"
+    return _SYSTEM_INSTRUCTIONS
+
+
+def _build_file_attachment_message(file_names: List[str], user_message: str) -> str:
+    """
+    Build enhanced message for file attachments.
+
+    Args:
+        file_names: List of newly attached filenames.
+        user_message: Original user message.
+
+    Returns:
+        Enhanced message with file attachment context.
+    """
+    files_str = ", ".join(file_names)
+    return f"""[User has attached new files: {files_str}]
+
+IMPORTANT: You MUST call search_knowledge with a relevant query to access these files before responding.
+Do NOT respond about file contents without calling search_knowledge first.
+
+User message: {user_message}"""
+
+
+def _build_session_context_message(file_names: List[str], user_message: str) -> str:
+    """
+    Build enhanced message with session document context.
+
+    Args:
+        file_names: List of document names in session.
+        user_message: Original user message.
+
+    Returns:
+        Enhanced message with session context.
+    """
+    files_str = ", ".join(file_names)
+    return f"""[Session has documents: {files_str}]
+
+If the user's question relates to these documents, call search_knowledge first.
+
+User message: {user_message}"""
+
 
 class ChatService:
     """
-    Chat service with streaming, RAG, and web search support.
-    
-    Manages chat sessions with document context and provides
-    streaming responses using local LLM models.
-    
-    This service is stateless - sessions are retrieved from the
-    session store on each request, making it safe for concurrent users.
+    High-level chat service with RAG and tool support.
+
+    Manages chat sessions with:
+    - Persistent session storage
+    - Document upload and indexing per session
+    - Knowledge search scoped to session documents
+    - Web search for current information
+    - Streaming response generation via agentic loop
     """
-    
+    CHUNK_SIZE = 256
+
     def __init__(
         self,
         model_pool: ModelPool,
@@ -145,7 +162,7 @@ class ChatService:
     ):
         """
         Initialize chat service.
-        
+
         Args:
             model_pool: Model pool for acquiring LLM handles.
             model_config: Configuration for the LLM model.
@@ -160,29 +177,29 @@ class ChatService:
         self._session_store = session_store
         self._web_search_tool = web_search_tool or DuckDuckGoSearchTool()
         self._instructions = build_instructions(user_instructions=default_instructions)
-        
+
         logger.info("[ChatService] Initialized")
-    
+
     def _generate_session_id(self) -> str:
         """Generate a unique session ID."""
         return f"session_{uuid.uuid4().hex}"
-    
+
     async def start_chat(self) -> str:
         """
         Start a new chat session.
-        
+
         Generates a unique session ID and returns it. The session is not
         persisted until the first message is sent via chat_stream.
-        
+
         Returns:
             The generated session_id.
         """
         session_id = self._generate_session_id()
-        
+
         logger.info(f"[ChatService] Generated session ID: {session_id}")
-        
+
         return session_id
-    
+
     async def chat_stream(
         self,
         session_id: str,
@@ -192,21 +209,21 @@ class ChatService:
     ) -> AsyncIterator[StreamChunk]:
         """
         Send a message and stream the response.
-        
+
         Processes the user message, optionally indexes uploaded files,
         and streams the assistant's response using the configured tools.
         Creates the session on first call if it doesn't exist.
-        
+
         Args:
             session_id: Session ID for the chat.
             message: User message text.
             user: User identifier for the session.
             files: Optional list of files to upload and index for this session.
-        
+
         Yields:
             StreamChunk objects with response text and metadata.
         """
-        # Get or create session
+        # get or create session
         if self._session_store.exists(session_id):
             session = self._session_store.get(session_id)
         else:
@@ -215,117 +232,123 @@ class ChatService:
                 instructions=self._instructions,
                 user=user,
             )
-            logger.info(f"[ChatService] Created new session: {session_id} for user: {user}")
-        
-        # Track newly uploaded file names
+            logger.info(
+                f"[ChatService] Created new session: {session_id} for user: {user}"
+            )
+
+        # index files
         new_file_names: List[str] = []
-        
-        # Index files if provided
         if files:
             for file in files:
                 doc_info = await self._index_file(file)
                 session.add_document(doc_info)
-                new_file_names.append(doc_info['filename'])
-                logger.info(f"[ChatService] Indexed file: {doc_info['filename']} -> {doc_info['id']}")
-        
-        # Get document scope from session
+                new_file_names.append(doc_info["filename"])
+                logger.info(
+                    f"[ChatService] Indexed file: {doc_info['filename']} -> {doc_info['id']}"
+                )
+
         document_scope = self._get_document_scope(session)
-        
-        # Build message with file attachment notification for the agent
+
+        # build message
         if new_file_names:
-            enhanced_message = f"[User attached files: {', '.join(new_file_names)}]\n\n{message}"
+            enhanced_message = _build_file_attachment_message(new_file_names, message)
+        elif session.documents:
+            enhanced_message = _build_session_context_message(
+                [doc.get("filename", "unknown") for doc in session.documents],
+                message,
+            )
         else:
             enhanced_message = message
-        
-        # Add user message to session (store original, not enhanced)
-        user_message = Message(role="user", content=message)
-        session.messages.append(user_message)
-        
-        # Accumulate response for session storage
-        accumulated_response = []
-        usage = None
-        
+
+        # append user message
+        session.messages.append(Message(role="user", content=message))
+
+        total_input_tokens = 0
+        total_output_tokens = 0
+        final_text = ""
+
         async with self._model_pool.acquire_context(self._model_config) as handle:
             runner = create_runner(handle, knowledge_store=self._knowledge_store)
             model = LocalLLMModel(runner, system_prompt=session.instructions)
-            
-            # Create agent with tools
+
             agent = Agent(
                 model=model,
                 deps_type=ChatDeps,
                 system_prompt=session.instructions,
             )
-            
-            # Register tools
             self._register_tools(agent)
-            
-            # Create dependencies
+
             deps = ChatDeps(
                 knowledge_store=self._knowledge_store,
                 document_scope=document_scope,
                 web_search_tool=self._web_search_tool,
             )
-            
-            # Build message history for context
+
             message_history = self._build_message_history(session)
-            
-            logger.debug(f"[ChatService] Streaming response for session: {session_id}")
-            
-            # Stream response
-            async with agent.run_stream(
+
+            async with agent.iter(
                 enhanced_message,
                 deps=deps,
                 message_history=message_history,
-            ) as response:
-                async for text in response.stream_text():
-                    accumulated_response.append(text)
-                    yield StreamChunk(text=text, finished=False)
-                
-                # Extract usage if available
-                usage_obj = response.usage()
-                usage = {
-                    "prompt_tokens": getattr(usage_obj, 'input_tokens', 0),
-                    "completion_tokens": getattr(usage_obj, 'output_tokens', 0),
-                    "total_tokens": getattr(usage_obj, 'input_tokens', 0) + getattr(usage_obj, 'output_tokens', 0),
-                }
-            
-            # Yield final chunk BEFORE exiting model context
-            yield StreamChunk(
-                text="",
-                finished=True,
-                finish_reason="stop",
-                usage=usage,
-            )
-        
-        # Store assistant response in session (after model released)
-        full_response = "".join(accumulated_response)
-        assistant_message = Message(role="assistant", content=full_response)
-        session.messages.append(assistant_message)
-        
-        # Save session with both user and assistant messages
+            ) as agent_run:
+                async for node in agent_run:
+                    logger.debug(
+                        "[ChatService][AgentIter] node=%s",
+                        getattr(node, "name", type(node).__name__),
+                    )
+
+                if agent_run.result:
+                    usage = agent_run.usage()
+                    total_input_tokens = usage.input_tokens
+                    total_output_tokens = usage.output_tokens
+                    final_text = agent_run.result.output or ""
+
+        # stream final result
+        if final_text:
+            for i in range(0, len(final_text), self.CHUNK_SIZE):
+                yield StreamChunk(
+                    text=final_text[i : i + self.CHUNK_SIZE],
+                    finished=False,
+                )
+
+            session.messages.append(Message(role="assistant", content=final_text))
+
+        # final chunk
+        yield StreamChunk(
+            text="",
+            finished=True,
+            finish_reason="stop",
+            usage={
+                "prompt_tokens": total_input_tokens,
+                "completion_tokens": total_output_tokens,
+                "total_tokens": total_input_tokens + total_output_tokens,
+            },
+        )
+
         self._session_store.save(session)
-        
         logger.debug(f"[ChatService] Completed response for session: {session_id}")
-    
+
     async def delete_chat(self, session_id: str) -> bool:
         """
         Delete a chat session and its associated documents.
-        
+
         Removes the session from storage and deletes all documents
         that were uploaded during this session from the knowledge store.
-        
+
         Args:
             session_id: Session ID to delete.
-        
+
         Returns:
             True if session was deleted, False if not found.
         """
         if not self._session_store.exists(session_id):
-            logger.warning(f"[ChatService] Session not found for deletion: {session_id}")
+            logger.warning(
+                f"[ChatService] Session not found for deletion: {session_id}"
+            )
             return False
-        
+
         session = self._session_store.get(session_id)
-        
+
         # Delete all session documents from knowledge store
         for doc in session.documents:
             doc_id = doc.get("id")
@@ -334,36 +357,90 @@ class ChatService:
                     self._knowledge_store.delete_document(doc_id)
                     logger.debug(f"[ChatService] Deleted document: {doc_id}")
                 except Exception as e:
-                    logger.warning(f"[ChatService] Failed to delete document {doc_id}: {e}")
-        
+                    logger.warning(
+                        f"[ChatService] Failed to delete document {doc_id}: {e}"
+                    )
+
         # Delete session
         self._session_store.delete(session_id)
-        
+
         logger.info(f"[ChatService] Deleted chat session: {session_id}")
-        
+
         return True
-    
+
     def get_session(self, session_id: str) -> Optional[Session]:
         """
         Get a session by ID.
-        
+
         Args:
             session_id: Session ID to retrieve.
-        
+
         Returns:
             Session object or None if not found.
         """
         if not self._session_store.exists(session_id):
             return None
         return self._session_store.get(session_id)
-    
+
+    async def delete_session_document(
+        self, session_id: str, document_id: str
+    ) -> Optional[bool]:
+        """
+        Delete a single document from a session.
+
+        Removes the document from both the session and the knowledge store.
+
+        Args:
+            session_id: Session ID containing the document.
+            document_id: Document ID to delete.
+
+        Returns:
+            True if document was deleted successfully.
+            False if document was not found in session.
+            None if session was not found.
+        """
+        if not self._session_store.exists(session_id):
+            logger.warning(f"[ChatService] Session not found: {session_id}")
+            return None
+
+        session = self._session_store.get(session_id)
+
+        # Remove document from session
+        removed = session.remove_document(document_id)
+
+        if not removed:
+            logger.warning(
+                f"[ChatService] Document not found in session: {document_id}"
+            )
+            return False
+
+        # Delete from knowledge store
+        try:
+            self._knowledge_store.delete_document(document_id)
+            logger.debug(
+                f"[ChatService] Deleted document from knowledge store: {document_id}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"[ChatService] Failed to delete document from knowledge store {document_id}: {e}"
+            )
+
+        # Save updated session
+        self._session_store.save(session)
+
+        logger.info(
+            f"[ChatService] Deleted document {document_id} from session {session_id}"
+        )
+
+        return True
+
     async def _index_file(self, file: ChatFile) -> dict:
         """
         Index a file into the knowledge store.
-        
+
         Args:
             file: File to index.
-        
+
         Returns:
             Document info dict with id, filename, etc.
         """
@@ -373,97 +450,110 @@ class ChatService:
             mime_type=file.content_type,
         )
         return doc_info
-    
+
     def _get_document_scope(self, session: Session) -> Optional[Set[str]]:
         """
         Get document IDs from session for scoped search.
-        
+
         Args:
             session: Session to extract document IDs from.
-        
+
         Returns:
             Set of document IDs or None if no documents.
         """
         if not session.documents:
             return None
-        
+
         return {doc["id"] for doc in session.documents if "id" in doc}
-    
+
     def _build_message_history(self, session: Session) -> List[ModelMessage]:
         """
         Build message history for agent context.
-        
+
         Converts session messages to pydantic_ai ModelMessage format.
         Excludes the last user message as it will be passed directly.
-        
+
         Args:
             session: Session containing message history.
-        
+
         Returns:
             List of ModelMessage objects (ModelRequest/ModelResponse) for agent context.
         """
         if len(session.messages) <= 1:
             return []
-        
+
         history: List[ModelMessage] = []
-        
+
         for msg in session.messages[:-1]:
             # Extract text content from message
             content = msg.get_text_content()
-            
+
             if msg.role == "user":
                 # User messages become ModelRequest with UserPromptPart
-                history.append(
-                    ModelRequest(parts=[UserPromptPart(content=content)])
-                )
+                history.append(ModelRequest(parts=[UserPromptPart(content=content)]))
             elif msg.role == "assistant":
                 # Assistant messages become ModelResponse with TextPart
-                history.append(
-                    ModelResponse(parts=[TextPart(content=content)])
-                )
-        
+                history.append(ModelResponse(parts=[TextPart(content=content)]))
+
         return history
-    
+
     def _register_tools(self, agent: Agent) -> None:
         """
         Register tools with the agent.
-        
+
         Args:
             agent: Agent to register tools with.
         """
+
         @agent.tool
         async def search_knowledge(
             ctx: RunContext[ChatDeps],
             query: str,
         ) -> str:
             """
-            Search the knowledge base for relevant information.
-            
-            Use this tool to find information from uploaded documents.
-            
+            Search the knowledge base for relevant information from uploaded documents.
+
+            IMPORTANT: You MUST call this tool when the user has attached files or
+            asks questions about documents. This is the ONLY way to access file contents.
+
             Args:
-                query: Search query text.
-            
+                query: Search query text to find relevant content in documents.
+
             Returns:
                 Relevant text from documents or message if none found.
             """
+            logger.debug(f"[ChatService] search_knowledge called with query: {query}")
+
             results = ctx.deps.knowledge_store.search_scoped(
                 query=query,
                 top_k=5,
                 document_ids=ctx.deps.document_scope,
             )
-                    
+
             if not results:
+                logger.debug("[ChatService] search_knowledge: No results found")
                 return "No relevant information found in the knowledge base."
-            
-            formatted = []
-            for r in results:
-                source = r.get("metadata", {}).get("filename", "Unknown")
-                text = r.get("text", "")
-                formatted.append(f"[Source: {source}]\n{text}")
-            
-            return "\n\n---\n\n".join(formatted)
-        
+
+            # Format results for LLM context
+            parts = []
+            parts.append(f'Search results for: "{query}"')
+            parts.append(f"Found {len(results)} relevant section(s):\n")
+
+            for idx, result in enumerate(results, 1):
+                text = result.get("text", "")
+                metadata = result.get("metadata", {})
+                filename = result.get("filename") or metadata.get("filename", "unknown")
+                similarity = result.get("similarity", 0.0)
+
+                header = f"--- Section {idx} (Source: {filename}, Relevance: {similarity:.2f}) ---"
+                parts.append(f"{header}\n{text}")
+
+            formatted = "\n\n".join(parts)
+            logger.debug(
+                f"[ChatService] search_knowledge: Returning {len(results)} results"
+            )
+            return formatted
+
         @agent.tool
         async def search_web(
             ctx: RunContext[ChatDeps],
@@ -471,22 +561,44 @@ class ChatService:
         ) -> str:
             """
             Search the web for current information.
-            
-            Use this tool only when explicitly asked for current events,
-            news, or information not in uploaded documents.
-            
+
+            Use this tool for:
+            - Current events and news
+            - Real-time information (weather, stock prices, etc.)
+            - Information that may have changed since training
+
             Args:
-                query: Search query text.
-            
+                query: Search query for web search.
+
             Returns:
                 Web search results or error message.
             """
+            logger.debug(f"[ChatService] search_web called with query: {query}")
+
             if not ctx.deps.web_search_tool:
                 return "Web search is not available."
-            
+
             try:
                 results = ctx.deps.web_search_tool.search(query)
-                return results
+
+                if not results:
+                    return "No web results found for the query."
+
+                # Format results
+                parts = [f'Web search results for: "{query}"\n']
+
+                for idx, result in enumerate(results[:5], 1):
+                    title = result.get("title", "")
+                    snippet = result.get("snippet", "")
+                    url = result.get("url", "")
+                    parts.append(f"{idx}. {title}\n   {snippet}\n   URL: {url}")
+
+                formatted = "\n\n".join(parts)
+                logger.debug(
+                    f"[ChatService] search_web: Returning {len(results[:5])} results"
+                )
+                return formatted
+
             except Exception as e:
-                logger.warning(f"[ChatService] Web search failed: {e}")
+                logger.error(f"[ChatService] Web search error: {e}")
                 return f"Web search failed: {str(e)}"
