@@ -472,7 +472,7 @@ class ChatService:
             
             if not results:
                 logger.debug("[ChatService] search_knowledge: No results found")
-                return "No relevant information found in the knowledge base."
+                return ""
             
             # Format results for LLM context
             parts = []
@@ -520,7 +520,7 @@ class ChatService:
                 results = ctx.deps.web_search_tool.search(query)
                 
                 if not results:
-                    return "No web results found for the query."
+                    return ""
                 
                 # Format results
                 parts = [f'Web search results for: "{query}"\n']
@@ -535,7 +535,7 @@ class ChatService:
             
             except Exception as e:
                 logger.error(f"[ChatService] Web search error: {e}")
-                return f"Web search failed: {str(e)}"
+                return ""
 
     async def delete_session_document(self, session_id: str, document_id: str) -> Optional[bool]:
         """
