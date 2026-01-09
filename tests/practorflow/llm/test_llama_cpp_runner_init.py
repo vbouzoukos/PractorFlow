@@ -3,7 +3,6 @@ Tests for LlamaCppRunner initialization.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
 
 from practorflow.llm.llama_cpp_runner import LlamaCppRunner
 from tests.practorflow.common.fixtures import mock_knowledge_store

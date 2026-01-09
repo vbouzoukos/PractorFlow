@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Any, List, Optional, Set, AsyncIterator
 
-from practorflow.llm.llm_config import LLMConfig
 from practorflow.llm.pool.model_handle import ModelHandle
 from practorflow.llm.knowledge.knowledge_store import KnowledgeStore
 from practorflow.llm.tools.tool_registry import ToolRegistry

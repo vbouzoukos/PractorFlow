@@ -7,7 +7,6 @@ DeepSeek-R1 and QwQ that use <think>...</think> tags for chain-of-thought reason
 """
 
 import pytest
-from unittest.mock import MagicMock
 
 from practorflow.llm.llama_cpp_runner import LlamaCppRunner
 from tests.practorflow.llm.common_runner import (

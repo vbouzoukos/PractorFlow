@@ -5,7 +5,7 @@ Provides mock implementations of ChromaDB client, collections,
 embedding model, and document loader for unit testing.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from unittest.mock import MagicMock
 import numpy as np
 

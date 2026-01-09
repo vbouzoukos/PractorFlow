@@ -5,8 +5,6 @@ Tests:
 - _build_message_history
 """
 
-import pytest
-
 from practorflow.llm.base.session import Message, Session
 
 from tests.practorflow.common.fixtures import mock_knowledge_store

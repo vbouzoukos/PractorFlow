@@ -7,7 +7,7 @@ like Nemotron 3 that use <think>...</think> tags for chain-of-thought reasoning.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 import torch
 
 from practorflow.llm.transformers_runner import TransformersRunner

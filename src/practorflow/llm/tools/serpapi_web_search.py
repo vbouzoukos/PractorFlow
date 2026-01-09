@@ -8,7 +8,7 @@ Free tier: 100 searches/month
 Install: pip install google-search-results
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from practorflow.llm.tools.base import BaseTool, ToolParameter, ToolResult
 from practorflow.logger.logger import get_logger

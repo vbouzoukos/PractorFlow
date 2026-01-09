@@ -8,8 +8,6 @@ Tests:
 - _generate_session_id
 """
 
-import pytest
-
 from practorflow.llm.tools.base_web_search import DuckDuckGoSearchTool
 from practorflow.services.chat.chat_service import ChatService
 

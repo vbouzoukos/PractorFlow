@@ -1,5 +1,5 @@
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import pytest
 
 from practorflow.llm.knowledge.chroma_knowledge_config import ChromaKnowledgeStoreConfig

@@ -8,7 +8,6 @@ without credential validation.
 
 import secrets
 import uuid
-from typing import Optional
 
 from api.auth.providers.base import AuthProvider, AuthResult
 

@@ -8,7 +8,7 @@ import pytest
 
 from practorflow.llm.tools.base import ToolResult
 from practorflow.llm.tools.tool_registry import ToolRegistry
-from tests.practorflow.llm.tools.tools_common import MockTool, create_mock_tool
+from tests.practorflow.llm.tools.tools_common import create_mock_tool
 
 
 class TestToolRegistryInit:

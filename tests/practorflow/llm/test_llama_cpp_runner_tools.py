@@ -5,7 +5,6 @@ Tests for LlamaCppRunner tool/function calling support.
 import json
 
 import pytest
-from unittest.mock import MagicMock
 
 from practorflow.llm.llama_cpp_runner import LlamaCppRunner
 from tests.practorflow.common.fixtures import sample_tool_definitions

@@ -5,7 +5,7 @@ Tests for TransformersRunner.generate_stream() method.
 import asyncio
 
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 
 import torch
 

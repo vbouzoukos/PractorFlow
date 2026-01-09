@@ -5,12 +5,10 @@ Tests cover LLMRunner methods that are not abstract.
 Uses LlamaCppRunner as concrete implementation for testing.
 """
 
-import pytest
-from unittest.mock import MagicMock
 
 from practorflow.llm.llama_cpp_runner import LlamaCppRunner
 from practorflow.llm.base.llm_runner import StreamChunk
-from practorflow.llm.tools.base import ToolResult
+
 from tests.practorflow.common.fixtures import mock_knowledge_store
 from tests.practorflow.llm.common_runner import create_mock_model_handle
 

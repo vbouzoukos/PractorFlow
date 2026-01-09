@@ -1,6 +1,5 @@
 import base64
 import io
-import os
 from pathlib import Path
 
 import pytest
