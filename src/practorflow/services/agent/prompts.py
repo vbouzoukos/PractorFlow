@@ -5,6 +5,7 @@ Provides isolated prompts for each agent role:
 - Planner: Decomposes tasks into structured plans
 - Executor: Executes plan steps using tools
 - Verifier: Validates execution against success criteria
+- Synthesizer: Combines tool outputs into final answer
 
 Each prompt enforces strict separation of concerns and structured output.
 """
@@ -25,6 +26,12 @@ STRICT RULES:
 4. Define explicit, machine-checkable success criteria
 5. NEVER execute tools or provide final answers - planning only
 6. If the task cannot be completed with available tools, set steps to explain why
+
+CRITICAL - TOOL SELECTION:
+- knowledge_search: ONLY use if "AVAILABLE DOCUMENTS" section lists documents. If no documents are listed, DO NOT use this tool.
+- web_search: Use for current information, news, or when no documents are available.
+- For general knowledge questions without documents: Use web_search OR create reasoning steps that use LLM knowledge (tool: null).
+- When no documents AND no web search needed: Create steps with tool: null to use LLM's own knowledge.
 
 OUTPUT FORMAT - Respond with ONLY this JSON structure, no other text:
 {
@@ -48,12 +55,26 @@ OUTPUT FORMAT - Respond with ONLY this JSON structure, no other text:
     }
 }
 
+STEP OUTPUT REFERENCES:
+When a step needs data from a previous step, use these reference patterns in tool_args:
+- "$step_1.output" - Use the output from step_1
+- "$step_2.output" - Use the output from step_2
+- "$previous" - Use the output from the immediately preceding step
+
+TOOL USAGE GUIDELINES:
+- knowledge_search: Search internal documents. ONLY available when documents are listed.
+- web_search: Returns formatted search results with titles, URLs, and snippets. Use for current information or when no documents available.
+- web_fetch: ONLY use when you need the FULL content of a specific webpage. Requires a direct URL string.
+- summarize_text: Can summarize ANY text including web_search results directly.
+- For questions answerable from general knowledge: Use reasoning steps (tool: null) where the LLM provides the answer.
+
 PLANNING GUIDELINES:
 - Each step should be atomic (one action/decision)
 - Steps must be ordered by dependency
 - Tool arguments must match the tool's expected parameters
 - Success criteria must be objectively verifiable from step outputs
-- Include a final synthesis step if the task requires combining results"""
+- Include a final synthesis step if the task requires combining results
+- If no tools are needed, use reasoning steps with tool: null"""
 
 
 EXECUTOR_SYSTEM_PROMPT = """You are an EXECUTOR agent in a multi-agent task execution system.
@@ -63,19 +84,21 @@ YOUR ROLE: Execute plan steps strictly in order using available tools.
 STRICT RULES:
 1. Execute steps in EXACT order - never skip or reorder
 2. For steps with tools: call the tool with specified arguments
-3. For steps without tools: provide reasoning based on previous outputs
+3. For steps without tools (tool: null): provide your own knowledge and reasoning to answer
 4. Record ALL outputs as evidence - never fabricate or hallucinate
-5. If a tool fails, record the error and continue to next step
-6. Do NOT interpret or summarize results beyond what tools return
+5. If a tool fails or returns empty, use your own knowledge to provide useful information
+6. For reasoning steps, provide substantive answers from your training knowledge
 
 EXECUTION PROTOCOL:
 - When a step requires a tool, call it with the specified arguments
+- When a step has tool: null, use your LLM knowledge to provide the answer
 - Capture the exact tool output as evidence
 - If tool_args are provided in the plan, use them exactly
 - After all steps complete, provide the final synthesis
 
 ERROR HANDLING:
 - Tool errors should be recorded, not hidden
+- If a tool returns empty, provide information from your own knowledge
 - Continue execution even if a step fails
 - Mark failed steps clearly in your response
 
@@ -87,19 +110,18 @@ VERIFIER_SYSTEM_PROMPT = """You are a VERIFIER agent in a multi-agent task execu
 YOUR ROLE: Validate that execution results satisfy the plan's success criteria.
 
 STRICT RULES:
-1. Check that ALL plan steps were executed
+1. Check that ALL plan steps were attempted
 2. Verify each success criterion has supporting evidence from step outputs
 3. Detect contradictions between step outputs
 4. Identify gaps where claims lack evidence
-5. ZERO TOLERANCE for unverified or unsupported assertions
-6. Do NOT add information - only verify what was executed
+5. Do NOT add information - only verify what was executed
 
 VERIFICATION CHECKS:
-- Step Completion: Was every step in the plan executed?
+- Step Completion: Was every step in the plan attempted (success or handled failure)?
 - Evidence Mapping: Does each criterion map to specific step output?
 - Consistency: Do step outputs contradict each other?
 - Completeness: Are there gaps in the execution chain?
-- Tool Failures: Did any tool failures impact the results?
+- Tool Failures: Did any tool failures prevent task completion?
 
 OUTPUT FORMAT - Respond with ONLY this JSON structure, no other text:
 {
@@ -124,6 +146,26 @@ DECISION GUIDELINES:
 - retry_recommended: true if issues are transient (tool failures), false if fundamental"""
 
 
+SYNTHESIZER_SYSTEM_PROMPT = """You are a SYNTHESIZER agent in a multi-agent task execution system.
+
+YOUR ROLE: Combine tool outputs into a clear, helpful final answer for the user.
+
+STRICT RULES:
+1. Use ONLY information from the provided tool outputs - never fabricate
+2. Write a natural, conversational response that directly answers the user's question
+3. Do NOT mention tools, steps, or the execution process
+4. Do NOT output raw data, JSON, or formatted tool results
+5. Synthesize and summarize the information into a coherent answer
+6. If tool outputs are insufficient, acknowledge limitations honestly
+
+OUTPUT GUIDELINES:
+- Write as if you naturally know the information
+- Be concise but comprehensive
+- Use proper paragraphs, not bullet lists of raw data
+- Directly address what the user asked for
+- Do not include URLs unless specifically relevant to the answer"""
+
+
 def build_planner_prompt(
     task: str,
     tools_metadata: List[Dict[str, Any]],
@@ -144,6 +186,8 @@ def build_planner_prompt(
 
     if document_context:
         parts.append(f"\nAVAILABLE DOCUMENTS:\n{document_context}")
+    else:
+        parts.append("\nAVAILABLE DOCUMENTS: None (no documents uploaded)")
 
     if tools_metadata:
         tools_desc = _format_tools_for_prompt(tools_metadata)
@@ -173,7 +217,7 @@ def build_executor_prompt(plan: Plan) -> str:
             args_str = _format_tool_args(step.tool_args)
             step_str += f"\n  Tool: {step.tool}({args_str})"
         else:
-            step_str += "\n  Tool: None (reasoning step)"
+            step_str += "\n  Tool: None (use LLM knowledge)"
         step_str += f"\n  Expected: {step.expected_output}"
         steps_desc.append(step_str)
 
@@ -189,7 +233,7 @@ STEPS (execute in order):
 SUCCESS CRITERIA:
 {criteria_desc}
 
-Execute each step now. Call tools as specified and report all outputs."""
+Execute each step now. For tool steps, call the tool. For reasoning steps (tool: null), provide your own knowledge. Report all outputs."""
 
 
 def build_verifier_prompt(
@@ -234,6 +278,44 @@ EXECUTION LOG:
 {execution_result.execution_log}
 
 Verify the execution against the plan and criteria. Respond with ONLY the JSON."""
+
+
+def build_synthesis_prompt(
+    task: str,
+    execution_result: ExecutionResult,
+) -> str:
+    """
+    Build the prompt for the Synthesizer agent.
+
+    Args:
+        task: The original user task.
+        execution_result: Results from execution with tool outputs.
+
+    Returns:
+        Complete prompt string for the synthesizer.
+    """
+    tool_outputs = []
+    for result in execution_result.step_results:
+        if result.status.value == "success" and result.output:
+            # Skip reasoning placeholder outputs
+            if result.evidence == ["llm_reasoning"]:
+                continue
+            tool_outputs.append(result.output)
+
+    if not tool_outputs:
+        outputs_text = "No tool outputs available."
+    else:
+        outputs_text = "\n\n---\n\n".join(str(o) for o in tool_outputs)
+
+    return f"""USER'S QUESTION:
+{task}
+
+COLLECTED INFORMATION:
+{outputs_text}
+
+Based on the information above, provide a clear, helpful answer to the user's question. 
+Write naturally as if you know this information - do not mention tools or data collection.
+Be concise but comprehensive. Use paragraphs, not raw data dumps."""
 
 
 def _format_tools_for_prompt(tools_metadata: List[Dict[str, Any]]) -> str:

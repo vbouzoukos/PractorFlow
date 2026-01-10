@@ -137,7 +137,8 @@ class ExecutionResult(BaseModel):
     """
     Complete execution output from Executor agent.
 
-    Contains results for all plan steps and an audit log.
+    Contains results for all plan steps, an audit log, and the
+    synthesized final answer.
     This is the contract between Executor and Verifier.
     """
 
@@ -152,6 +153,10 @@ class ExecutionResult(BaseModel):
     execution_log: str = Field(
         ...,
         description="Human-readable, immutable audit log",
+    )
+    synthesized_output: Optional[str] = Field(
+        default=None,
+        description="Final synthesized answer from tool outputs",
     )
 
 

@@ -43,9 +43,11 @@ from practorflow.services.agent.prompts import (
     PLANNER_SYSTEM_PROMPT,
     EXECUTOR_SYSTEM_PROMPT,
     VERIFIER_SYSTEM_PROMPT,
+    SYNTHESIZER_SYSTEM_PROMPT,
     build_planner_prompt,
     build_executor_prompt,
     build_verifier_prompt,
+    build_synthesis_prompt,
 )
 from practorflow.services.agent.deps import AgentDeps
 from practorflow.services.agent.tools import register_default_tools, register_executor_tools
@@ -136,128 +138,146 @@ class AgentService:
         return session_id
 
     async def execute_task(
-        self,
-        session_id: str,
-        task: str,
-        user: str,
-        files: Optional[List[ChatFile]] = None,
-        document_ids: Optional[Set[str]] = None,
-    ) -> AgentTaskResult:
-        """
-        Execute a task using the multi-agent pipeline.
+            self,
+            session_id: str,
+            task: str,
+            user: str,
+            files: Optional[List[ChatFile]] = None,
+            document_ids: Optional[Set[str]] = None,
+        ) -> AgentTaskResult:
+            """
+            Execute a task using the multi-agent pipeline.
 
-        Args:
-            session_id: Session identifier.
-            task: User task description.
-            user: User identifier.
-            files: Optional files to upload and index.
-            document_ids: Optional pre-existing document IDs.
+            Args:
+                session_id: Session identifier.
+                task: User task description.
+                user: User identifier.
+                files: Optional files to upload and index.
+                document_ids: Optional pre-existing document IDs.
 
-        Returns:
-            AgentTaskResult with outcome and artifacts.
-        """
-        logger.info(f"[AgentService] Executing task for session: {session_id}")
+            Returns:
+                AgentTaskResult with outcome and artifacts.
+            """
+            logger.info(f"[AgentService] Executing task for session: {session_id}")
 
-        if self._session_store.exists(session_id):
-            session = self._session_store.get(session_id)
-        else:
-            session = Session(
-                session_id=session_id,
-                instructions="Multi-agent task execution",
-                user=user,
-                metadata={"type": "agent"},
+            if self._session_store.exists(session_id):
+                session = self._session_store.get(session_id)
+            else:
+                session = Session(
+                    session_id=session_id,
+                    instructions="Multi-agent task execution",
+                    user=user,
+                    metadata={"type": "agent"},
+                )
+                logger.info(f"[AgentService] Created new session: {session_id}")
+
+            if files:
+                for file in files:
+                    doc_info = await self._index_file(file)
+                    session.add_document(doc_info)
+                    logger.info(f"[AgentService] Indexed file: {doc_info['filename']}")
+
+            document_scope = get_document_scope(session, document_ids)
+            document_context = get_document_context(session, document_ids)
+
+            session.messages.append(Message(role="user", content=task))
+
+            total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            plan: Optional[Plan] = None
+            execution_result: Optional[ExecutionResult] = None
+            verification_result: Optional[VerificationResult] = None
+
+            try:
+                plan = await self._run_planner(task, document_context)
+            except ValueError as e:
+                error_msg = f"Planning failed: {e}"
+                logger.error(f"[AgentService] {error_msg}")
+                session.messages.append(Message(role="assistant", content=error_msg))
+                persist_to_session(session, self._session_store, None, None, None)
+                return AgentTaskResult(
+                    success=False,
+                    error=error_msg,
+                    usage=total_usage,
+                )
+
+            persist_to_session(session, self._session_store, plan, None, None)
+
+            deps = AgentDeps(
+                knowledge_store=self._knowledge_store,
+                tool_registry=self._tool_registry,
+                document_scope=document_scope,
             )
-            logger.info(f"[AgentService] Created new session: {session_id}")
 
-        if files:
-            for file in files:
-                doc_info = await self._index_file(file)
-                session.add_document(doc_info)
-                logger.info(f"[AgentService] Indexed file: {doc_info['filename']}")
+            retries = 0
+            max_retries = plan.retry_policy.max_retries
 
-        document_scope = get_document_scope(session, document_ids)
-        document_context = get_document_context(session, document_ids)
+            while True:
+                execution_result = await self._run_executor(plan, deps)
+                
+                # Synthesize final answer from tool outputs
+                synthesized_output = await self._run_synthesizer(plan, execution_result)
+                execution_result.synthesized_output = synthesized_output
+                
+                persist_to_session(session, self._session_store, plan, execution_result, None)
 
-        session.messages.append(Message(role="user", content=task))
+                verification_result = await self._run_verifier(plan, execution_result)
 
-        total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        plan: Optional[Plan] = None
-        execution_result: Optional[ExecutionResult] = None
-        verification_result: Optional[VerificationResult] = None
+                persist_to_session(session, self._session_store, plan, execution_result, verification_result)
 
-        try:
-            plan = await self._run_planner(task, document_context)
-        except ValueError as e:
-            error_msg = f"Planning failed: {e}"
-            logger.error(f"[AgentService] {error_msg}")
-            session.messages.append(Message(role="assistant", content=error_msg))
-            persist_to_session(session, self._session_store, None, None, None)
-            return AgentTaskResult(
-                success=False,
-                error=error_msg,
-                usage=total_usage,
-            )
+                # PASSED or PARTIAL are both acceptable outcomes
+                if verification_result.verification_status in (
+                    VerificationStatus.PASSED,
+                    VerificationStatus.PARTIAL,
+                ):
+                    logger.info(
+                        f"[AgentService] Verification {verification_result.verification_status}"
+                    )
+                    break
 
-        persist_to_session(session, self._session_store, plan, None, None)
+                # Only FAILED status triggers retry
+                if verification_result.retry_recommended and retries < max_retries:
+                    retries += 1
+                    logger.info(f"[AgentService] Retrying execution (attempt {retries}/{max_retries})")
+                    continue
 
-        deps = AgentDeps(
-            knowledge_store=self._knowledge_store,
-            tool_registry=self._tool_registry,
-            document_scope=document_scope,
-        )
-
-        retries = 0
-        max_retries = plan.retry_policy.max_retries
-
-        while True:
-            execution_result = await self._run_executor(plan, deps)
-            persist_to_session(session, self._session_store, plan, execution_result, None)
-
-            verification_result = await self._run_verifier(plan, execution_result)
-            persist_to_session(session, self._session_store, plan, execution_result, verification_result)
-
-            if verification_result.verification_status == VerificationStatus.PASSED:
-                logger.info("[AgentService] Verification passed")
+                logger.info(
+                    f"[AgentService] Verification {verification_result.verification_status}, "
+                    f"no more retries"
+                )
                 break
 
-            if verification_result.retry_recommended and retries < max_retries:
-                retries += 1
-                logger.info(f"[AgentService] Retrying execution (attempt {retries}/{max_retries})")
-                continue
+            # PASSED or PARTIAL both count as success
+            if verification_result.verification_status in (
+                VerificationStatus.PASSED,
+                VerificationStatus.PARTIAL,
+            ):
+                output = extract_final_output(plan, execution_result)
+                session.messages.append(Message(role="assistant", content=output))
+                persist_to_session(session, self._session_store, plan, execution_result, verification_result)
 
-            logger.info(
-                f"[AgentService] Verification {verification_result.verification_status}, "
-                f"no more retries"
-            )
-            break
+                return AgentTaskResult(
+                    success=True,
+                    output=output,
+                    plan=plan,
+                    execution_result=execution_result,
+                    verification_result=verification_result,
+                    usage=total_usage,
+                )
 
-        if verification_result.verification_status == VerificationStatus.PASSED:
-            output = extract_final_output(plan, execution_result)
-            session.messages.append(Message(role="assistant", content=output))
+            # Only FAILED returns success=False
+            error_msg = build_failure_message(verification_result)
+            session.messages.append(Message(role="assistant", content=error_msg))
             persist_to_session(session, self._session_store, plan, execution_result, verification_result)
 
             return AgentTaskResult(
-                success=True,
-                output=output,
+                success=False,
+                output=None,
                 plan=plan,
                 execution_result=execution_result,
                 verification_result=verification_result,
+                error=error_msg,
                 usage=total_usage,
             )
-
-        error_msg = build_failure_message(verification_result)
-        session.messages.append(Message(role="assistant", content=error_msg))
-        persist_to_session(session, self._session_store, plan, execution_result, verification_result)
-
-        return AgentTaskResult(
-            success=False,
-            output=None,
-            plan=plan,
-            execution_result=execution_result,
-            verification_result=verification_result,
-            error=error_msg,
-            usage=total_usage,
-        )
 
     def get_session(self, session_id: str) -> Optional[Session]:
         """
@@ -322,6 +342,15 @@ class AgentService:
             ValueError: If planning fails or output is invalid.
         """
         tools_metadata = self._tool_registry.get_schemas()
+        
+        # Filter out knowledge_search if no documents available
+        if document_context is None:
+            tools_metadata = [
+                t for t in tools_metadata 
+                if t.get("function", {}).get("name") != "knowledge_search"
+            ]
+            logger.debug("[AgentService] No documents - excluded knowledge_search from tools")
+        
         prompt = build_planner_prompt(task, tools_metadata, document_context)
 
         logger.debug(f"[AgentService] Running planner for task: {task[:100]}...")
@@ -416,6 +445,41 @@ class AgentService:
         )
 
         return execution_result
+
+    async def _run_synthesizer(
+        self,
+        plan: Plan,
+        execution_result: ExecutionResult,
+    ) -> str:
+        """
+        Run the Synthesizer agent to create final answer from tool outputs.
+
+        Args:
+            plan: The original plan with user's task.
+            execution_result: Results from execution with tool outputs.
+
+        Returns:
+            Synthesized final answer string.
+        """
+        prompt = build_synthesis_prompt(plan.task, execution_result)
+
+        logger.debug(f"[AgentService] Running synthesizer for plan: {plan.plan_id}")
+
+        async with self._model_pool.acquire_context(self._model_config) as handle:
+            runner = create_runner(handle, knowledge_store=self._knowledge_store)
+            model = LocalLLMModel(runner, system_prompt=SYNTHESIZER_SYSTEM_PROMPT)
+
+            agent = Agent(
+                model=model,
+                deps_type=AgentDeps,
+                system_prompt=SYNTHESIZER_SYSTEM_PROMPT,
+            )
+
+            result = await agent.run(prompt)
+            synthesized = result.output if isinstance(result.output, str) else str(result.output)
+
+        logger.info(f"[AgentService] Synthesis complete: {len(synthesized)} chars")
+        return synthesized
 
     async def _run_verifier(
         self,

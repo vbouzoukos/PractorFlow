@@ -130,6 +130,11 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         """
         logger.debug(f"[AgentService] search_knowledge called: {query}")
 
+        # Guard: No documents in scope means no search
+        if ctx.deps.document_scope is None:
+            return ""
+
+
         results = ctx.deps.knowledge_store.search_scoped(
             query=query,
             top_k=5,
@@ -137,7 +142,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         )
 
         if not results:
-            return "No relevant information found."
+            return ""
 
         parts = [f"Found {len(results)} result(s):"]
         for idx, result in enumerate(results, 1):
@@ -146,7 +151,6 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
             parts.append(f"\n[{idx}] From {filename}:\n{text}")
 
         return "\n".join(parts)
-
     @agent.tool
     async def search_web(
         ctx: RunContext[AgentDeps],
@@ -168,9 +172,9 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         result = ctx.deps.tool_registry.execute("web_search", query=query, max_results=max_results)
 
         if result.success:
-            return str(result.data) if result.data else "No web results found."
+            return str(result.data) if result.data else ""
         else:
-            return f"Web search error: {result.error}"
+            return ""
 
     @agent.tool
     async def fetch_webpage(
@@ -193,9 +197,9 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         result = ctx.deps.tool_registry.execute("web_fetch", url=url, extract_mode=extract_mode)
 
         if result.success:
-            return str(result.data) if result.data else "No content extracted."
+            return str(result.data) if result.data else ""
         else:
-            return f"Fetch error: {result.error}"
+            return ""
 
     @agent.tool
     async def summarize_text(
@@ -224,7 +228,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         if result.success:
             return str(result.data) if result.data else "No summary generated."
         else:
-            return f"Summarization error: {result.error}"
+            return ""
 
     @agent.tool
     async def transform_json(

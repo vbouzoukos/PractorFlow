@@ -161,23 +161,35 @@ def extract_final_output(
     """
     Extract the final output from execution results.
 
+    Returns the synthesized_output if available (from synthesis step),
+    otherwise falls back to the last successful tool output.
+
     Args:
         plan: The executed plan.
         execution_result: Results from execution.
 
     Returns:
-        Synthesized output string.
+        Final synthesized output string.
     """
-    outputs = []
+    # First check for synthesized output (set by _run_synthesizer)
+    if execution_result.synthesized_output:
+        return execution_result.synthesized_output
+
+    # Fallback: return last successful tool output (not reasoning steps)
+    last_tool_output = None
 
     for result in execution_result.step_results:
-        if result.status == StepStatus.SUCCESS and result.output:
-            step = next((s for s in plan.steps if s.step_id == result.step_id), None)
-            if step:
-                outputs.append(f"{step.description}: {result.output}")
+        if result.status != StepStatus.SUCCESS:
+            continue
+        if not result.output:
+            continue
+        # Skip reasoning steps - they only contain placeholder text
+        if result.evidence == ["llm_reasoning"]:
+            continue
+        last_tool_output = result.output
 
-    if outputs:
-        return "\n".join(outputs)
+    if last_tool_output:
+        return str(last_tool_output)
 
     return "Task completed successfully."
 
