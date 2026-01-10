@@ -7,6 +7,7 @@ Provides the primary chat interface with:
 - Session management (async)
 - Collapsible history panel for past sessions
 - Foldable documents panel for session documents
+- Agent mode toggle for multi-agent task execution
 """
 
 from PySide6.QtWidgets import (
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QStatusBar,
     QSplitter,
+    QCheckBox,
 )
 from PySide6.QtCore import Qt, Slot, QSize
 from PySide6.QtGui import QIcon
@@ -28,8 +30,10 @@ from gui.widgets.input_widget import InputWidget
 from gui.widgets.history_panel import HistoryPanel
 from gui.widgets.documents_panel import DocumentsPanel
 from gui.api.chat_client import ChatClient, SessionHistory
+from gui.api.agent_client import AgentClient, AgentTaskResult
 from gui.workers.stream_worker import StreamWorker
 from gui.workers.session_worker import StartSessionWorker, DeleteSessionWorker
+from gui.workers.agent_worker import AgentTaskWorker, StartAgentSessionWorker
 
 
 class ChatWindow(QMainWindow):
@@ -38,6 +42,7 @@ class ChatWindow(QMainWindow):
     
     Manages chat sessions and coordinates between UI components
     and the API client. All API calls are async via worker threads.
+    Supports both chat mode (streaming) and agent mode (task execution).
     """
     
     def __init__(self, api_url: str, parent=None):
@@ -45,8 +50,11 @@ class ChatWindow(QMainWindow):
         
         self._api_url = api_url
         self._client = ChatClient(base_url=api_url, username="practorFlowClient")
+        self._agent_client = AgentClient(base_url=api_url, username="practorFlowClient")
         self._session_id = None
+        self._agent_mode = False
         self._stream_worker = None
+        self._agent_worker = None
         self._session_worker = None
         self._delete_worker = None
         self._pending_close = False
@@ -88,6 +96,13 @@ class ChatWindow(QMainWindow):
         
         self._session_label = QLabel("Session: Connecting...")
         header_layout.addWidget(self._session_label)
+        
+        # Agent mode toggle
+        self._agent_mode_checkbox = QCheckBox("Agent Mode")
+        self._agent_mode_checkbox.setToolTip(
+            "Enable multi-agent task execution (plan → execute → verify)"
+        )
+        header_layout.addWidget(self._agent_mode_checkbox)
         
         # Documents button (icon)
         self._documents_btn = QPushButton()
@@ -164,6 +179,7 @@ class ChatWindow(QMainWindow):
         self._input_widget.message_submitted.connect(self._on_message_submitted)
         self._reconnect_btn.clicked.connect(self._on_reconnect_clicked)
         self._documents_btn.clicked.connect(self._on_documents_btn_clicked)
+        self._agent_mode_checkbox.toggled.connect(self._on_agent_mode_toggled)
         
         # History panel signals
         self._history_panel.session_selected.connect(self._on_session_selected)
@@ -172,8 +188,18 @@ class ChatWindow(QMainWindow):
         # Documents panel signals
         self._documents_panel.document_deleted.connect(self._on_document_deleted)
     
+    @Slot(bool)
+    def _on_agent_mode_toggled(self, checked: bool):
+        """Handle agent mode toggle."""
+        self._agent_mode = checked
+        mode_name = "Agent" if checked else "Chat"
+        self._status_bar.showMessage(f"{mode_name} mode enabled", 3000)
+        
+        # Start new session when mode changes
+        self._start_new_session()
+    
     def _start_new_session(self):
-        """Start a new chat session asynchronously."""
+        """Start a new chat or agent session asynchronously."""
         try:
             # Update UI state
             self._session_label.setText("Session: Connecting...")
@@ -187,8 +213,13 @@ class ChatWindow(QMainWindow):
             self._documents_panel.collapse()
             self._documents_panel.set_session(None)
             
-            # Start worker with parent to prevent premature garbage collection
-            self._session_worker = StartSessionWorker(self._client, parent=self)
+            if self._agent_mode:
+                # Start agent session
+                self._session_worker = StartAgentSessionWorker(self._agent_client, parent=self)
+            else:
+                # Start chat session
+                self._session_worker = StartSessionWorker(self._client, parent=self)
+            
             self._session_worker.session_started.connect(self._on_session_started)
             self._session_worker.error_occurred.connect(self._on_session_error)
             self._session_worker.finished.connect(self._cleanup_session_worker)
@@ -213,7 +244,8 @@ class ChatWindow(QMainWindow):
         """Handle successful session creation."""
         try:
             self._session_id = session_id
-            self._session_label.setText(f"Session: {session_id[:16]}...")
+            mode_prefix = "Agent" if self._agent_mode else "Session"
+            self._session_label.setText(f"{mode_prefix}: {session_id[:16]}...")
             self._input_widget.set_enabled(True)
             self._new_session_btn.setEnabled(True)
             self._reconnect_btn.hide()
@@ -315,7 +347,7 @@ class ChatWindow(QMainWindow):
     def _on_document_deleted(self, document_id: str):
         """Handle document deleted from documents panel."""
         try:
-            self._status_bar.showMessage(f"Document deleted", 3000)
+            self._status_bar.showMessage("Document deleted", 3000)
         except Exception:
             pass
     
@@ -396,29 +428,57 @@ class ChatWindow(QMainWindow):
             
             # Disable input while processing
             self._input_widget.set_enabled(False)
-            self._status_bar.showMessage("Generating response...")
             
-            # Create placeholder for assistant response
-            self._chat_display.add_assistant_message("")
-            
-            # Start streaming worker with parent
-            self._stream_worker = StreamWorker(
-                client=self._client,
-                session_id=self._session_id,
-                message=message,
-                file_paths=file_paths,
-                parent=self
-            )
-            
-            self._stream_worker.chunk_received.connect(self._on_chunk_received)
-            self._stream_worker.stream_finished.connect(self._on_stream_finished)
-            self._stream_worker.error_occurred.connect(self._on_stream_error)
-            self._stream_worker.finished.connect(self._cleanup_stream_worker)
-            
-            self._stream_worker.start()
+            if self._agent_mode:
+                self._execute_agent_task(message, file_paths)
+            else:
+                self._execute_chat_stream(message, file_paths)
+                
         except Exception as e:
             self._input_widget.set_enabled(True)
             self._status_bar.showMessage(f"Error: {e}", 5000)
+    
+    def _execute_chat_stream(self, message: str, file_paths: list):
+        """Execute chat streaming request."""
+        self._status_bar.showMessage("Generating response...")
+        
+        # Create placeholder for assistant response
+        self._chat_display.add_assistant_message("")
+        
+        # Start streaming worker
+        self._stream_worker = StreamWorker(
+            client=self._client,
+            session_id=self._session_id,
+            message=message,
+            file_paths=file_paths,
+            parent=self
+        )
+        
+        self._stream_worker.chunk_received.connect(self._on_chunk_received)
+        self._stream_worker.stream_finished.connect(self._on_stream_finished)
+        self._stream_worker.error_occurred.connect(self._on_stream_error)
+        self._stream_worker.finished.connect(self._cleanup_stream_worker)
+        
+        self._stream_worker.start()
+    
+    def _execute_agent_task(self, task: str, file_paths: list):
+        """Execute agent task request."""
+        self._status_bar.showMessage("Executing agent task...")
+        
+        # Start agent worker
+        self._agent_worker = AgentTaskWorker(
+            client=self._agent_client,
+            session_id=self._session_id,
+            task=task,
+            file_paths=file_paths,
+            parent=self
+        )
+        
+        self._agent_worker.task_completed.connect(self._on_agent_task_completed)
+        self._agent_worker.error_occurred.connect(self._on_agent_task_error)
+        self._agent_worker.finished.connect(self._cleanup_agent_worker)
+        
+        self._agent_worker.start()
     
     @Slot()
     def _cleanup_stream_worker(self):
@@ -429,6 +489,16 @@ class ChatWindow(QMainWindow):
                 self._stream_worker = None
         except Exception:
             self._stream_worker = None
+    
+    @Slot()
+    def _cleanup_agent_worker(self):
+        """Clean up agent worker after it finishes."""
+        try:
+            if self._agent_worker:
+                self._agent_worker.deleteLater()
+                self._agent_worker = None
+        except Exception:
+            self._agent_worker = None
     
     @Slot(str)
     def _on_chunk_received(self, text: str):
@@ -474,6 +544,44 @@ class ChatWindow(QMainWindow):
         except Exception:
             pass
     
+    @Slot(object)
+    def _on_agent_task_completed(self, result: AgentTaskResult):
+        """Handle agent task completion."""
+        try:
+            self._input_widget.set_enabled(True)
+            self._input_widget.clear_input()
+            
+            if result.success:
+                # Add assistant message with output
+                self._chat_display.add_assistant_message(result.output or "Task completed.")
+                self._chat_display.finalize_last_message()
+                self._status_bar.showMessage("Agent task completed", 3000)
+            else:
+                # Show error
+                error_msg = result.error or "Task failed"
+                self._chat_display.add_system_message(f"Agent error: {error_msg}")
+                self._status_bar.showMessage("Agent task failed", 5000)
+            
+            # Refresh history to update message counts
+            self._history_panel.refresh_sessions()
+            
+            # Refresh documents panel if expanded
+            if self._documents_panel.is_expanded():
+                self._documents_panel.refresh_documents()
+        except Exception:
+            pass
+    
+    @Slot(str)
+    def _on_agent_task_error(self, error: str):
+        """Handle agent task error."""
+        try:
+            self._input_widget.set_enabled(True)
+            self._status_bar.showMessage(f"Error: {error}", 5000)
+            
+            self._chat_display.add_system_message(f"Agent error: {error}")
+        except Exception:
+            pass
+    
     def closeEvent(self, event):
         """Handle window close - cleanup all workers."""
         try:
@@ -484,6 +592,13 @@ class ChatWindow(QMainWindow):
                     self._stream_worker.wait(2000)
                 self._stream_worker.deleteLater()
                 self._stream_worker = None
+            
+            # Wait for agent worker
+            if self._agent_worker:
+                if self._agent_worker.isRunning():
+                    self._agent_worker.wait(5000)
+                self._agent_worker.deleteLater()
+                self._agent_worker = None
             
             # Wait for session worker
             if self._session_worker:

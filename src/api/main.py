@@ -5,6 +5,7 @@ Sets up the FastAPI application with:
 - Lifespan management for service initialization/cleanup
 - Authentication configuration and service
 - Chat routes
+- Agent routes
 - CORS middleware
 - Background cleanup scheduler for orphaned documents
 """
@@ -42,12 +43,14 @@ from api.config import get_api_configuration
 from api.auth import AuthService, set_auth_service
 from api.routes.auth import router as auth_router
 from api.routes.chat import router as chat_router
+from api.routes.agent.agent import router as agent_router
 from api.services.maintenance.orphan_cleanup_service import OrphanCleanupService
 from api.scheduler.cleanup_scheduler import CleanupScheduler
 
 from practorflow.llm import ModelPool
 from practorflow.llm.knowledge.chroma_knowledge_store import ChromaKnowledgeStore
 from practorflow.services.chat import ChatService
+from practorflow.services.agent.agent_service import AgentService
 from practorflow.settings.app_settings import appConfiguration
 from practorflow.logger.logger import get_logger
 from practorflow.session_store.factory import create_session_history, create_session_store
@@ -118,8 +121,17 @@ async def lifespan(app: FastAPI):
         session_store=session_store,
     )
 
-    # Set service in container for dependency injection
+    # Initialize agent service
+    agent_service = AgentService(
+        model_pool=model_pool,
+        model_config=model_config,
+        knowledge_store=knowledge_store,
+        session_store=session_store,
+    )
+
+    # Set services in container for dependency injection
     container.chat_service = chat_service
+    container.agent_service = agent_service
     # Set session history in container
     container.session_history = session_history
 
@@ -178,6 +190,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router)
 app.include_router(chat_router)
+app.include_router(agent_router)
 
 
 @app.get("/health", tags=["health"])

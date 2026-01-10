@@ -5,6 +5,7 @@ FastAPI dependencies for dependency injection.
 from typing import Optional
 
 from practorflow.services.chat import ChatService
+from practorflow.services.agent import AgentService
 from practorflow.session_store.session_history import SessionHistory
 from api.auth.service import AuthService
 
@@ -17,6 +18,7 @@ class ServiceContainer:
     """
     
     chat_service: Optional[ChatService] = None
+    agent_service: Optional[AgentService] = None
     session_history: Optional[SessionHistory] = None
     auth_service: Optional[AuthService] = None
 
@@ -38,6 +40,21 @@ def get_chat_service() -> ChatService:
     if container.chat_service is None:
         raise RuntimeError("ChatService not initialized. Application not started properly.")
     return container.chat_service
+
+
+def get_agent_service() -> AgentService:
+    """
+    Dependency to get AgentService instance.
+    
+    Returns:
+        AgentService instance.
+    
+    Raises:
+        RuntimeError: If AgentService is not initialized.
+    """
+    if container.agent_service is None:
+        raise RuntimeError("AgentService not initialized. Application not started properly.")
+    return container.agent_service
 
 
 def get_session_history() -> SessionHistory:
