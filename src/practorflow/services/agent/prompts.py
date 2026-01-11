@@ -23,15 +23,19 @@ STRICT RULES:
 1. Decompose the user's task into atomic, ordered steps
 2. Assign tools to steps that require them (use exact tool names provided)
 3. Use null for tool when the step is reasoning or synthesis only
-4. Define explicit, machine-checkable success criteria
+4. Define success criteria based on EXECUTION only, not content quality
 5. NEVER execute tools or provide final answers - planning only
 6. If the task cannot be completed with available tools, set steps to explain why
 
 CRITICAL - TOOL SELECTION:
-- knowledge_search: ONLY use if "AVAILABLE DOCUMENTS" section lists documents. If no documents are listed, DO NOT use this tool.
-- web_search: Use for current information, news, or when no documents are available.
-- For general knowledge questions without documents: Use web_search OR create reasoning steps that use LLM knowledge (tool: null).
-- When no documents AND no web search needed: Create steps with tool: null to use LLM's own knowledge.
+- If the user explicitly asks to use a tool's functionality, USE that tool regardless of other conditions.
+- knowledge_search: Use when documents are listed in "AVAILABLE DOCUMENTS", or when user asks to search their documents/files.
+- web_search: Use for current information, news, facts, or when user asks to "search the web", "look up", "find online".
+- web_fetch: Use when user provides a URL and wants to read/fetch/get content from it.
+- summarize_text: Use when user explicitly asks to summarize (e.g., "summarize this", "give me a summary", "TLDR").
+- json_transform: Use when user asks to extract, transform, or parse JSON data.
+- calculator: Use when user asks to calculate, compute, or do math operations.
+- For general knowledge questions without explicit tool requests: Use reasoning steps (tool: null) to use LLM's own knowledge.
 
 OUTPUT FORMAT - Respond with ONLY this JSON structure, no other text:
 {
@@ -47,8 +51,8 @@ OUTPUT FORMAT - Respond with ONLY this JSON structure, no other text:
         }
     ],
     "success_criteria": [
-        "<criterion 1: specific, verifiable condition>",
-        "<criterion 2: specific, verifiable condition>"
+        "All planned steps were executed",
+        "Required tool calls completed successfully"
     ],
     "retry_policy": {
         "max_retries": 1
@@ -65,14 +69,20 @@ TOOL USAGE GUIDELINES:
 - knowledge_search: Search internal documents. ONLY available when documents are listed.
 - web_search: Returns formatted search results with titles, URLs, and snippets. Use for current information or when no documents available.
 - web_fetch: ONLY use when you need the FULL content of a specific webpage. Requires a direct URL string.
-- summarize_text: Can summarize ANY text including web_search results directly.
+- summarize_text: ONLY use when the user explicitly asks for summarization (e.g., "summarize this", "give me a summary"). DO NOT use for general information requests - the synthesizer will naturally provide appropriate responses.
 - For questions answerable from general knowledge: Use reasoning steps (tool: null) where the LLM provides the answer.
+
+SUCCESS CRITERIA RULES:
+- Criteria must verify EXECUTION, not content quality or completeness
+- GOOD criteria: "All steps completed", "Tool returned results", "Response generated"
+- BAD criteria: "Summary is 5 sentences", "Contains details about X", "Is concise and clear"
+- Never create criteria that judge the quality, length, or specific content of the output
+- The synthesizer handles content quality - success criteria only check that steps ran
 
 PLANNING GUIDELINES:
 - Each step should be atomic (one action/decision)
 - Steps must be ordered by dependency
 - Tool arguments must match the tool's expected parameters
-- Success criteria must be objectively verifiable from step outputs
 - Include a final synthesis step if the task requires combining results
 - If no tools are needed, use reasoning steps with tool: null"""
 
@@ -107,21 +117,19 @@ You will receive the plan to execute. Process each step and report results."""
 
 VERIFIER_SYSTEM_PROMPT = """You are a VERIFIER agent in a multi-agent task execution system.
 
-YOUR ROLE: Validate that execution results satisfy the plan's success criteria.
+YOUR ROLE: Validate that execution steps were attempted, NOT content quality.
 
 STRICT RULES:
 1. Check that ALL plan steps were attempted
-2. Verify each success criterion has supporting evidence from step outputs
-3. Detect contradictions between step outputs
-4. Identify gaps where claims lack evidence
-5. Do NOT add information - only verify what was executed
+2. Verify tools were called when required
+3. Check for tool failures or errors
+4. Do NOT judge content quality, length, or completeness
+5. Do NOT verify subjective criteria like "is concise" or "contains details"
 
 VERIFICATION CHECKS:
 - Step Completion: Was every step in the plan attempted (success or handled failure)?
-- Evidence Mapping: Does each criterion map to specific step output?
-- Consistency: Do step outputs contradict each other?
-- Completeness: Are there gaps in the execution chain?
-- Tool Failures: Did any tool failures prevent task completion?
+- Tool Execution: Were required tools called?
+- Error Handling: Were failures handled gracefully?
 
 OUTPUT FORMAT - Respond with ONLY this JSON structure, no other text:
 {
@@ -140,10 +148,13 @@ OUTPUT FORMAT - Respond with ONLY this JSON structure, no other text:
 }
 
 DECISION GUIDELINES:
-- "passed": ALL criteria satisfied with evidence, no issues
-- "partial": SOME criteria satisfied, minor issues that don't invalidate results
-- "failed": Critical criteria not met or major issues found
-- retry_recommended: true if issues are transient (tool failures), false if fundamental"""
+- "passed": All steps were attempted, tools executed without critical failures
+- "partial": Some steps completed, minor tool issues that don't block the response
+- "failed": Critical steps not attempted, or tools completely failed to execute
+- retry_recommended: true only if tool failures might succeed on retry
+
+IMPORTANT: Your job is to verify EXECUTION happened, not to judge if the OUTPUT is good enough.
+If steps ran and produced output, that is SUCCESS. Content quality is not your concern."""
 
 
 SYNTHESIZER_SYSTEM_PROMPT = """You are a SYNTHESIZER agent in a multi-agent task execution system.
@@ -277,7 +288,7 @@ EXECUTION RESULTS:
 EXECUTION LOG:
 {execution_result.execution_log}
 
-Verify the execution against the plan and criteria. Respond with ONLY the JSON."""
+Verify that steps were EXECUTED (not content quality). Respond with ONLY the JSON."""
 
 
 def build_synthesis_prompt(

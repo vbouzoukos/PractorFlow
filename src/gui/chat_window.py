@@ -96,7 +96,12 @@ class ChatWindow(QMainWindow):
         
         self._session_label = QLabel("Session: Connecting...")
         header_layout.addWidget(self._session_label)
-        
+        # Reconnect
+        self._reconnect_btn = QPushButton("Reconnect")
+        self._reconnect_btn.setToolTip("Reconnect to server")
+        self._reconnect_btn.hide()
+        header_layout.addWidget(self._reconnect_btn)
+
         # Agent mode toggle
         self._agent_mode_checkbox = QCheckBox("Agent Mode")
         self._agent_mode_checkbox.setToolTip(
@@ -121,11 +126,6 @@ class ChatWindow(QMainWindow):
             self._documents_btn.setIconSize(QSize(18, 18))
         
         header_layout.addWidget(self._documents_btn)
-        
-        self._reconnect_btn = QPushButton("Reconnect")
-        self._reconnect_btn.setToolTip("Reconnect to server")
-        self._reconnect_btn.hide()
-        header_layout.addWidget(self._reconnect_btn)
         
         header_layout.addStretch()
         

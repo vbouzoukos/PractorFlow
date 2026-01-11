@@ -98,6 +98,6 @@ def test_verification_partial_when_some_steps_succeed_and_some_fail():
     result = heuristic_verification(plan, execution)
 
     assert result.verification_status == VerificationStatus.PARTIAL
-    assert result.failed_criteria == ["Some steps failed or were not executed"]
+    assert result.failed_criteria == ["Some steps had issues but response was generated"]
     assert result.retry_recommended is True
     assert any(i.issue_type == IssueType.TOOL_FAILURE for i in result.issues)

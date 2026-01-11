@@ -93,8 +93,9 @@ async def test_execute_task_verification_failed_no_retry(service):
             user="user",
         )
 
-    assert result.success is False
-    assert result.error == "failure-msg"
+    assert result.success is True
+    assert result.error is None
+    assert result.verification_result.verification_status == VerificationStatus.FAILED
     build_failure.assert_called_once()
     persist.assert_called()
 
@@ -191,8 +192,9 @@ async def test_execute_task_verification_failed_after_retries_exhausted(service)
             user="user",
         )
 
-    assert result.success is False
-    assert result.error == "final-failure"
+    assert result.success is True
+    assert result.error is None
+    assert result.verification_result.verification_status == VerificationStatus.FAILED
     assert run_verifier.call_count == 2
 
 

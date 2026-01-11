@@ -24,39 +24,12 @@ from api.schemas import (
 )
 from practorflow.services.agent import AgentService
 from practorflow.services.agent.schemas import AgentTaskResult
-from practorflow.services.dto.chat_file import ChatFile
 from practorflow.session_store.session_history import SessionHistory
 from practorflow.logger.logger import get_logger
 
 logger = get_logger("agent-api", level="INFO")
 
 router = APIRouter(prefix="/agent", tags=["agent"])
-
-
-async def _convert_upload_files(files: Optional[List[UploadFile]]) -> Optional[List[ChatFile]]:
-    """
-    Convert FastAPI UploadFile objects to ChatFile DTOs.
-
-    Args:
-        files: Optional list of uploaded files.
-
-    Returns:
-        List of ChatFile objects, or None if no files provided.
-    """
-    if not files:
-        return None
-
-    chat_files = []
-    for file in files:
-        content = await file.read()
-        chat_files.append(
-            ChatFile(
-                filename=file.filename or "unknown",
-                content=content,
-                content_type=file.content_type,
-            )
-        )
-    return chat_files
 
 
 @router.get(
@@ -129,13 +102,11 @@ async def execute_task(
         logger.info(f"[Agent API] Files uploaded: {filenames}")
 
     try:
-        chat_files = await _convert_upload_files(files)
-
         result = await agent_service.execute_task(
             session_id=session_id,
             task=task,
             user=current_user.user_id,
-            files=chat_files,
+            files=files,
         )
 
         logger.info(f"[Agent API] Task completed for session: {session_id}, success: {result.success}")

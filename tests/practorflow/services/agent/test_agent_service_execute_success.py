@@ -198,8 +198,9 @@ async def test_execute_task_retries_then_stops_on_no_more_retries(
             user="user1",
         )
 
-    assert result.success is False
-    assert result.error == "failed-msg"
+    assert result.success is True
+    assert result.error is None
+    assert result.verification_result.verification_status == VerificationStatus.FAILED
     assert persist.called
 
 
@@ -244,8 +245,9 @@ async def test_execute_task_failure_message_and_persist_called(
             user="user2",
         )
 
-    assert result.success is False
-    assert result.error == "final-failure"
+    assert result.success is True
+    assert result.error is None
+    assert result.verification_result.verification_status == VerificationStatus.FAILED
     persist.assert_called()
 
 
