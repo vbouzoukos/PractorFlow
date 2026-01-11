@@ -81,6 +81,25 @@ def make_execution_result(
         execution_log=execution_log,
     )
 
+from typing import Callable
+from practorflow.services.agent.schemas import Plan, ExecutionResult
+
+def make_run_synthesizer_mock(
+    synthesizer_fn: Callable[[Plan, ExecutionResult], str]
+):
+    """
+    Dynamic async mock for AgentService._run_synthesizer.
+
+    The caller provides the synthesis logic.
+    """
+
+    async def _run_synthesizer(
+        plan: Plan,
+        execution_result: ExecutionResult,
+    ) -> str:
+        return synthesizer_fn(plan, execution_result)
+
+    return _run_synthesizer
 
 def make_verification_result(
     status: VerificationStatus = VerificationStatus.PASSED,

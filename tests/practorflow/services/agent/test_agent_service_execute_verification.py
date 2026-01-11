@@ -11,6 +11,7 @@ from tests.practorflow.common.fixtures import (
 from tests.practorflow.services.agent.common_agent_deps import (
     make_plan,
     make_execution_result,
+    make_run_synthesizer_mock,
     make_verification_result,
     make_session,
 )
@@ -66,9 +67,17 @@ async def test_execute_task_verification_failed_no_retry(service):
         retry_recommended=False,
     )
 
+    def synth_logic(plan, execution_result):
+        return f"{plan.task}:{len(execution_result.step_results)}"
+
     with (
         patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
         patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
+        patch.object(
+            service,
+            "_run_synthesizer",
+            make_run_synthesizer_mock(synth_logic),
+        ),
         patch.object(service, "_run_verifier", AsyncMock(return_value=verification)),
         patch(
             "practorflow.services.agent.agent_service.build_failure_message",
@@ -102,9 +111,17 @@ async def test_execute_task_verification_partial_no_retry(service):
         retry_recommended=False,
     )
 
+    def synth_logic(plan, execution_result):
+        return f"{plan.task}:{len(execution_result.step_results)}"
+
     with (
         patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
         patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
+        patch.object(
+            service,
+            "_run_synthesizer",
+            make_run_synthesizer_mock(synth_logic),
+        ),
         patch.object(service, "_run_verifier", AsyncMock(return_value=verification)),
         patch(
             "practorflow.services.agent.agent_service.build_failure_message",
@@ -120,10 +137,9 @@ async def test_execute_task_verification_partial_no_retry(service):
             user="user",
         )
 
-    assert result.success is False
-    assert result.error == "partial-failure"
-    build_failure.assert_called_once()
-    persist.assert_called()
+    assert result.success is True
+    assert result.verification_result.verification_status == VerificationStatus.PARTIAL
+    assert result.output == "test task:1"
 
 
 # ---------------------------------------------------------------------
@@ -145,9 +161,17 @@ async def test_execute_task_verification_failed_after_retries_exhausted(service)
         retry_recommended=False,
     )
 
+    def synth_logic(plan, execution_result):
+        return f"{plan.task}:{len(execution_result.step_results)}"
+
     with (
         patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
         patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
+        patch.object(
+            service,
+            "_run_synthesizer",
+            make_run_synthesizer_mock(synth_logic),
+        ),
         patch.object(
             service,
             "_run_verifier",
@@ -170,6 +194,7 @@ async def test_execute_task_verification_failed_after_retries_exhausted(service)
     assert result.success is False
     assert result.error == "final-failure"
     assert run_verifier.call_count == 2
+
 
 @pytest.mark.asyncio
 async def test_execute_task_verifier_success_path(service):
@@ -221,6 +246,7 @@ async def test_execute_task_verifier_success_path(service):
 
     assert result.success is True
 
+
 @pytest.mark.asyncio
 async def test_run_verifier_successful_json_parsing(service):
     """Test _run_verifier successfully parses valid JSON and returns VerificationResult."""
@@ -228,16 +254,16 @@ async def test_run_verifier_successful_json_parsing(service):
     execution = make_execution_result(plan)
 
     agent_mock = MagicMock()
-    agent_mock.run = AsyncMock(
-        return_value=MagicMock(output="some json string")
-    )
+    agent_mock.run = AsyncMock(return_value=MagicMock(output="some json string"))
 
-    mock_parse = MagicMock(return_value={
-        "verification_status": "passed",
-        "failed_criteria": [],
-        "issues": [],
-        "retry_recommended": False,
-    })
+    mock_parse = MagicMock(
+        return_value={
+            "verification_status": "passed",
+            "failed_criteria": [],
+            "issues": [],
+            "retry_recommended": False,
+        }
+    )
 
     with (
         patch(

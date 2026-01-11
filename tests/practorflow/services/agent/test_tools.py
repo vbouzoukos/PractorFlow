@@ -381,7 +381,7 @@ async def test_search_knowledge_no_results():
         query="q",
     )
 
-    assert result == "No relevant information found."
+    assert result == ""
 
 
 @pytest.mark.asyncio
@@ -389,8 +389,8 @@ async def test_search_knowledge_with_results():
     agent = MagicMock()
     knowledge_store = MagicMock()
     knowledge_store.search_scoped.return_value = [{"text": "abc", "filename": "f.txt"}]
-
-    deps = make_agent_deps(knowledge_store, MagicMock())
+    document_scope = []
+    deps = make_agent_deps(knowledge_store, MagicMock(), document_scope)
 
     register_executor_tools(agent, deps)
     search_knowledge = agent.tool.call_args_list[1][0][0]
@@ -441,7 +441,7 @@ async def test_search_web_error():
         max_results=1,
     )
 
-    assert result == "Web search error: oops"
+    assert result == ""
 
 
 @pytest.mark.asyncio
@@ -461,7 +461,7 @@ async def test_fetch_webpage_success_no_content():
         extract_mode="text",
     )
 
-    assert result == "No content extracted."
+    assert result == ""
 
 
 @pytest.mark.asyncio
@@ -480,7 +480,7 @@ async def test_fetch_webpage_error():
         url="x",
     )
 
-    assert result == "Fetch error: 404"
+    assert result == ""
 
 
 @pytest.mark.asyncio
@@ -520,7 +520,7 @@ async def test_summarize_text_error():
         num_sentences=2,
     )
 
-    assert result == "Summarization error: bad"
+    assert result == ""
 
 
 @pytest.mark.asyncio
@@ -624,3 +624,27 @@ async def test_calculate_error():
     )
 
     assert result == "Calculation error: nope"
+
+@pytest.mark.asyncio
+async def test_search_knowledge_no_results_with_document_scope():
+    agent = MagicMock()
+    knowledge_store = MagicMock()
+    knowledge_store.search_scoped.return_value = []
+
+    # IMPORTANT: document_scope must be non-None
+    deps = make_agent_deps(
+        knowledge_store=knowledge_store,
+        tool_registry=MagicMock(),
+        document_scope={"doc-1"},
+    )
+
+    register_executor_tools(agent, deps)
+    search_knowledge = agent.tool.call_args_list[1][0][0]
+
+    result = await search_knowledge(
+        ctx=MagicMock(deps=deps),
+        query="q",
+    )
+
+    assert result == ""
+    knowledge_store.search_scoped.assert_called_once()

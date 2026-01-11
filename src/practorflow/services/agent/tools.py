@@ -142,7 +142,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         )
 
         if not results:
-            return ""
+            return "" # NOT COVERED
 
         parts = [f"Found {len(results)} result(s):"]
         for idx, result in enumerate(results, 1):
@@ -151,6 +151,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
             parts.append(f"\n[{idx}] From {filename}:\n{text}")
 
         return "\n".join(parts)
+
     @agent.tool
     async def search_web(
         ctx: RunContext[AgentDeps],

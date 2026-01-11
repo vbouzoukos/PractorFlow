@@ -66,7 +66,7 @@ def test_build_executor_prompt_reasoning_step():
 
     prompt = build_executor_prompt(plan)
 
-    assert "Tool: None (reasoning step)" in prompt
+    assert "Tool: None (use LLM knowledge)" in prompt
 
 
 def test_build_verifier_prompt_includes_execution_results():
@@ -152,3 +152,48 @@ def test_build_verifier_prompt_includes_error():
     prompt = build_verifier_prompt(plan, execution)
 
     assert "Error: boom" in prompt
+
+def test_build_synthesis_prompt_skips_llm_reasoning_outputs():
+    plan = make_plan()
+
+    execution = make_execution_result(
+        plan,
+        step_results=[
+            StepResult(
+                step_id=plan.steps[0].step_id,
+                status=StepStatus.SUCCESS,
+                output="internal reasoning text",
+                evidence=["llm_reasoning"],
+                error=None,
+            )
+        ],
+    )
+
+    from practorflow.services.agent.prompts import build_synthesis_prompt
+
+    prompt = build_synthesis_prompt(plan.task, execution)
+
+    assert "internal reasoning text" not in prompt
+    assert "No tool outputs available." in prompt
+
+def test_build_synthesis_prompt_no_tool_outputs():
+    plan = make_plan()
+
+    execution = make_execution_result(
+        plan,
+        step_results=[
+            StepResult(
+                step_id=plan.steps[0].step_id,
+                status=StepStatus.SUCCESS,
+                output=None,
+                evidence=[],
+                error=None,
+            )
+        ],
+    )
+
+    from practorflow.services.agent.prompts import build_synthesis_prompt
+
+    prompt = build_synthesis_prompt(plan.task, execution)
+
+    assert "No tool outputs available." in prompt

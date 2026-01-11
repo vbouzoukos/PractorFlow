@@ -99,8 +99,7 @@ def test_extract_final_output_with_outputs():
 
     output = extract_final_output(plan, execution)
 
-    assert plan.steps[0].description in output
-
+    assert output == "ok"
 
 def test_extract_final_output_fallback_message():
     plan = make_plan()
@@ -146,3 +145,51 @@ def test_persist_to_session_with_verification():
 
     assert session.metadata["verification"] == {"verification_status": "passed"}
     store.save.assert_called_once_with(session)
+
+def test_extract_final_output_skips_failed_steps():
+    plan = make_plan()
+
+    execution = make_execution_result(
+        plan,
+        step_results=[
+            make_step_result(
+                step_id="step_1",
+                status=StepStatus.FAILURE,
+                error="boom",
+            ),
+            make_step_result(
+                step_id="step_2",
+                status=StepStatus.SUCCESS,
+                output="good",
+            ),
+        ],
+    )
+
+    output = extract_final_output(plan, execution)
+
+    assert output == "good"
+
+def test_extract_final_output_skips_reasoning_steps():
+    plan = make_plan()
+
+    execution = make_execution_result(
+        plan,
+        step_results=[
+            make_step_result(
+                step_id="step_1",
+                status=StepStatus.SUCCESS,
+                output="internal reasoning",
+                evidence=["llm_reasoning"],
+            ),
+            make_step_result(
+                step_id="step_2",
+                status=StepStatus.SUCCESS,
+                output="tool output",
+                evidence=["tool:x"],
+            ),
+        ],
+    )
+
+    output = extract_final_output(plan, execution)
+
+    assert output == "tool output"

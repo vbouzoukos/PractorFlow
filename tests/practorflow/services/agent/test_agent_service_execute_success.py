@@ -9,10 +9,10 @@ from tests.practorflow.common.fixtures import (
 
 from practorflow.services.agent.agent_service import AgentService
 from practorflow.services.agent.schemas import VerificationStatus
-from practorflow.services.dto.chat_file import ChatFile
 from tests.practorflow.services.agent.common_agent_deps import (
     make_plan,
     make_execution_result,
+    make_run_synthesizer_mock,
     make_verification_result,
     make_session,
 )
@@ -74,14 +74,19 @@ async def test_execute_task_success_with_file_indexing(
         "filename": "a.txt",
     }
 
+    # ✅ dynamic synthesizer logic (USES plan + execution_result)
+    def synth_logic(plan, execution_result):
+        return f"{plan.task}:{len(execution_result.step_results)}"
+
     with (
         patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
         patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
-        patch.object(service, "_run_verifier", AsyncMock(return_value=verification)),
-        patch(
-            "practorflow.services.agent.agent_service.extract_final_output",
-            return_value="final-output",
+        patch.object(
+            service,
+            "_run_synthesizer",
+            make_run_synthesizer_mock(synth_logic),
         ),
+        patch.object(service, "_run_verifier", AsyncMock(return_value=verification)),
     ):
         result = await service.execute_task(
             session_id="s1",
@@ -91,13 +96,15 @@ async def test_execute_task_success_with_file_indexing(
         )
 
     assert result.success is True
-    assert result.output == "final-output"
+    assert result.output == "test task:1"
 
     mock_knowledge_store.add_document_from_stream.assert_called_once_with(
         file_stream=file_stream,
         filename="a.txt",
         mime_type="text/plain",
     )
+
+
 @pytest.mark.asyncio
 async def test_execute_task_uses_existing_session(
     service,
@@ -113,14 +120,18 @@ async def test_execute_task_uses_existing_session(
     execution = make_execution_result(plan)
     verification = make_verification_result(VerificationStatus.PASSED)
 
+    def synth_logic(plan, execution_result):
+        return f"{plan.task}:{len(execution_result.step_results)}"
+
     with (
         patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
         patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
-        patch.object(service, "_run_verifier", AsyncMock(return_value=verification)),
-        patch(
-            "practorflow.services.agent.agent_service.extract_final_output",
-            return_value="final-output",
+        patch.object(
+            service,
+            "_run_synthesizer",
+            make_run_synthesizer_mock(synth_logic),
         ),
+        patch.object(service, "_run_verifier", AsyncMock(return_value=verification)),
     ):
         result = await service.execute_task(
             session_id="s1",
@@ -130,8 +141,11 @@ async def test_execute_task_uses_existing_session(
         )
 
     assert result.success is True
+    assert result.output == "test task:1"
+
     mock_session_store.get.assert_called_once_with("s1")
     mock_session_store.exists.assert_called_once_with("s1")
+
 
 @pytest.mark.asyncio
 async def test_execute_task_retries_then_stops_on_no_more_retries(
@@ -154,9 +168,17 @@ async def test_execute_task_retries_then_stops_on_no_more_retries(
         retry_recommended=False,
     )
 
+    def synth_logic(plan, execution_result):
+        return f"{plan.task}:{len(execution_result.step_results)}"
+
     with (
         patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
         patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
+        patch.object(
+            service,
+            "_run_synthesizer",
+            make_run_synthesizer_mock(synth_logic),
+        ),
         patch.object(
             service,
             "_run_verifier",
@@ -196,9 +218,17 @@ async def test_execute_task_failure_message_and_persist_called(
         retry_recommended=False,
     )
 
+    def synth_logic(plan, execution_result):
+        return f"{plan.task}:{len(execution_result.step_results)}"
+
     with (
         patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
         patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
+        patch.object(
+            service,
+            "_run_synthesizer",
+            make_run_synthesizer_mock(synth_logic),
+        ),
         patch.object(service, "_run_verifier", AsyncMock(return_value=verification)),
         patch(
             "practorflow.services.agent.agent_service.build_failure_message",
@@ -217,6 +247,7 @@ async def test_execute_task_failure_message_and_persist_called(
     assert result.success is False
     assert result.error == "final-failure"
     persist.assert_called()
+
 
 @pytest.mark.asyncio
 async def test_run_executor_logs_each_node(service):
@@ -253,15 +284,11 @@ async def test_run_executor_logs_each_node(service):
             "practorflow.services.agent.agent_service.build_execution_log",
             return_value="log",
         ),
-        patch(
-            "practorflow.services.agent.agent_service.logger"
-        ) as mock_logger,
+        patch("practorflow.services.agent.agent_service.logger") as mock_logger,
     ):
         await service._run_executor(
             plan,
             MagicMock(),  # deps
         )
 
-    mock_logger.debug.assert_any_call(
-        "[AgentService][Executor] node=TestNode"
-    )
+    mock_logger.debug.assert_any_call("[AgentService][Executor] node=TestNode")
