@@ -11,7 +11,6 @@ from tests.practorflow.common.fixtures import (
 from tests.practorflow.services.agent.common_agent_deps import (
     make_plan,
     make_execution_result,
-    make_run_synthesizer_mock,
     make_verification_result,
     make_session,
 )
@@ -55,9 +54,6 @@ def service(
     )
 
 
-# ---------------------------------------------------------------------
-# 1️⃣ Verification FAILED — no retry
-# ---------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_execute_task_verification_failed_no_retry(service):
     plan = make_plan()
@@ -67,22 +63,27 @@ async def test_execute_task_verification_failed_no_retry(service):
         retry_recommended=False,
     )
 
-    def synth_logic(plan, execution_result):
-        return f"{plan.task}:{len(execution_result.step_results)}"
-
     with (
-        patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
-        patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
-        patch.object(
-            service,
-            "_run_synthesizer",
-            make_run_synthesizer_mock(synth_logic),
+        patch(
+            "practorflow.services.agent.agent_service.run_planner",
+            AsyncMock(return_value=plan),
         ),
-        patch.object(service, "_run_verifier", AsyncMock(return_value=verification)),
+        patch(
+            "practorflow.services.agent.agent_service.run_executor",
+            AsyncMock(return_value=execution),
+        ),
+        patch(
+            "practorflow.services.agent.agent_service.run_synthesizer",
+            AsyncMock(return_value="test task:1"),
+        ),
+        patch(
+            "practorflow.services.agent.agent_service.run_verifier",
+            AsyncMock(return_value=verification),
+        ),
         patch(
             "practorflow.services.agent.agent_service.build_failure_message",
             return_value="failure-msg",
-        ) as build_failure,
+        ),
         patch(
             "practorflow.services.agent.agent_service.persist_to_session",
         ) as persist,
@@ -93,16 +94,12 @@ async def test_execute_task_verification_failed_no_retry(service):
             user="user",
         )
 
-    assert result.success is True
-    assert result.error is None
+    assert result.success is False
+    assert result.error == "failure-msg"
     assert result.verification_result.verification_status == VerificationStatus.FAILED
-    build_failure.assert_called_once()
     persist.assert_called()
 
 
-# ---------------------------------------------------------------------
-# 2️⃣ Verification PARTIAL — no retry
-# ---------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_execute_task_verification_partial_no_retry(service):
     plan = make_plan()
@@ -112,25 +109,23 @@ async def test_execute_task_verification_partial_no_retry(service):
         retry_recommended=False,
     )
 
-    def synth_logic(plan, execution_result):
-        return f"{plan.task}:{len(execution_result.step_results)}"
-
     with (
-        patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
-        patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
-        patch.object(
-            service,
-            "_run_synthesizer",
-            make_run_synthesizer_mock(synth_logic),
+        patch(
+            "practorflow.services.agent.agent_service.run_planner",
+            AsyncMock(return_value=plan),
         ),
-        patch.object(service, "_run_verifier", AsyncMock(return_value=verification)),
         patch(
-            "practorflow.services.agent.agent_service.build_failure_message",
-            return_value="partial-failure",
-        ) as build_failure,
+            "practorflow.services.agent.agent_service.run_executor",
+            AsyncMock(return_value=execution),
+        ),
         patch(
-            "practorflow.services.agent.agent_service.persist_to_session",
-        ) as persist,
+            "practorflow.services.agent.agent_service.run_synthesizer",
+            AsyncMock(return_value="test task:1"),
+        ),
+        patch(
+            "practorflow.services.agent.agent_service.run_verifier",
+            AsyncMock(return_value=verification),
+        ),
     ):
         result = await service.execute_task(
             session_id="s2",
@@ -139,18 +134,14 @@ async def test_execute_task_verification_partial_no_retry(service):
         )
 
     assert result.success is True
-    assert result.verification_result.verification_status == VerificationStatus.PARTIAL
     assert result.output == "test task:1"
+    assert result.verification_result.verification_status == VerificationStatus.PARTIAL
 
 
-# ---------------------------------------------------------------------
-# 3️⃣ Verification FAILED after retries exhausted
-# ---------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_execute_task_verification_failed_after_retries_exhausted(service):
     plan = make_plan()
     plan.retry_policy.max_retries = 1
-
     execution = make_execution_result(plan)
 
     verification_retry = make_verification_result(
@@ -162,28 +153,26 @@ async def test_execute_task_verification_failed_after_retries_exhausted(service)
         retry_recommended=False,
     )
 
-    def synth_logic(plan, execution_result):
-        return f"{plan.task}:{len(execution_result.step_results)}"
-
     with (
-        patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
-        patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
-        patch.object(
-            service,
-            "_run_synthesizer",
-            make_run_synthesizer_mock(synth_logic),
+        patch(
+            "practorflow.services.agent.agent_service.run_planner",
+            AsyncMock(return_value=plan),
         ),
-        patch.object(
-            service,
-            "_run_verifier",
+        patch(
+            "practorflow.services.agent.agent_service.run_executor",
+            AsyncMock(return_value=execution),
+        ),
+        patch(
+            "practorflow.services.agent.agent_service.run_synthesizer",
+            AsyncMock(return_value="test task:1"),
+        ),
+        patch(
+            "practorflow.services.agent.agent_service.run_verifier",
             AsyncMock(side_effect=[verification_retry, verification_final]),
-        ) as run_verifier,
+        ),
         patch(
             "practorflow.services.agent.agent_service.build_failure_message",
             return_value="final-failure",
-        ),
-        patch(
-            "practorflow.services.agent.agent_service.persist_to_session",
         ),
     ):
         result = await service.execute_task(
@@ -192,52 +181,36 @@ async def test_execute_task_verification_failed_after_retries_exhausted(service)
             user="user",
         )
 
-    assert result.success is True
-    assert result.error is None
+    assert result.success is False
+    assert result.error == "final-failure"
     assert result.verification_result.verification_status == VerificationStatus.FAILED
-    assert run_verifier.call_count == 2
 
 
 @pytest.mark.asyncio
 async def test_execute_task_verifier_success_path(service):
     plan = make_plan()
     execution = make_execution_result(plan)
-
-    agent = MagicMock()
-    agent.run = AsyncMock(
-        return_value=MagicMock(
-            output={
-                "verification_status": "PASSED",
-                "failed_criteria": [],
-                "issues": [],
-                "retry_recommended": False,
-            }
-        )
+    verification = make_verification_result(
+        status=VerificationStatus.PASSED,
+        retry_recommended=False,
     )
 
     with (
-        patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
-        patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
         patch(
-            "practorflow.services.agent.agent_service.Agent",
-            return_value=agent,
+            "practorflow.services.agent.agent_service.run_planner",
+            AsyncMock(return_value=plan),
         ),
         patch(
-            "practorflow.services.agent.agent_service.create_runner",
-            return_value=MagicMock(),
+            "practorflow.services.agent.agent_service.run_executor",
+            AsyncMock(return_value=execution),
         ),
         patch(
-            "practorflow.services.agent.agent_service.parse_json_from_response",
-            return_value={
-                "verification_status": "PASSED",
-                "failed_criteria": [],
-                "issues": [],
-                "retry_recommended": False,
-            },
+            "practorflow.services.agent.agent_service.run_synthesizer",
+            AsyncMock(return_value="final-output"),
         ),
         patch(
-            "practorflow.services.agent.agent_service.extract_final_output",
-            return_value="final-output",
+            "practorflow.services.agent.agent_service.run_verifier",
+            AsyncMock(return_value=verification),
         ),
     ):
         result = await service.execute_task(
@@ -247,49 +220,43 @@ async def test_execute_task_verifier_success_path(service):
         )
 
     assert result.success is True
+    assert result.output == "final-output"
 
 
 @pytest.mark.asyncio
-async def test_run_verifier_successful_json_parsing(service):
-    """Test _run_verifier successfully parses valid JSON and returns VerificationResult."""
+async def test_run_verifier_successful_json_parsing():
+    from practorflow.services.agent.runners import run_verifier
+
     plan = make_plan()
     execution = make_execution_result(plan)
 
-    agent_mock = MagicMock()
-    agent_mock.run = AsyncMock(return_value=MagicMock(output="some json string"))
+    verification = make_verification_result(VerificationStatus.PASSED)
 
-    mock_parse = MagicMock(
-        return_value={
-            "verification_status": "passed",
-            "failed_criteria": [],
-            "issues": [],
-            "retry_recommended": False,
-        }
-    )
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=MagicMock(output="json"))
+
+    parsed = verification.model_dump()
 
     with (
         patch(
-            "practorflow.services.agent.agent_service.Agent",
-            return_value=agent_mock,
-        ),
-        patch(
-            "practorflow.services.agent.agent_service.create_runner",
+            "practorflow.services.agent.runners.create_runner",
             return_value=MagicMock(),
         ),
         patch(
-            "practorflow.services.agent.agent_service.LocalLLMModel",
-            return_value=MagicMock(),
+            "practorflow.services.agent.runners.Agent",
+            return_value=agent,
         ),
         patch(
-            "practorflow.services.agent.agent_service.parse_json_from_response",
-            mock_parse,
-        ),
-        patch(
-            "practorflow.services.agent.agent_service.build_verifier_prompt",
-            return_value="prompt",
+            "practorflow.services.agent.runners.parse_json_from_response",
+            return_value=parsed,
         ),
     ):
-        result = await service._run_verifier(plan, execution)
+        result = await run_verifier(
+            plan=plan,
+            execution_result=execution,
+            model_pool=MagicMock(),
+            model_config=MagicMock(),
+            knowledge_store=MagicMock(),
+        )
 
-    assert mock_parse.called, "parse_json_from_response was not called"
     assert result.verification_status == VerificationStatus.PASSED

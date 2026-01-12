@@ -38,12 +38,10 @@ def service(
         session_store=mock_session_store,
     )
 
-
 @pytest.mark.asyncio
 async def test_execute_task_planner_raises_value_error(service):
-    with patch.object(
-        service,
-        "_run_planner",
+    with patch(
+        "practorflow.services.agent.agent_service.run_planner",
         AsyncMock(side_effect=ValueError("planner failed")),
     ):
         result = await service.execute_task(
@@ -58,10 +56,9 @@ async def test_execute_task_planner_raises_value_error(service):
 
 
 @pytest.mark.asyncio
-async def test_execute_task_planner_error_persists_session(service, mock_session_store):
-    with patch.object(
-        service,
-        "_run_planner",
+async def test_execute_task_planner_error_persists_session(service):
+    with patch(
+        "practorflow.services.agent.agent_service.run_planner",
         AsyncMock(side_effect=ValueError("bad plan")),
     ), patch(
         "practorflow.services.agent.agent_service.persist_to_session"
@@ -76,33 +73,49 @@ async def test_execute_task_planner_error_persists_session(service, mock_session
     persist.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_run_planner_invalid_plan_structure_raises_value_error(service):
-    # Parsed JSON is present but structurally invalid
-    invalid_plan = {
-        "plan_id": "p1",
-        "task": "test",
-        # ❌ steps must be a list of objects, not strings
-        "steps": ["not-a-step"],
-        "success_criteria": ["ok"],
-        "retry_policy": {"max_retries": 1},
-    }
+async def test_run_planner_invalid_plan_structure_raises_value_error():
+    from practorflow.services.agent.runners import run_planner
+    from practorflow.services.agent.context import ExecutionContext
 
     agent = MagicMock()
-    agent.run = AsyncMock(return_value=MagicMock(output="ignored"))
+    agent.run = AsyncMock(return_value=MagicMock(output="json"))
 
-    with patch(
-        "practorflow.services.agent.agent_service.create_runner",
-        return_value=MagicMock(),
-    ), patch(
-        "practorflow.services.agent.agent_service.Agent",
-        return_value=agent,
-    ), patch(
-        "practorflow.services.agent.agent_service.parse_json_from_response",
-        return_value=invalid_plan,
+    invalid_plan = {
+        "plan_id": "p1",
+        "task": "task",
+        # missing required fields -> ValidationError
+    }
+
+    tool_registry = MagicMock()
+    tool_registry.get_schemas.return_value = []
+
+    ctx = ExecutionContext(
+        session=make_session("s1"),
+        message_history=[],
+        document_scope=None,
+        document_context=None,
+    )
+
+    with (
+        patch(
+            "practorflow.services.agent.runners.create_runner",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "practorflow.services.agent.runners.Agent",
+            return_value=agent,
+        ),
+        patch(
+            "practorflow.services.agent.runners.parse_json_from_response",
+            return_value=invalid_plan,
+        ),
     ):
         with pytest.raises(ValueError):
-            await service._run_planner(
-                task="t",
-                document_context=None,
+            await run_planner(
+                task="task",
+                ctx=ctx,
+                model_pool=MagicMock(),
+                model_config=MagicMock(),
+                knowledge_store=MagicMock(),
+                tool_registry=tool_registry,
             )
-

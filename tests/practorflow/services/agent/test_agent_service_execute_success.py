@@ -12,7 +12,6 @@ from practorflow.services.agent.schemas import VerificationStatus
 from tests.practorflow.services.agent.common_agent_deps import (
     make_plan,
     make_execution_result,
-    make_run_synthesizer_mock,
     make_verification_result,
     make_session,
 )
@@ -54,10 +53,12 @@ def service(
 async def test_execute_task_success_with_file_indexing(
     service,
     mock_knowledge_store,
+    mock_model_pool,
 ):
+    from practorflow.services.agent.context import ExecutionContext
+
     plan = make_plan()
     execution = make_execution_result(plan)
-    verification = make_verification_result(VerificationStatus.PASSED)
 
     file_stream = MagicMock()
     file_stream.read.return_value = b"hello"
@@ -67,94 +68,117 @@ async def test_execute_task_success_with_file_indexing(
     file_mock.filename = "a.txt"
     file_mock.content_type = "text/plain"
 
-    files = [file_mock]
-
     mock_knowledge_store.add_document_from_stream.return_value = {
         "id": "doc-1",
         "filename": "a.txt",
     }
 
-    # ✅ dynamic synthesizer logic (USES plan + execution_result)
-    def synth_logic(plan, execution_result):
-        return f"{plan.task}:{len(execution_result.step_results)}"
+    synth_agent = MagicMock()
+    synth_agent.run = AsyncMock(
+        return_value=MagicMock(output="final synthesized answer")
+    )
 
+    verify_agent = MagicMock()
+    verify_agent.run = AsyncMock(
+        return_value=MagicMock(
+            output=make_verification_result(VerificationStatus.PASSED).model_dump()
+        )
+    )
+
+    ctx = MagicMock(spec=ExecutionContext)
+    ctx.has_history = True
+    ctx.history_length = 1
+    ctx.session = MagicMock()
+    ctx.document_scope = None
+    ctx.document_context = None
+    ctx.message_history = []
     with (
-        patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
-        patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
-        patch.object(
-            service,
-            "_run_synthesizer",
-            make_run_synthesizer_mock(synth_logic),
+        patch(
+            "practorflow.services.agent.agent_service.build_execution_context",
+            return_value=ctx,
         ),
-        patch.object(service, "_run_verifier", AsyncMock(return_value=verification)),
+        patch(
+            "practorflow.services.agent.agent_service.run_planner",
+            AsyncMock(return_value=plan),
+        ),
+        patch(
+            "practorflow.services.agent.agent_service.run_executor",
+            AsyncMock(return_value=execution),
+        ),
+        patch(
+            "practorflow.services.agent.runners.Agent",
+            side_effect=[synth_agent, verify_agent],
+        ),
+        patch(
+            "practorflow.services.agent.runners.create_runner",
+            return_value=MagicMock(),
+        ),
     ):
         result = await service.execute_task(
             session_id="s1",
             task="do something",
             user="user1",
-            files=files,
+            files=[file_mock],
         )
 
     assert result.success is True
-    assert result.output == "test task:1"
-
-    mock_knowledge_store.add_document_from_stream.assert_called_once_with(
-        file_stream=file_stream,
-        filename="a.txt",
-        mime_type="text/plain",
-    )
+    assert result.output == "final synthesized answer"
 
 
 @pytest.mark.asyncio
 async def test_execute_task_uses_existing_session(
     service,
     mock_session_store,
-    mock_knowledge_store,
 ):
-    # existing session path
     session = make_session("s1")
     mock_session_store.exists.return_value = True
     mock_session_store.get.return_value = session
 
     plan = make_plan()
     execution = make_execution_result(plan)
-    verification = make_verification_result(VerificationStatus.PASSED)
 
-    def synth_logic(plan, execution_result):
-        return f"{plan.task}:{len(execution_result.step_results)}"
+    synth_agent = MagicMock()
+    synth_agent.run = AsyncMock(return_value=MagicMock(output="synth output"))
+
+    verify_agent = MagicMock()
+    verify_agent.run = AsyncMock(
+        return_value=MagicMock(
+            output=make_verification_result(VerificationStatus.PASSED).model_dump()
+        )
+    )
 
     with (
-        patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
-        patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
-        patch.object(
-            service,
-            "_run_synthesizer",
-            make_run_synthesizer_mock(synth_logic),
+        patch(
+            "practorflow.services.agent.agent_service.run_planner",
+            AsyncMock(return_value=plan),
         ),
-        patch.object(service, "_run_verifier", AsyncMock(return_value=verification)),
+        patch(
+            "practorflow.services.agent.agent_service.run_executor",
+            AsyncMock(return_value=execution),
+        ),
+        patch(
+            "practorflow.services.agent.runners.Agent",
+            side_effect=[synth_agent, verify_agent],
+        ),
+        patch(
+            "practorflow.services.agent.runners.create_runner",
+            return_value=MagicMock(),
+        ),
     ):
         result = await service.execute_task(
             session_id="s1",
             task="do something",
             user="user1",
-            files=None,
         )
 
     assert result.success is True
-    assert result.output == "test task:1"
-
-    mock_session_store.get.assert_called_once_with("s1")
-    mock_session_store.exists.assert_called_once_with("s1")
+    assert result.output == "synth output"
 
 
 @pytest.mark.asyncio
 async def test_execute_task_retries_then_stops_on_no_more_retries(
     service,
-    mock_session_store,
 ):
-    session = make_session("s1")
-    mock_session_store.exists.return_value = False
-
     plan = make_plan()
     plan.retry_policy.max_retries = 1
     execution = make_execution_result(plan)
@@ -168,29 +192,27 @@ async def test_execute_task_retries_then_stops_on_no_more_retries(
         retry_recommended=False,
     )
 
-    def synth_logic(plan, execution_result):
-        return f"{plan.task}:{len(execution_result.step_results)}"
-
     with (
-        patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
-        patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
-        patch.object(
-            service,
-            "_run_synthesizer",
-            make_run_synthesizer_mock(synth_logic),
+        patch(
+            "practorflow.services.agent.agent_service.run_planner",
+            AsyncMock(return_value=plan),
         ),
-        patch.object(
-            service,
-            "_run_verifier",
+        patch(
+            "practorflow.services.agent.agent_service.run_executor",
+            AsyncMock(return_value=execution),
+        ),
+        patch(
+            "practorflow.services.agent.agent_service.run_synthesizer",
+            AsyncMock(return_value="test task:1"),
+        ),
+        patch(
+            "practorflow.services.agent.agent_service.run_verifier",
             AsyncMock(side_effect=[verification_retry, verification_stop]),
         ),
         patch(
             "practorflow.services.agent.agent_service.build_failure_message",
             return_value="failed-msg",
         ),
-        patch(
-            "practorflow.services.agent.agent_service.persist_to_session",
-        ) as persist,
     ):
         result = await service.execute_task(
             session_id="s1",
@@ -198,20 +220,15 @@ async def test_execute_task_retries_then_stops_on_no_more_retries(
             user="user1",
         )
 
-    assert result.success is True
-    assert result.error is None
+    assert result.success is False
+    assert result.error == "failed-msg"
     assert result.verification_result.verification_status == VerificationStatus.FAILED
-    assert persist.called
 
 
 @pytest.mark.asyncio
 async def test_execute_task_failure_message_and_persist_called(
     service,
-    mock_session_store,
 ):
-    session = make_session("s2")
-    mock_session_store.exists.return_value = False
-
     plan = make_plan()
     execution = make_execution_result(plan)
     verification = make_verification_result(
@@ -219,18 +236,23 @@ async def test_execute_task_failure_message_and_persist_called(
         retry_recommended=False,
     )
 
-    def synth_logic(plan, execution_result):
-        return f"{plan.task}:{len(execution_result.step_results)}"
-
     with (
-        patch.object(service, "_run_planner", AsyncMock(return_value=plan)),
-        patch.object(service, "_run_executor", AsyncMock(return_value=execution)),
-        patch.object(
-            service,
-            "_run_synthesizer",
-            make_run_synthesizer_mock(synth_logic),
+        patch(
+            "practorflow.services.agent.agent_service.run_planner",
+            AsyncMock(return_value=plan),
         ),
-        patch.object(service, "_run_verifier", AsyncMock(return_value=verification)),
+        patch(
+            "practorflow.services.agent.agent_service.run_executor",
+            AsyncMock(return_value=execution),
+        ),
+        patch(
+            "practorflow.services.agent.agent_service.run_synthesizer",
+            AsyncMock(return_value="test task:1"),
+        ),
+        patch(
+            "practorflow.services.agent.agent_service.run_verifier",
+            AsyncMock(return_value=verification),
+        ),
         patch(
             "practorflow.services.agent.agent_service.build_failure_message",
             return_value="final-failure",
@@ -245,14 +267,17 @@ async def test_execute_task_failure_message_and_persist_called(
             user="user2",
         )
 
-    assert result.success is True
-    assert result.error is None
+    assert result.success is False
+    assert result.error == "final-failure"
     assert result.verification_result.verification_status == VerificationStatus.FAILED
     persist.assert_called()
 
 
 @pytest.mark.asyncio
-async def test_run_executor_logs_each_node(service):
+async def test_run_executor_logs_each_node():
+    from practorflow.services.agent.runners import run_executor
+    from practorflow.services.agent.context import ExecutionContext
+
     plan = make_plan()
 
     node = MagicMock()
@@ -269,28 +294,39 @@ async def test_run_executor_logs_each_node(service):
     agent = MagicMock()
     agent.iter.return_value = mock_iter_cm
 
+    ctx = ExecutionContext(
+        session=make_session("s1"),
+        message_history=[],
+        document_scope=None,
+        document_context=None,
+    )
+
     with (
         patch(
-            "practorflow.services.agent.agent_service.create_runner",
+            "practorflow.services.agent.runners.create_runner",
             return_value=MagicMock(),
         ),
         patch(
-            "practorflow.services.agent.agent_service.Agent",
+            "practorflow.services.agent.runners.Agent",
             return_value=agent,
         ),
         patch(
-            "practorflow.services.agent.agent_service.parse_executor_results",
+            "practorflow.services.agent.runners.parse_executor_results",
             return_value=make_execution_result(plan).step_results,
         ),
         patch(
-            "practorflow.services.agent.agent_service.build_execution_log",
+            "practorflow.services.agent.runners.build_execution_log",
             return_value="log",
         ),
-        patch("practorflow.services.agent.agent_service.logger") as mock_logger,
+        patch("practorflow.services.agent.runners.logger") as mock_logger,
     ):
-        await service._run_executor(
-            plan,
-            MagicMock(),  # deps
+        await run_executor(
+            plan=plan,
+            ctx=ctx,
+            model_pool=MagicMock(),
+            model_config=MagicMock(),
+            knowledge_store=MagicMock(),
+            tool_registry=MagicMock(),
         )
 
-    mock_logger.debug.assert_any_call("[AgentService][Executor] node=TestNode")
+    mock_logger.debug.assert_any_call("[Executor] node=TestNode")

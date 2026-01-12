@@ -53,14 +53,32 @@ class AgentTaskWorker(QThread):
         self._file_paths = file_paths or []
     
     def run(self):
-        """Execute the agent task."""
         try:
-            result = self._client.execute_task(
+            job_id = self._client.execute_task(
                 session_id=self._session_id,
                 task=self._task,
                 file_paths=self._file_paths,
             )
-            self.task_completed.emit(result)
+
+            while True:
+                job = self._client.get_job(job_id)
+
+                if job.status == "completed":
+                    self.task_completed.emit(
+                        AgentTaskResult(
+                            success=True,
+                            output=job.result,
+                            error=None,
+                        )
+                    )
+                    return
+
+                if job.status == "failed":
+                    self.error_occurred.emit(job.error or "Agent job failed")
+                    return
+
+                time.sleep(1)
+
         except Exception as e:
             self.error_occurred.emit(str(e))
     

@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 
 from api.dependencies import get_agent_service, get_session_history
 from api.auth import get_current_user, UserContext
+from api.routes.agent.agent_task import get_job, start_agent_job
 from api.schemas import (
     DeleteResponse,
     SessionResponse,
@@ -95,27 +96,76 @@ async def execute_task(
     Raises:
         HTTPException: If execution fails.
     """
-    logger.info(f"[Agent API] Task received for session: {session_id} from user: {current_user.user_id}")
+    logger.info(
+        f"[Agent API] Scheduling async task for session: {session_id} "
+        f"from user: {current_user.user_id}"
+    )
 
     if files:
         filenames = [f.filename for f in files]
         logger.info(f"[Agent API] Files uploaded: {filenames}")
 
     try:
-        result = await agent_service.execute_task(
+        job_id = start_agent_job(
+            agent_service=agent_service,
             session_id=session_id,
             task=task,
             user=current_user.user_id,
             files=files,
         )
 
-        logger.info(f"[Agent API] Task completed for session: {session_id}, success: {result.success}")
+        logger.info(f"[Agent API] Job {job_id} scheduled for session: {session_id}")
 
-        return result
+        return {
+            "job_id": job_id,
+            "status": "scheduled",
+        }
 
     except Exception as e:
-        logger.error(f"[Agent API] Error executing task: {e}")
-        raise HTTPException(status_code=500, detail=f"Task execution failed: {str(e)}")
+        logger.error(f"[Agent API] Failed to schedule job: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to schedule agent task: {str(e)}",
+        )
+
+
+@router.get(
+    "/jobs/{job_id}",
+    summary="Get agent job status",
+    description="Returns status and result of an agent execution job.",
+)
+async def get_agent_job(
+    job_id: str,
+    current_user: UserContext = Depends(get_current_user),
+):
+    """
+    Return the current execution status of an agent job and, if available,
+    its result or error information.
+    """
+    try:
+        job = get_job(job_id)
+
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        if job["user"] != current_user.user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        return {
+            "job_id": job_id,
+            "status": job["status"],
+            "result": job["result"],
+            "error": job["error"],
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch job status: {str(e)}",
+        )
 
 
 @router.delete(
@@ -143,7 +193,9 @@ async def delete_session(
     Raises:
         HTTPException: If session not found.
     """
-    logger.info(f"[Agent API] Deleting session: {session_id} by user: {current_user.user_id}")
+    logger.info(
+        f"[Agent API] Deleting session: {session_id} by user: {current_user.user_id}"
+    )
 
     deleted = await agent_service.delete_task(session_id)
 
@@ -184,7 +236,9 @@ async def list_sessions(
     """
     filter_user = user if user is not None else current_user.user_id
 
-    logger.info(f"[Agent API] Listing sessions for user: {filter_user} (requested by: {current_user.user_id})")
+    logger.info(
+        f"[Agent API] Listing sessions for user: {filter_user} (requested by: {current_user.user_id})"
+    )
 
     sessions = session_history.list_sessions(user=filter_user)
 
@@ -232,7 +286,9 @@ async def get_history(
     Raises:
         HTTPException: If session not found.
     """
-    logger.info(f"[Agent API] Getting history for session: {session_id} by user: {current_user.user_id}")
+    logger.info(
+        f"[Agent API] Getting history for session: {session_id} by user: {current_user.user_id}"
+    )
 
     session = session_history.get_history(session_id)
 
@@ -250,7 +306,9 @@ async def get_history(
         for msg in session.messages
     ]
 
-    logger.info(f"[Agent API] Returning {len(messages)} messages for session: {session_id}")
+    logger.info(
+        f"[Agent API] Returning {len(messages)} messages for session: {session_id}"
+    )
 
     return SessionHistoryResponse(
         session_id=session.session_id,

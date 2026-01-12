@@ -63,6 +63,13 @@ class AuthStatus:
     requires_credentials: bool
     is_open_mode: bool
 
+@dataclass
+class AgentJobStatus:
+    job_id: str
+    status: str
+    result: Optional[dict] = None
+    error: Optional[str] = None
+
 
 class AgentClient:
     """
@@ -214,7 +221,7 @@ class AgentClient:
         session_id: str,
         task: str,
         file_paths: Optional[List[str]] = None,
-    ) -> AgentTaskResult:
+    ) -> str:
         """
         Execute an agent task.
         
@@ -230,14 +237,14 @@ class AgentClient:
             httpx.HTTPError: If the request fails.
         """
         self.ensure_authenticated()
-        
-        url = f"{self._base_url}/agent/{session_id}"
-        
+
+        url = f"{self._base_url}/agent/{session_id}/execute"
+
         files = []
         if file_paths:
             for path in file_paths:
                 files.append(("files", open(path, "rb")))
-        
+
         try:
             with httpx.Client(timeout=self._timeout) as client:
                 response = client.post(
@@ -247,17 +254,28 @@ class AgentClient:
                     headers=self._get_auth_headers(),
                 )
                 response.raise_for_status()
-                
-                data = response.json()
-                return AgentTaskResult(
-                    success=data.get("success", False),
-                    output=data.get("output"),
-                    error=data.get("error"),
-                )
+                return response.json()["job_id"]
         finally:
             for _, f in files:
                 f.close()
-    
+
+    def get_job(self, job_id: str) -> AgentJobStatus:
+        self.ensure_authenticated()
+
+        url = f"{self._base_url}/agent/jobs/{job_id}"
+
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.get(url, headers=self._get_auth_headers())
+            response.raise_for_status()
+
+            data = response.json()
+            return AgentJobStatus(
+                job_id=data.get("job_id"),
+                status=data.get("status"),
+                result=data.get("result"),
+                error=data.get("error"),
+            )
+
     def delete_session(self, session_id: str) -> bool:
         """
         Delete an agent session.

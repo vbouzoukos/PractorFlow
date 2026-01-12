@@ -1,6 +1,11 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
+from practorflow.services.agent.agent_service import AgentService
+from practorflow.llm.base.session import Session
+from pydantic_ai.messages import ModelRequest, ModelResponse
+from pydantic_ai.messages import UserPromptPart, TextPart
+
 from tests.practorflow.common.fixtures import (
     mock_knowledge_store,
     mock_llm_config,
@@ -58,58 +63,91 @@ def service(
 
 
 @pytest.mark.asyncio
-async def test_run_planner_json_parse_failure_raises_value_error(service):
+async def test_run_planner_json_parse_failure_raises_value_error():
+    from practorflow.services.agent.runners import run_planner
+    from practorflow.services.agent.context import ExecutionContext
+
     agent = MagicMock()
     agent.run = AsyncMock(return_value=MagicMock(output="not-json"))
 
-    with patch(
-        "practorflow.services.agent.agent_service.create_runner",
-        return_value=MagicMock(),
-    ), patch(
-        "practorflow.services.agent.agent_service.Agent",
-        return_value=agent,
-    ), patch(
-        "practorflow.services.agent.agent_service.parse_json_from_response",
-        return_value=None,
+    ctx = ExecutionContext(
+        session=make_session("s1"),
+        message_history=[],
+        document_scope=None,
+        document_context=None,
+    )
+
+    with (
+        patch(
+            "practorflow.services.agent.runners.create_runner",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "practorflow.services.agent.runners.Agent",
+            return_value=agent,
+        ),
+        patch(
+            "practorflow.services.agent.runners.parse_json_from_response",
+            return_value=None,
+        ),
     ):
         with pytest.raises(ValueError):
-            await service._run_planner(
+            await run_planner(
                 task="t",
-                document_context=None,
+                ctx=ctx,
+                model_pool=MagicMock(),
+                model_config=MagicMock(),
+                knowledge_store=MagicMock(),
+                tool_registry=MagicMock(),
             )
 
 
 @pytest.mark.asyncio
-async def test_run_verifier_heuristic_fallback_on_invalid_json(service):
+async def test_run_verifier_heuristic_fallback_on_invalid_json():
+    from practorflow.services.agent.runners import run_verifier
+
     plan = make_plan()
     execution = make_execution_result(plan)
 
     agent = MagicMock()
-    agent.run = AsyncMock(return_value=MagicMock(output="not-json"))
+    agent.run = AsyncMock(return_value=MagicMock(output="json"))
 
-    with patch(
-        "practorflow.services.agent.agent_service.create_runner",
-        return_value=MagicMock(),
-    ), patch(
-        "practorflow.services.agent.agent_service.Agent",
-        return_value=agent,
-    ), patch(
-        "practorflow.services.agent.agent_service.parse_json_from_response",
-        return_value=None,
-    ), patch(
-        "practorflow.services.agent.agent_service.heuristic_verification",
-        return_value=make_verification_result(VerificationStatus.PASSED),
+    invalid_verification = {"verification_status": "NOT_A_REAL_STATUS"}
+
+    with (
+        patch(
+            "practorflow.services.agent.runners.create_runner",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "practorflow.services.agent.runners.Agent",
+            return_value=agent,
+        ),
+        patch(
+            "practorflow.services.agent.runners.parse_json_from_response",
+            return_value=invalid_verification,
+        ),
+        patch(
+            "practorflow.services.agent.runners.heuristic_verification",
+            return_value=make_verification_result(VerificationStatus.PASSED),
+        ),
     ):
-        result = await service._run_verifier(
-            plan,
-            execution,
+        result = await run_verifier(
+            plan=plan,
+            execution_result=execution,
+            model_pool=MagicMock(),
+            model_config=MagicMock(),
+            knowledge_store=MagicMock(),
         )
 
     assert result.verification_status == VerificationStatus.PASSED
 
 
 @pytest.mark.asyncio
-async def test_run_executor_happy_path(service):
+async def test_run_executor_happy_path():
+    from practorflow.services.agent.runners import run_executor
+    from practorflow.services.agent.context import ExecutionContext
+
     plan = make_plan()
 
     mock_agent_run = MagicMock()
@@ -123,28 +161,48 @@ async def test_run_executor_happy_path(service):
     agent = MagicMock()
     agent.iter.return_value = mock_iter_cm
 
-    with patch(
-        "practorflow.services.agent.agent_service.create_runner",
-        return_value=MagicMock(),
-    ), patch(
-        "practorflow.services.agent.agent_service.Agent",
-        return_value=agent,
-    ), patch(
-        "practorflow.services.agent.agent_service.parse_executor_results",
-        return_value=make_execution_result(plan).step_results,
-    ), patch(
-        "practorflow.services.agent.agent_service.build_execution_log",
-        return_value="log",
+    ctx = ExecutionContext(
+        session=make_session("s1"),
+        message_history=[],
+        document_scope=None,
+        document_context=None,
+    )
+
+    with (
+        patch(
+            "practorflow.services.agent.runners.create_runner",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "practorflow.services.agent.runners.Agent",
+            return_value=agent,
+        ),
+        patch(
+            "practorflow.services.agent.runners.parse_executor_results",
+            return_value=make_execution_result(plan).step_results,
+        ),
+        patch(
+            "practorflow.services.agent.runners.build_execution_log",
+            return_value="log",
+        ),
     ):
-        result = await service._run_executor(
-            plan,
-            MagicMock(),  # deps
+        result = await run_executor(
+            plan=plan,
+            ctx=ctx,
+            model_pool=MagicMock(),
+            model_config=MagicMock(),
+            knowledge_store=MagicMock(),
+            tool_registry=MagicMock(),
         )
 
     assert result.plan_id == plan.plan_id
 
+
 @pytest.mark.asyncio
-async def test_run_planner_success_hits_return_path(service, caplog):
+async def test_run_planner_success_hits_return_path():
+    from practorflow.services.agent.runners import run_planner
+    from practorflow.services.agent.context import ExecutionContext
+
     plan = make_plan()
 
     parsed = {
@@ -158,25 +216,75 @@ async def test_run_planner_success_hits_return_path(service, caplog):
     agent = MagicMock()
     agent.run = AsyncMock(return_value=MagicMock(output="json"))
 
+    tool_registry = MagicMock()
+    tool_registry.get_schemas.return_value = [
+        {"function": {"name": "knowledge_search"}},
+        {"function": {"name": "calculator"}},
+    ]
+
+    ctx = ExecutionContext(
+        session=make_session("s1"),
+        message_history=[],
+        document_scope=None,
+        document_context=None,
+    )
+
     with (
         patch(
-            "practorflow.services.agent.agent_service.create_runner",
+            "practorflow.services.agent.runners.create_runner",
             return_value=MagicMock(),
         ),
         patch(
-            "practorflow.services.agent.agent_service.Agent",
+            "practorflow.services.agent.runners.Agent",
             return_value=agent,
         ),
         patch(
-            "practorflow.services.agent.agent_service.parse_json_from_response",
+            "practorflow.services.agent.runners.parse_json_from_response",
             return_value=parsed,
         ),
     ):
-        result = await service._run_planner(
+        result = await run_planner(
             task=plan.task,
-            document_context=None,
+            ctx=ctx,
+            model_pool=MagicMock(),
+            model_config=MagicMock(),
+            knowledge_store=MagicMock(),
+            tool_registry=tool_registry,
         )
 
-    # forces execution past model_validate → logger → return
-    assert isinstance(result, type(plan))
     assert result.plan_id == plan.plan_id
+
+
+@pytest.mark.asyncio
+async def test_build_message_history_full_coverage():
+    from practorflow.services.agent.context import build_message_history
+
+    user_msg_1 = MagicMock()
+    user_msg_1.role = "user"
+    user_msg_1.get_text_content.return_value = "hello"
+
+    assistant_msg = MagicMock()
+    assistant_msg.role = "assistant"
+    assistant_msg.get_text_content.return_value = "hi there"
+
+    user_msg_2 = MagicMock()
+    user_msg_2.role = "user"
+    user_msg_2.get_text_content.return_value = "final question"
+
+    session = Session(
+        session_id="s1",
+        user="u1",
+        messages=[user_msg_1, assistant_msg, user_msg_2],
+    )
+
+    history = build_message_history(session)
+
+    assert len(history) == 2
+
+    assert isinstance(history[0], ModelRequest)
+    assert isinstance(history[0].parts[0], UserPromptPart)
+    assert history[0].parts[0].content == "hello"
+
+    assert isinstance(history[1], ModelResponse)
+    assert isinstance(history[1].parts[0], TextPart)
+    assert history[1].parts[0].content == "hi there"
