@@ -383,3 +383,40 @@ class AgentClient:
                 created_at=data.get("created_at", ""),
                 updated_at=data.get("updated_at", ""),
             )
+
+    def truncate_messages(self, session_id: str, from_index: int) -> Optional[dict]:
+        """
+        Truncate messages from a given index onwards.
+        
+        Args:
+            session_id: Session ID to truncate messages from.
+            from_index: Index from which to truncate (inclusive).
+        
+        Returns:
+            Dict with truncated_count and remaining_count,
+            or None if session not found.
+        
+        Raises:
+            httpx.HTTPError: If the request fails (except 404).
+        """
+        self.ensure_authenticated()
+        
+        url = f"{self._base_url}/agent/{session_id}/truncate"
+        
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.put(
+                url,
+                json={"from_index": from_index},
+                headers=self._get_auth_headers(),
+            )
+            
+            if response.status_code == 404:
+                return None
+            
+            response.raise_for_status()
+            
+            data = response.json()
+            return {
+                "truncated_count": data.get("truncated_count", 0),
+                "remaining_count": data.get("remaining_count", 0),
+            }

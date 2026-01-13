@@ -5,7 +5,24 @@ Pydantic schemas for API request/response models.
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 
+class TruncateRequest(BaseModel):
+    """Request model for truncating session messages."""
+    
+    from_index: int = Field(
+        ...,
+        ge=0,
+        description="Index from which to truncate messages (inclusive). Must be non-negative."
+    )
 
+
+class TruncateResponse(BaseModel):
+    """Response model for message truncation."""
+    
+    session_id: str = Field(..., description="Session identifier")
+    truncated_count: int = Field(..., description="Number of messages removed")
+    remaining_count: int = Field(..., description="Number of messages remaining")
+    message: str = Field(default="Messages truncated successfully")
+    
 class SessionResponse(BaseModel):
     """Response model for session creation."""
     

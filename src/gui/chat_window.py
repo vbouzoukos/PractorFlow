@@ -31,9 +31,9 @@ from gui.widgets.history_panel import HistoryPanel
 from gui.widgets.documents_panel import DocumentsPanel
 from gui.api.chat_client import ChatClient, SessionHistory
 from gui.api.agent_client import AgentClient, AgentTaskResult
-from gui.workers.stream_worker import StreamWorker
+from gui.workers.stream_worker import StreamWorker,ChatEditResumeWorker
 from gui.workers.session_worker import StartSessionWorker, DeleteSessionWorker
-from gui.workers.agent_worker import AgentTaskWorker, StartAgentSessionWorker
+from gui.workers.agent_worker import AgentTaskWorker, StartAgentSessionWorker, AgentEditResumeWorker
 
 
 class ChatWindow(QMainWindow):
@@ -187,6 +187,9 @@ class ChatWindow(QMainWindow):
         
         # Documents panel signals
         self._documents_panel.document_deleted.connect(self._on_document_deleted)
+        
+        # Chat display signals
+        self._chat_display.message_edit_requested.connect(self._on_message_edit_requested)
     
     @Slot(bool)
     def _on_agent_mode_toggled(self, checked: bool):
@@ -195,9 +198,6 @@ class ChatWindow(QMainWindow):
         mode_name = "Agent" if checked else "Chat"
         self._status_bar.showMessage(f"{mode_name} mode enabled", 3000)
         
-        # Start new session when mode changes
-        self._start_new_session()
-    
     def _start_new_session(self):
         """Start a new chat or agent session asynchronously."""
         try:
@@ -399,11 +399,11 @@ class ChatWindow(QMainWindow):
     def _on_message_submitted(self, message: str, file_paths: list):
         """
         Handle message submission from input widget.
-        
-        Args:
-            message: User message text.
-            file_paths: List of file paths to upload.
         """
+        # Lock immediately
+        self._input_widget.set_enabled(False)
+        self._chat_display.setEnabled(False)
+
         try:
             if not self._session_id:
                 QMessageBox.warning(
@@ -426,17 +426,22 @@ class ChatWindow(QMainWindow):
                     f"Attached files: {', '.join(file_names)}"
                 )
             
-            # Disable input while processing
-            self._input_widget.set_enabled(False)
-            
+            # Dispatch async work
             if self._agent_mode:
                 self._execute_agent_task(message, file_paths)
             else:
                 self._execute_chat_stream(message, file_paths)
-                
+
         except Exception as e:
-            self._input_widget.set_enabled(True)
             self._status_bar.showMessage(f"Error: {e}", 5000)
+
+        finally:
+            # Async path will re-lock/re-unlock properly,
+            # but this guarantees we never leave the UI stuck
+            if not self._stream_worker and not self._agent_worker:
+                self._input_widget.set_enabled(True)
+                self._chat_display.setEnabled(True)
+
     
     def _execute_chat_stream(self, message: str, file_paths: list):
         """Execute chat streaming request."""
@@ -625,3 +630,93 @@ class ChatWindow(QMainWindow):
         
         # Always accept close event
         event.accept()
+
+
+    @Slot(int, str)
+    def _on_message_edit_requested(self, index: int, new_content: str):
+        try:
+
+            if not self._session_id:
+                QMessageBox.warning(
+                    self,
+                    "No Session",
+                    "Edit requested but no active session.",
+                )
+                return
+
+            # Lock edits + input immediately
+            self._chat_display.setEnabled(False)
+            self._input_widget.set_enabled(False)
+
+            # Update UI
+            self._chat_display.truncate_from_index(index)
+            self._chat_display.add_user_message(new_content)
+
+            if self._agent_mode:
+                self._edit_resume_worker = AgentEditResumeWorker(
+                    client=self._agent_client,
+                    session_id=self._session_id,
+                    from_index=index,
+                    updated_task=new_content,
+                    file_paths=[],
+                    parent=self,
+                )
+
+                self._edit_resume_worker.completed.connect(
+                    lambda _: self._chat_display.setEnabled(True)
+                )
+                self._edit_resume_worker.completed.connect(
+                    lambda _: self._input_widget.set_enabled(True)
+                )
+                self._edit_resume_worker.error_occurred.connect(
+                    lambda e: (
+                        self._chat_display.setEnabled(True),
+                        self._input_widget.set_enabled(True),
+                        self._status_bar.showMessage(
+                            f"Agent edit-resume failed: {e}", 5000
+                        )
+                    )
+                )
+
+            else:
+                # Assistant placeholder for streaming
+                self._chat_display.add_assistant_message("")
+
+                self._edit_resume_worker = ChatEditResumeWorker(
+                    client=self._client,
+                    session_id=self._session_id,
+                    from_index=index,
+                    updated_message=new_content,
+                    file_paths=[],
+                    parent=self,
+                )
+
+                self._edit_resume_worker.chunk_received.connect(
+                    self._on_chunk_received
+                )
+                self._edit_resume_worker.stream_finished.connect(
+                    lambda _: (
+                        self._chat_display.setEnabled(True),
+                        self._input_widget.set_enabled(True)
+                    )
+                )
+                self._edit_resume_worker.error_occurred.connect(
+                    lambda e: (
+                        self._chat_display.setEnabled(True),
+                        self._input_widget.set_enabled(True),
+                        self._status_bar.showMessage(
+                            f"Chat edit-resume failed: {e}", 5000
+                        )
+                    )
+                )
+
+            self._edit_resume_worker.start()
+
+        except Exception as e:
+            self._chat_display.setEnabled(True)
+            self._input_widget.set_enabled(True)
+            QMessageBox.critical(
+                self,
+                "Edit Error",
+                str(e),
+            )

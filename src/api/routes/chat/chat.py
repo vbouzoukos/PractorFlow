@@ -29,6 +29,8 @@ from api.schemas import (
     SessionResponse,
     SessionSummary,
     StreamChunkData,
+    TruncateRequest,
+    TruncateResponse,
 )
 from practorflow.services.chat import ChatService
 from practorflow.session_store.session_history import SessionHistory
@@ -399,4 +401,87 @@ async def delete_session_document(
         document_id=document_id,
         deleted=True,
         message="Document deleted successfully",
+    )
+
+# Add this endpoint to api/routers/chat.py
+#
+# Update imports to include TruncateRequest and TruncateResponse:
+#
+# from api.schemas import (
+#     DeleteResponse,
+#     DocumentDeleteResponse,
+#     DocumentInfo,
+#     DocumentListResponse,
+#     MessageResponse,
+#     SessionHistoryResponse,
+#     SessionResponse,
+#     SessionSummary,
+#     StreamChunkData,
+#     TruncateRequest,      # <-- add
+#     TruncateResponse,     # <-- add
+# )
+
+
+@router.put(
+    "/{session_id}/truncate",
+    response_model=TruncateResponse,
+    summary="Truncate session messages",
+    description="Removes all messages from the specified index onwards. Used for edit-and-regenerate functionality.",
+)
+async def truncate_messages(
+    session_id: str,
+    request: TruncateRequest,
+    current_user: UserContext = Depends(get_current_user),
+    chat_service: ChatService = Depends(get_chat_service),
+) -> TruncateResponse:
+    """
+    Truncate messages from a given index onwards.
+
+    Removes all messages starting from the specified index (inclusive).
+    Used for edit-and-regenerate functionality where the user edits
+    a message and all subsequent messages are removed.
+
+    Args:
+        session_id: Session identifier.
+        request: TruncateRequest with from_index.
+        current_user: Authenticated user context.
+        chat_service: Chat service instance.
+
+    Returns:
+        TruncateResponse with truncation results.
+
+    Raises:
+        HTTPException: If session not found or invalid index.
+    """
+    logger.info(
+        f"[Chat API] Truncating messages for session: {session_id} "
+        f"from index {request.from_index} by user: {current_user.user_id}"
+    )
+
+    try:
+        truncated_count = await chat_service.truncate_messages(
+            session_id, request.from_index
+        )
+    except ValueError as e:
+        logger.warning(f"[Chat API] Invalid truncate request: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if truncated_count is None:
+        logger.warning(f"[Chat API] Session not found: {session_id}")
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+
+    # Get remaining count
+    session = chat_service.get_session(session_id)
+    remaining_count = len(session.messages) if session else 0
+
+    logger.info(
+        f"[Chat API] Truncated {truncated_count} messages from session: {session_id}, "
+        f"{remaining_count} remaining"
+    )
+
+    return TruncateResponse(
+        session_id=session_id,
+        truncated_count=truncated_count,
+        remaining_count=remaining_count,
+        message="Messages truncated successfully",
     )

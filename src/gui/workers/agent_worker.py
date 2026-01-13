@@ -148,3 +148,74 @@ class DeleteAgentSessionWorker(QThread):
         if self.isRunning():
             self.wait(2000)
         self.deleteLater()
+
+class AgentEditResumeWorker(QThread):
+    """
+    Worker for agent edit → truncate → resume flow.
+
+    This is ADDITIVE functionality:
+    - Does NOT modify AgentTaskWorker
+    - Reuses AgentClient.truncate_messages
+    - Reuses AgentTaskWorker for execution
+    """
+
+    completed = Signal(object)   # AgentTaskResult
+    error_occurred = Signal(str)
+
+    def __init__(
+        self,
+        client: AgentClient,
+        session_id: str,
+        from_index: int,
+        updated_task: str,
+        file_paths: Optional[list] = None,
+        parent=None,
+    ):
+        super().__init__(parent)
+
+        self._client = client
+        self._session_id = session_id
+        self._from_index = from_index
+        self._updated_task = updated_task
+        self._file_paths = file_paths or []
+
+        self._task_worker: Optional[AgentTaskWorker] = None
+
+    def run(self):
+        try:
+            # 1. Truncate backend history
+            result = self._client.truncate_messages(
+                self._session_id,
+                self._from_index,
+            )
+
+            if result is None:
+                self.error_occurred.emit("Session not found during truncate")
+                return
+
+            # 2. Resume agent execution using EXISTING worker
+            self._task_worker = AgentTaskWorker(
+                client=self._client,
+                session_id=self._session_id,
+                task=self._updated_task,
+                file_paths=self._file_paths,
+            )
+
+            self._task_worker.task_completed.connect(self.completed)
+            self._task_worker.error_occurred.connect(self.error_occurred)
+
+            self._task_worker.start()
+            self._task_worker.wait()
+
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+    def safe_delete(self):
+        """Safely delete worker and child worker."""
+        if self._task_worker:
+            self._task_worker.safe_delete()
+
+        if self.isRunning():
+            self.wait(2000)
+
+        self.deleteLater()

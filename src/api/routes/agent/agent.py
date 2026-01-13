@@ -22,6 +22,8 @@ from api.schemas import (
     SessionSummary,
     SessionHistoryResponse,
     MessageResponse,
+    TruncateRequest,
+    TruncateResponse,
 )
 from practorflow.services.agent import AgentService
 from practorflow.services.agent.schemas import AgentTaskResult
@@ -318,4 +320,83 @@ async def get_history(
         document_count=len(session.documents),
         created_at=session.created_at.isoformat(),
         updated_at=session.updated_at.isoformat(),
+    )
+
+# Add this endpoint to api/routers/agent.py
+#
+# Update imports to include TruncateRequest and TruncateResponse:
+#
+# from api.schemas import (
+#     DeleteResponse,
+#     MessageResponse,
+#     SessionHistoryResponse,
+#     SessionResponse,
+#     SessionSummary,
+#     TruncateRequest,      # <-- add
+#     TruncateResponse,     # <-- add
+# )
+
+
+@router.put(
+    "/{session_id}/truncate",
+    response_model=TruncateResponse,
+    summary="Truncate agent session messages",
+    description="Removes all messages from the specified index onwards. Used for edit-and-regenerate functionality.",
+)
+async def truncate_messages(
+    session_id: str,
+    request: TruncateRequest,
+    current_user: UserContext = Depends(get_current_user),
+    agent_service: AgentService = Depends(get_agent_service),
+) -> TruncateResponse:
+    """
+    Truncate messages from a given index onwards.
+
+    Removes all messages starting from the specified index (inclusive).
+    Used for edit-and-regenerate functionality where the user edits
+    a message and all subsequent messages are removed.
+
+    Args:
+        session_id: Session identifier.
+        request: TruncateRequest with from_index.
+        current_user: Authenticated user context.
+        agent_service: Agent service instance.
+
+    Returns:
+        TruncateResponse with truncation results.
+
+    Raises:
+        HTTPException: If session not found or invalid index.
+    """
+    logger.info(
+        f"[Agent API] Truncating messages for session: {session_id} "
+        f"from index {request.from_index} by user: {current_user.user_id}"
+    )
+
+    try:
+        truncated_count = await agent_service.truncate_messages(
+            session_id, request.from_index
+        )
+    except ValueError as e:
+        logger.warning(f"[Agent API] Invalid truncate request: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if truncated_count is None:
+        logger.warning(f"[Agent API] Session not found: {session_id}")
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+
+    # Get remaining count
+    session = agent_service.get_session(session_id)
+    remaining_count = len(session.messages) if session else 0
+
+    logger.info(
+        f"[Agent API] Truncated {truncated_count} messages from session: {session_id}, "
+        f"{remaining_count} remaining"
+    )
+
+    return TruncateResponse(
+        session_id=session_id,
+        truncated_count=truncated_count,
+        remaining_count=remaining_count,
+        message="Messages truncated successfully",
     )

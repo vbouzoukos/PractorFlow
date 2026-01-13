@@ -3,6 +3,7 @@ Chat display - Scrollable message history.
 
 Displays the conversation history with automatic scrolling
 and support for streaming message updates.
+Supports message editing and truncation.
 """
 
 from PySide6.QtWidgets import (
@@ -12,7 +13,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QApplication,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal, Slot
 
 from gui.widgets.message_widget import MessageWidget
 
@@ -23,7 +24,13 @@ class ChatDisplay(QScrollArea):
     
     Manages a list of MessageWidget instances and provides
     methods for adding messages and updating streaming content.
+    Supports message editing and truncation.
+    
+    Signals:
+        message_edit_requested: Emitted when user edits a message (index, new_content).
     """
+    
+    message_edit_requested = Signal(int, str)  # index, new_content
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -89,6 +96,10 @@ class ChatDisplay(QScrollArea):
         """
         try:
             widget = MessageWidget(role, content)
+            index = len(self._messages)
+            widget.set_index(index)
+            widget.edit_requested.connect(lambda i, c: self.message_edit_requested.emit(i, c))
+            
             self._messages.append(widget)
             
             # Insert before the stretch
@@ -99,6 +110,35 @@ class ChatDisplay(QScrollArea):
             self._scroll_to_bottom()
         except Exception:
             pass  # pragma: no cover
+    
+    def truncate_from_index(self, from_index: int) -> int:
+        """
+        Remove all messages from the given index onwards.
+        
+        Args:
+            from_index: Index from which to truncate (inclusive).
+        
+        Returns:
+            Number of messages removed.
+        """
+        try:
+            if from_index < 0 or from_index >= len(self._messages):
+                return 0
+            
+            removed_count = len(self._messages) - from_index
+            
+            # Remove widgets from layout and delete
+            for i in range(len(self._messages) - 1, from_index - 1, -1):
+                widget = self._messages[i]
+                self._layout.removeWidget(widget)
+                widget.deleteLater()
+            
+            # Truncate the list
+            self._messages = self._messages[:from_index]
+            
+            return removed_count
+        except Exception:
+            return 0
     
     def append_to_last_message(self, text: str):
         """
@@ -148,6 +188,20 @@ class ChatDisplay(QScrollArea):
     def get_message_count(self) -> int:
         """Get the number of messages."""
         return len(self._messages)
+    
+    def get_message_at(self, index: int) -> MessageWidget:
+        """
+        Get the message widget at the given index.
+        
+        Args:
+            index: Index of the message.
+        
+        Returns:
+            MessageWidget or None if index is out of bounds.
+        """
+        if 0 <= index < len(self._messages):
+            return self._messages[index]
+        return None
     
     def _scroll_to_bottom(self):
         """Scroll to the bottom of the display."""
