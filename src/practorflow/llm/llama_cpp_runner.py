@@ -362,7 +362,7 @@ class LlamaCppRunner(LLMRunner):
         temp = self._get_temperature(temperature)
         tp = self._get_top_p(top_p)
 
-        logger.info("[LlamaCppRunner] Generating (async non-streaming)...")
+        logger.info("[LlamaCppRunner] Generating ...")
         if tools:
             logger.info(f"[LlamaCppRunner] With {len(tools)} native tools")
 
@@ -465,7 +465,7 @@ class LlamaCppRunner(LLMRunner):
         temp = self._get_temperature(temperature)
         tp = self._get_top_p(top_p)
 
-        logger.info("[LlamaCppRunner] Generating (async streaming)...")
+        logger.info("[LlamaCppRunner] Streaming ...")
         if tools:
             logger.info(f"[LlamaCppRunner] With {len(tools)} native tools")
 

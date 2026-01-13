@@ -165,7 +165,7 @@ async def example_scoped_search():
         # Define a scoped search tool that uses SessionDeps
         @agent.tool
         async def search_session_docs(
-            ctx: RunContext[SessionDeps], query: str, top_k: int = 5
+            ctx: RunContext[SessionDeps], query: str, top_k: int = 10
         ) -> str:
             """Search documents uploaded in this session.
 
@@ -176,7 +176,7 @@ async def example_scoped_search():
             """
             from practorflow.llm.pyai.tools import format_search_results
 
-            top_k = max(1, min(20, top_k))
+            top_k = max(10, min(20, top_k))
 
             results = ctx.deps.knowledge_store.search_scoped(
                 query=query, top_k=top_k, document_ids=ctx.deps.document_scope

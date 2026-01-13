@@ -142,7 +142,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         )
 
         if not results:
-            return "" # NOT COVERED
+            return ""
 
         parts = [f"Found {len(results)} result(s):"]
         for idx, result in enumerate(results, 1):

@@ -21,10 +21,10 @@ class TestKnowledgeSearchToolInit:
         assert tool._knowledge_store is mock_knowledge_store
 
     def test_init_default_top_k(self, mock_knowledge_store):
-        """__init__ uses default top_k of 5."""
+        """__init__ uses default top_k of 10."""
         tool = KnowledgeSearchTool(knowledge_store=mock_knowledge_store)
 
-        assert tool._default_top_k == 5
+        assert tool._default_top_k == 10
 
     def test_init_custom_top_k(self, mock_knowledge_store):
         """__init__ accepts custom default_top_k."""

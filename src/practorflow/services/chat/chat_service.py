@@ -14,13 +14,7 @@ from dataclasses import dataclass
 from typing import AsyncIterator, List, Optional, Set
 
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.messages import (
-    ModelMessage,
-    ModelRequest,
-    ModelResponse,
-    UserPromptPart,
-    TextPart
-)
+from pydantic_ai.messages import ModelMessage
 
 from practorflow.llm import ModelPool, create_runner, StreamChunk
 from practorflow.llm.llm_config import LLMConfig
@@ -32,6 +26,8 @@ from practorflow.llm.tools.base_web_search import DuckDuckGoSearchTool
 from practorflow.services.dto.chat_file import ChatFile
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
+
+from practorflow.services.history.builder import build_message_history
 
 logger = get_logger("chat_service", level=appConfiguration.LoggerConfiguration.AgentLevel)
 
@@ -70,47 +66,44 @@ MANDATORY TOOL CALLING PROTOCOL:
 
 RESPONSE RULES:
 1. NEVER mention tool names (search_knowledge, search_web) to the user.
-2. NEVER say "I will search" or "Let me search". Just call the tool silently.
-3. Present information naturally as if you already know it.
-
-IMPORTANT OUTPUT RULES:
-- Tool calls MUST NEVER be written as text.
-- NEVER output JSON, tool names, arguments, or planning text.
-- Tool usage must be done silently via the tool mechanism only.
-- If you are deciding to call a tool, DO NOT explain or describe it.
-</system_rules>
-"""
+2. NEVER say "I will search" or "Let me search".
+3. Just provide the answer naturally as if you already know the information.
+4. If search returns no results, say "I couldn't find relevant information" without mentioning tools.
+</system_rules>"""
 
 
 def build_instructions(user_instructions: Optional[str] = None) -> str:
     """
-    Build final instructions combining system rules and user instructions.
+    Build complete system instructions.
+    
+    Combines base system rules with optional user instructions.
     
     Args:
-        user_instructions: Optional user-provided instructions to append.
+        user_instructions: Optional additional instructions from user.
     
     Returns:
-        Combined instructions string.
+        Complete system instructions string.
     """
     if user_instructions:
         return f"{_SYSTEM_INSTRUCTIONS}\n\n<user_instructions>\n{user_instructions}\n</user_instructions>"
     return _SYSTEM_INSTRUCTIONS
 
+
 def _build_file_attachment_message(file_names: List[str], user_message: str) -> str:
     """
-    Build enhanced message when files are newly attached.
+    Build enhanced message when files are attached.
     
     Args:
-        file_names: List of attached file names.
+        file_names: List of newly attached file names.
         user_message: Original user message.
     
     Returns:
-        Enhanced message with file context.
+        Enhanced message with file attachment context.
     """
     files_str = ", ".join(file_names)
-    return f"""[User attached files: {files_str}]
+    return f"""[New files attached: {files_str}]
 
-IMPORTANT: You MUST call search_knowledge with a relevant query to access the file contents before responding.
+The user has uploaded files. You MUST call search_knowledge to access file contents.
 
 User message: {user_message}"""
 
@@ -275,7 +268,7 @@ class ChatService:
                 web_search_tool=self._web_search_tool,
             )
 
-            message_history = self._build_message_history(session)
+            message_history = build_message_history(session)
 
             async with agent.iter(
                 enhanced_message,
@@ -403,41 +396,6 @@ class ChatService:
         
         return {doc["id"] for doc in session.documents if "id" in doc}
     
-    def _build_message_history(self, session: Session) -> List[ModelMessage]:
-        """
-        Build message history for agent context.
-        
-        Converts session messages to pydantic_ai ModelMessage format.
-        Excludes the last user message as it will be passed directly.
-        
-        Args:
-            session: Session containing message history.
-        
-        Returns:
-            List of ModelMessage objects (ModelRequest/ModelResponse) for agent context.
-        """
-        if len(session.messages) <= 1:
-            return []
-        
-        history: List[ModelMessage] = []
-        
-        for msg in session.messages[:-1]:
-            # Extract text content from message
-            content = msg.get_text_content()
-            
-            if msg.role == "user":
-                # User messages become ModelRequest with UserPromptPart
-                history.append(
-                    ModelRequest(parts=[UserPromptPart(content=content)])
-                )
-            elif msg.role == "assistant":
-                # Assistant messages become ModelResponse with TextPart
-                history.append(
-                    ModelResponse(parts=[TextPart(content=content)])
-                )
-        
-        return history
-    
     def _register_tools(self, agent: Agent) -> None:
         """
         Register tools with the agent.
@@ -464,33 +422,23 @@ class ChatService:
             """
             logger.debug(f"[ChatService] search_knowledge called with query: {query}")
             
-            results = ctx.deps.knowledge_store.search_scoped(
+            results = ctx.deps.knowledge_store.search(
                 query=query,
                 top_k=5,
                 document_ids=ctx.deps.document_scope,
             )
             
             if not results:
-                logger.debug("[ChatService] search_knowledge: No results found")
-                return ""
+                return "No relevant information found in the uploaded documents."
             
-            # Format results for LLM context
+            # Format results
             parts = []
-            parts.append(f'Search results for: "{query}"')
-            parts.append(f"Found {len(results)} relevant section(s):\n")
-            
             for idx, result in enumerate(results, 1):
-                text = result.get("text", "")
-                metadata = result.get("metadata", {})
-                filename = result.get("filename") or metadata.get("filename", "unknown")
-                similarity = result.get("similarity", 0.0)
-                
-                header = f"--- Section {idx} (Source: {filename}, Relevance: {similarity:.2f}) ---"
-                parts.append(f"{header}\n{text}")
+                content = result.get("content", "")
+                source = result.get("metadata", {}).get("source", "unknown")
+                parts.append(f"[{idx}] From {source}:\n{content}")
             
-            formatted = "\n\n".join(parts)
-            logger.debug(f"[ChatService] search_knowledge: Returning {len(results)} results")
-            return formatted
+            return "\n\n".join(parts)
         
         @agent.tool
         async def search_web(
@@ -502,7 +450,7 @@ class ChatService:
             
             Use this tool for:
             - Current events and news
-            - Real-time information (weather, stock prices, etc.)
+            - Real-time information (weather, prices, etc.)
             - Information that may have changed since training
             
             Args:

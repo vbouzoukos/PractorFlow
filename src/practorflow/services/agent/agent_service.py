@@ -180,7 +180,7 @@ class AgentService:
 
         ctx = build_execution_context(session, document_ids)
         if ctx.has_history:
-            logger.info(f"[AgentService] Context built with {ctx.history_length} history messages")
+            logger.debug(f"[AgentService] Context built with {ctx.history_length} history messages")
 
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         plan: Optional[Plan] = None
@@ -199,8 +199,6 @@ class AgentService:
         except ValueError as e:
             error_msg = f"Planning failed: {e}"
             logger.error(f"[AgentService] {error_msg}")
-            session.messages.append(Message(role="assistant", content=error_msg))
-            persist_to_session(session, self._session_store, None, None, None)
             return AgentTaskResult(
                 success=False,
                 output=None,

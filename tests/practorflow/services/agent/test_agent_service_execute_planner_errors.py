@@ -60,9 +60,7 @@ async def test_execute_task_planner_error_persists_session(service):
     with patch(
         "practorflow.services.agent.agent_service.run_planner",
         AsyncMock(side_effect=ValueError("bad plan")),
-    ), patch(
-        "practorflow.services.agent.agent_service.persist_to_session"
-    ) as persist:
+    ):
         result = await service.execute_task(
             session_id="s2",
             task="x",
@@ -70,7 +68,6 @@ async def test_execute_task_planner_error_persists_session(service):
         )
 
     assert result.success is False
-    persist.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_run_planner_invalid_plan_structure_raises_value_error():

@@ -1,13 +1,10 @@
+from pydantic_ai import ModelMessage
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 
 from practorflow.services.agent.runners import (
-    _estimate_tokens,
-    _estimate_messages_tokens,
-    _messages_to_text,
-    _estimate_total_context,
     _prepare_history,
     run_planner,
     run_executor,
@@ -15,10 +12,7 @@ from practorflow.services.agent.runners import (
     run_verifier,
 )
 from practorflow.services.agent.context import ExecutionContext
-from practorflow.services.agent.schemas import (
-    StepStatus,
-    VerificationStatus,
-)
+
 from practorflow.llm.base.session import Session
 
 
@@ -43,43 +37,6 @@ def _make_ctx(history):
         document_scope=None,
         document_context=None,
     )
-
-
-# ------------------------
-# token estimation helpers
-# ------------------------
-
-
-def test_estimate_tokens_empty():
-    assert _estimate_tokens("") == 0
-
-
-def test_estimate_tokens_non_empty():
-    assert _estimate_tokens("abcd") == 1
-
-
-def test_estimate_messages_tokens():
-    msgs = [_make_msg("user", "abcd"), _make_msg("assistant", "abcdefgh")]
-    assert _estimate_messages_tokens(msgs) == 1 + 2
-
-
-def test_messages_to_text_user_and_assistant():
-    msgs = [
-        ModelRequest(parts=[UserPromptPart(content="hello")]),
-        _make_msg("assistant", "hi"),
-    ]
-
-    text = _messages_to_text(msgs)
-
-    assert "User: hello" in text
-    assert "Assistant: hi" in text
-
-
-def test_estimate_total_context():
-    msgs = [_make_msg("user", "abcd")]
-    total = _estimate_total_context("sys", "task", msgs)
-    assert total > 0
-
 
 # ------------------------
 # _prepare_history
@@ -128,7 +85,7 @@ async def test_prepare_history_exceeds_context_no_memory():
     model_config = MagicMock(n_ctx=1)
 
     with patch(
-        "practorflow.services.agent.runners._extract_relevant_memory",
+        "practorflow.services.history.preparer",
         AsyncMock(return_value=""),
     ):
         history = await _prepare_history(
@@ -150,7 +107,7 @@ async def test_prepare_history_exceeds_context_with_memory():
     model_config = MagicMock(n_ctx=10)
 
     with patch(
-        "practorflow.services.agent.runners._extract_relevant_memory",
+        "practorflow.services.history.preparer",
         AsyncMock(return_value="important"),
     ):
         history = await _prepare_history(
@@ -162,7 +119,7 @@ async def test_prepare_history_exceeds_context_with_memory():
             model_config=model_config,
         )
 
-    assert isinstance(history[0], ModelRequest)
+    assert isinstance(history[0], ModelMessage)
     assert "Relevant context" in history[0].parts[0].content
 
 

@@ -8,17 +8,12 @@ state needed during task execution, including message history conversion.
 from dataclasses import dataclass, field
 from typing import List, Optional, Set
 
-from pydantic_ai.messages import (
-    ModelMessage,
-    ModelRequest,
-    ModelResponse,
-    UserPromptPart,
-    TextPart,
-)
+from pydantic_ai.messages import ModelMessage
 
 from practorflow.llm.base.session import Session
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
+from practorflow.services.history.builder import build_message_history
 
 logger = get_logger("context", level=appConfiguration.LoggerConfiguration.AgentLevel)
 
@@ -59,44 +54,6 @@ class ExecutionContext:
     def history_length(self) -> int:
         """Get number of messages in history."""
         return len(self.message_history)
-
-
-def build_message_history(session: Session) -> List[ModelMessage]:
-    """
-    Build message history from session.
-
-    Converts all session messages (except the last user message)
-    to pydantic_ai ModelMessage format.
-
-    Args:
-        session: Session containing message history.
-
-    Returns:
-        List of ModelMessage objects.
-    """
-    if len(session.messages) <= 1:
-        return []
-
-    all_messages = session.messages[:-1]
-
-    if not all_messages:
-        return []
-
-    history = []
-    for msg in all_messages:
-        content = msg.get_text_content()
-        if msg.role == "user":
-            history.append(
-                ModelRequest(parts=[UserPromptPart(content=content)])
-            )
-        elif msg.role == "assistant":
-            history.append(
-                ModelResponse(parts=[TextPart(content=content)])
-            )
-
-    logger.debug(f"[Context] Built history with {len(history)} messages")
-
-    return history
 
 
 def get_document_scope(session: Session) -> Optional[Set[str]]:

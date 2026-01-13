@@ -374,7 +374,7 @@ class TransformersRunner(LLMRunner):
         temp = self._get_temperature(temperature)
         tp = self._get_top_p(top_p)
 
-        logger.info("[TransformersRunner] Generating (async)...")
+        logger.info("[TransformersRunner] Generating ...")
 
         inputs, input_length = self._prepare_inputs(
             messages, prompt, instructions, context
@@ -477,7 +477,7 @@ class TransformersRunner(LLMRunner):
         temp = self._get_temperature(temperature)
         tp = self._get_top_p(top_p)
 
-        logger.info("[TransformersRunner] Generating (async streaming)...")
+        logger.info("[TransformersRunner] Streaming ...")
 
         inputs, input_length = self._prepare_inputs(
             messages, prompt, instructions, context

@@ -7,18 +7,14 @@ Contains the individual agent runners for each pipeline phase:
 - Synthesizer: Creates final answer from tool outputs
 - Verifier: Validates results against success criteria
 
-Includes task-aware memory extraction when context exceeds n_ctx.
+Uses shared history library for context window management.
 """
 
 from typing import List
 
 from pydantic import ValidationError
 from pydantic_ai import Agent
-from pydantic_ai.messages import (
-    ModelMessage,
-    ModelRequest,
-    UserPromptPart,
-)
+from pydantic_ai.messages import ModelMessage
 
 from practorflow.llm.pool.model_pool import ModelPool
 from practorflow.llm.factory import create_runner
@@ -53,116 +49,10 @@ from practorflow.services.agent.json_helpers import repair_plan_json
 from practorflow.services.agent.verification import heuristic_verification
 from practorflow.services.agent.session_utils import build_execution_log
 
+from practorflow.services.history.types import HistoryConfig
+from practorflow.services.history.preparer import prepare_history
+
 logger = get_logger("agent_runners", level=appConfiguration.LoggerConfiguration.AgentLevel)
-
-CHARS_PER_TOKEN = 4
-
-MEMORY_EXTRACTION_PROMPT = """You are a memory extraction assistant. Your task is to extract relevant information from conversation history that is needed to answer the current task.
-
-CURRENT TASK:
-{task}
-
-CONVERSATION HISTORY:
-{history}
-
-Extract ONLY information from the history that is directly relevant to completing the current task. Include:
-- Specific requirements or constraints mentioned
-- Decisions already made
-- Important names, numbers, dates, or technical details
-- Context that affects how the task should be completed
-
-If nothing in the history is relevant to the current task, respond with: "No relevant prior context."
-
-Provide a concise summary of relevant context. Do not include irrelevant information."""
-
-
-def _estimate_tokens(text: str) -> int:
-    """Estimate token count from text."""
-    if not text:
-        return 0
-    return len(text) // CHARS_PER_TOKEN
-
-
-def _estimate_messages_tokens(messages: List[ModelMessage]) -> int:
-    """Estimate total tokens in message history."""
-    total = 0
-    for msg in messages:
-        if hasattr(msg, 'parts'):
-            for part in msg.parts:
-                if hasattr(part, 'content'):
-                    total += _estimate_tokens(part.content)
-    return total
-
-
-def _messages_to_text(messages: List[ModelMessage]) -> str:
-    """Convert messages to plain text for memory extraction."""
-    parts = []
-    for msg in messages:
-        if hasattr(msg, 'parts'):
-            for part in msg.parts:
-                if hasattr(part, 'content'):
-                    role = "User" if isinstance(msg, ModelRequest) else "Assistant"
-                    parts.append(f"{role}: {part.content}")
-    return "\n\n".join(parts)
-
-
-def _estimate_total_context(
-    system_prompt: str,
-    task_prompt: str,
-    messages: List[ModelMessage],
-) -> int:
-    """Estimate total tokens for the full context."""
-    total = _estimate_tokens(system_prompt)
-    total += _estimate_tokens(task_prompt)
-    total += _estimate_messages_tokens(messages)
-    return total
-
-
-async def _extract_relevant_memory(
-    task: str,
-    messages: List[ModelMessage],
-    model_pool: ModelPool,
-    model_config: LLMConfig,
-    target_tokens: int,
-) -> str:
-    """
-    Use LLM to extract task-relevant memory from conversation history.
-    
-    Args:
-        task: Current task to complete.
-        messages: Full conversation history.
-        model_pool: Pool for acquiring LLM handles.
-        model_config: LLM configuration.
-        target_tokens: Target token size for extracted memory.
-    
-    Returns:
-        Extracted relevant memory.
-    """
-    history_text = _messages_to_text(messages)
-    
-    prompt = MEMORY_EXTRACTION_PROMPT.format(
-        task=task,
-        history=history_text,
-    )
-    
-    logger.debug("[Memory] Extracting relevant memory for task")
-    
-    async with model_pool.acquire_context(model_config) as handle:
-        runner = create_runner(handle, knowledge_store=None)
-        
-        result = await runner.generate(
-            prompt=prompt,
-            instructions=f"Extract relevant context. Keep response under {target_tokens * CHARS_PER_TOKEN} characters.",
-        )
-        
-        memory = result.get("reply", "").strip()
-    
-    if "no relevant prior context" in memory.lower():
-        logger.debug("[Memory] No relevant prior context found")
-        return ""
-    
-    logger.info(f"[Memory] Extracted {_estimate_tokens(memory)} tokens of relevant context")
-    return memory
 
 
 async def _prepare_history(
@@ -175,10 +65,9 @@ async def _prepare_history(
 ) -> List[ModelMessage]:
     """
     Prepare message history for LLM call.
-    
-    If total context fits within n_ctx, returns full history.
-    If total context exceeds n_ctx, uses LLM to extract relevant memory.
-    
+
+    Delegates to shared history library for context window management.
+
     Args:
         task: Current task.
         ctx: Execution context with message history.
@@ -186,95 +75,32 @@ async def _prepare_history(
         task_prompt: Task prompt.
         model_pool: Pool for LLM access.
         model_config: LLM configuration with n_ctx.
-    
+
     Returns:
         List of ModelMessage to use as history.
     """
     if not ctx.has_history:
         return []
-    
-    history = ctx.message_history
-    n_ctx = model_config.n_ctx
-    
-    total_tokens = _estimate_total_context(system_prompt, task_prompt, history)
-    
-    logger.debug(f"[History] Total context: {total_tokens} tokens, n_ctx: {n_ctx}")
-    
-    if total_tokens <= n_ctx:
-        logger.debug("[History] Full context fits within n_ctx, using all messages")
-        return history
-    
-    logger.info(
-        f"[History] Context ({total_tokens} tokens) exceeds n_ctx ({n_ctx}), "
-        "extracting relevant memory"
-    )
-    
-    base_tokens = _estimate_tokens(system_prompt) + _estimate_tokens(task_prompt)
-    available_for_history = n_ctx - base_tokens
-    
-    memory = await _extract_relevant_memory(
+
+    config = HistoryConfig(n_ctx=model_config.n_ctx)
+
+    prepared = await prepare_history(
         task=task,
-        messages=history,
+        messages=ctx.message_history,
+        system_prompt=system_prompt,
+        task_prompt=task_prompt,
         model_pool=model_pool,
         model_config=model_config,
-        target_tokens=available_for_history,
+        config=config,
     )
-    
-    if not memory:
-        recent_messages = []
-        tokens_used = 0
-        
-        for msg in reversed(history):
-            msg_tokens = 0
-            if hasattr(msg, 'parts'):
-                for part in msg.parts:
-                    if hasattr(part, 'content'):
-                        msg_tokens += _estimate_tokens(part.content)
-            
-            if tokens_used + msg_tokens > available_for_history:
-                break
-            
-            recent_messages.insert(0, msg)
-            tokens_used += msg_tokens
-        
-        logger.info(f"[History] Using {len(recent_messages)} recent messages")
-        return recent_messages
-    
-    memory_tokens = _estimate_tokens(memory)
-    remaining_for_recent = available_for_history - memory_tokens
-    
-    recent_messages = []
-    tokens_used = 0
-    
-    for msg in reversed(history):
-        msg_tokens = 0
-        if hasattr(msg, 'parts'):
-            for part in msg.parts:
-                if hasattr(part, 'content'):
-                    msg_tokens += _estimate_tokens(part.content)
-        
-        if tokens_used + msg_tokens > remaining_for_recent:
-            break
-        
-        recent_messages.insert(0, msg)
-        tokens_used += msg_tokens
-    
-    result = []
-    
-    memory_message = ModelRequest(
-        parts=[UserPromptPart(
-            content=f"[Relevant context from earlier conversation: {memory}]"
-        )]
-    )
-    result.append(memory_message)
-    result.extend(recent_messages)
-    
-    logger.info(
-        f"[History] Prepared context: memory ({memory_tokens} tokens) + "
-        f"{len(recent_messages)} recent messages ({tokens_used} tokens)"
-    )
-    
-    return result
+
+    if prepared.was_truncated:
+        logger.info(
+            f"[History] Reduced from {prepared.original_count} to "
+            f"{prepared.included_count} messages ({prepared.estimated_tokens} tokens)"
+        )
+
+    return prepared.messages
 
 
 async def run_planner(
@@ -397,7 +223,7 @@ async def run_executor(
     )
 
     if prepared_history:
-        logger.debug(f"[Executor] Using {len(prepared_history)} history messages") # NOT COVERED
+        logger.debug(f"[Executor] Using {len(prepared_history)} history messages")
 
     deps = AgentDeps(
         knowledge_store=knowledge_store,
@@ -487,7 +313,7 @@ async def run_synthesizer(
 
     logger.debug(f"[Synthesizer] Running synthesizer for plan: {plan.plan_id}")
     if prepared_history:
-        logger.debug(f"[Synthesizer] Using {len(prepared_history)} history messages") # NOT COVERED
+        logger.debug(f"[Synthesizer] Using {len(prepared_history)} history messages")
 
     async with model_pool.acquire_context(model_config) as handle:
         runner = create_runner(handle, knowledge_store=knowledge_store)
