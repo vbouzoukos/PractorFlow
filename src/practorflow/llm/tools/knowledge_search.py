@@ -23,7 +23,7 @@ class KnowledgeSearchTool(BaseTool):
     - Returns parent (context) chunks for richer LLM context
     """
 
-    def __init__(self, knowledge_store: KnowledgeStore, default_top_k: int = 5):
+    def __init__(self, knowledge_store: KnowledgeStore, default_top_k: int = 10):
         """
         Initialize knowledge search tool.
 
@@ -59,7 +59,7 @@ class KnowledgeSearchTool(BaseTool):
             ToolParameter(
                 name="top_k",
                 type="integer",
-                description="Maximum number of results to return (default: 5)",
+                description="Maximum number of results to return (default: 10)",
                 required=False,
                 default=self._default_top_k,
             ),

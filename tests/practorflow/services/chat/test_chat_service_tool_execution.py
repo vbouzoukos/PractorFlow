@@ -79,7 +79,7 @@ async def test_search_knowledge_returns_formatted_results(
     assert "Found 2 relevant section(s):" in result
     mock_knowledge_store.search_scoped.assert_called_once_with(
         query="test query",
-        top_k=5,
+        top_k=10,
         document_ids={"doc-1", "doc-2"},
     )
 
@@ -145,7 +145,7 @@ async def test_search_knowledge_with_none_document_scope(
 
     mock_knowledge_store.search_scoped.assert_called_once_with(
         query="global search",
-        top_k=5,
+        top_k=10,
         document_ids=None,
     )
     assert "Global result" in result

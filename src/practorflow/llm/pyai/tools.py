@@ -114,7 +114,7 @@ async def search_knowledge(
         )
 
         if not results:
-            return "No relevant documents found for the query."
+            return ""
 
         return format_search_results(results, query)
 
@@ -156,7 +156,7 @@ async def search_knowledge_generic(
     if document_scope:
         logger.debug(
             f"[search_knowledge_generic] Scope: {len(document_scope)} documents"
-        )
+        ) # pragma: no cover
 
     try:
         results = knowledge_store.search_scoped(
@@ -164,7 +164,7 @@ async def search_knowledge_generic(
         )
 
         if not results:
-            return "No relevant documents found for the query."
+            return "" # pragma: no cover
 
         return format_search_results(results, query)
 

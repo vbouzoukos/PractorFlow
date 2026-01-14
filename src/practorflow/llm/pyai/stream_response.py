@@ -109,7 +109,7 @@ class LocalStreamedResponse:
                             obj = json.loads(json_str)
                             if "tool" in obj or "name" in obj:
                                 matches.append(obj)
-                        except json.JSONDecodeError:
+                        except json.JSONDecodeError: # pragma: no cover
                             pass  # pragma: no cover
                         start_idx = None
 

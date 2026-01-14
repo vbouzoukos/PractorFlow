@@ -33,6 +33,7 @@ from api.schemas import (
     TruncateResponse,
 )
 from practorflow.services.chat import ChatService
+from practorflow.services.history.truncator import truncate_messages
 from practorflow.session_store.session_history import SessionHistory
 from practorflow.logger.logger import get_logger
 
@@ -428,7 +429,7 @@ async def delete_session_document(
     summary="Truncate session messages",
     description="Removes all messages from the specified index onwards. Used for edit-and-regenerate functionality.",
 )
-async def truncate_messages(
+async def truncate_message_request(
     session_id: str,
     request: TruncateRequest,
     current_user: UserContext = Depends(get_current_user),
@@ -459,8 +460,8 @@ async def truncate_messages(
     )
 
     try:
-        truncated_count = await chat_service.truncate_messages(
-            session_id, request.from_index
+        truncated_count = await truncate_messages(
+            session_id, request.from_index, chat_service._session_store
         )
     except ValueError as e:
         logger.warning(f"[Chat API] Invalid truncate request: {e}")

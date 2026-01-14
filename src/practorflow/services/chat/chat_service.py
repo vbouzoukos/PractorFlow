@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from typing import AsyncIterator, List, Optional, Set
 
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.messages import ModelMessage
 
 from practorflow.llm import ModelPool, create_runner, StreamChunk
 from practorflow.llm.llm_config import LLMConfig
@@ -25,25 +24,29 @@ from practorflow.llm.pyai import LocalLLMModel
 from practorflow.llm.tools.base_web_search import DuckDuckGoSearchTool
 from practorflow.services.dto.chat_file import ChatFile
 from practorflow.logger.logger import get_logger
+from practorflow.services.history.truncator import truncate_messages
 from practorflow.settings.app_settings import appConfiguration
 
 from practorflow.services.history.builder import build_message_history
 
-logger = get_logger("chat_service", level=appConfiguration.LoggerConfiguration.AgentLevel)
+logger = get_logger(
+    "chat_service", level=appConfiguration.LoggerConfiguration.AgentLevel
+)
 
 
 @dataclass
 class ChatDeps:
     """
     Dependencies for chat agent tools.
-    
+
     Contains knowledge store, document scope, and web search tool
     for use by registered agent tools.
     """
-    
+
     knowledge_store: KnowledgeStore
     document_scope: Optional[Set[str]] = None
     web_search_tool: Optional[DuckDuckGoSearchTool] = None
+
 
 # Chunk size for streaming
 _CHUNK_SIZE = 256
@@ -66,21 +69,27 @@ MANDATORY TOOL CALLING PROTOCOL:
 
 RESPONSE RULES:
 1. NEVER mention tool names (search_knowledge, search_web) to the user.
-2. NEVER say "I will search" or "Let me search".
-3. Just provide the answer naturally as if you already know the information.
-4. If search returns no results, say "I couldn't find relevant information" without mentioning tools.
-</system_rules>"""
+2. NEVER say "I will search" or "Let me search". Just call the tool silently.
+3. Present information naturally as if you already know it.
+
+IMPORTANT OUTPUT RULES:
+- Tool calls MUST NEVER be written as text.
+- NEVER output JSON, tool names, arguments, or planning text.
+- Tool usage must be done silently via the tool mechanism only.
+- If you are deciding to call a tool, DO NOT explain or describe it.
+</system_rules>
+"""
 
 
 def build_instructions(user_instructions: Optional[str] = None) -> str:
     """
     Build complete system instructions.
-    
+
     Combines base system rules with optional user instructions.
-    
+
     Args:
         user_instructions: Optional additional instructions from user.
-    
+
     Returns:
         Complete system instructions string.
     """
@@ -91,19 +100,19 @@ def build_instructions(user_instructions: Optional[str] = None) -> str:
 
 def _build_file_attachment_message(file_names: List[str], user_message: str) -> str:
     """
-    Build enhanced message when files are attached.
-    
+    Build enhanced message when files are newly attached.
+
     Args:
-        file_names: List of newly attached file names.
+        file_names: List of attached file names.
         user_message: Original user message.
-    
+
     Returns:
-        Enhanced message with file attachment context.
+        Enhanced message with file context.
     """
     files_str = ", ".join(file_names)
-    return f"""[New files attached: {files_str}]
+    return f"""[User attached files: {files_str}]
 
-The user has uploaded files. You MUST call search_knowledge to access file contents.
+IMPORTANT: You MUST call search_knowledge with a relevant query to access the file contents before responding.
 
 User message: {user_message}"""
 
@@ -111,11 +120,11 @@ User message: {user_message}"""
 def _build_session_context_message(file_names: List[str], user_message: str) -> str:
     """
     Build enhanced message when session has existing documents.
-    
+
     Args:
         file_names: List of document names in session.
         user_message: Original user message.
-    
+
     Returns:
         Enhanced message with session context.
     """
@@ -130,7 +139,7 @@ User message: {user_message}"""
 class ChatService:
     """
     High-level chat service with RAG and tool support.
-    
+
     Manages chat sessions with:
     - Persistent session storage
     - Document upload and indexing per session
@@ -138,7 +147,7 @@ class ChatService:
     - Web search for current information
     - Streaming response generation via agentic loop
     """
-    
+
     def __init__(
         self,
         model_pool: ModelPool,
@@ -150,7 +159,7 @@ class ChatService:
     ):
         """
         Initialize chat service.
-        
+
         Args:
             model_pool: Model pool for acquiring LLM handles.
             model_config: Configuration for the LLM model.
@@ -165,29 +174,29 @@ class ChatService:
         self._session_store = session_store
         self._web_search_tool = web_search_tool or DuckDuckGoSearchTool()
         self._instructions = build_instructions(user_instructions=default_instructions)
-        
+
         logger.info("[ChatService] Initialized")
-    
+
     def _generate_session_id(self) -> str:
         """Generate a unique session ID."""
         return f"session_{uuid.uuid4().hex}"
-    
+
     async def start_chat(self) -> str:
         """
         Start a new chat session.
-        
+
         Generates a unique session ID and returns it. The session is not
         persisted until the first message is sent via chat_stream.
-        
+
         Returns:
             The generated session_id.
         """
         session_id = self._generate_session_id()
-        
+
         logger.info(f"[ChatService] Generated session ID: {session_id}")
-        
+
         return session_id
-    
+
     async def chat_stream(
         self,
         session_id: str,
@@ -197,17 +206,17 @@ class ChatService:
     ) -> AsyncIterator[StreamChunk]:
         """
         Send a message and stream the response.
-        
+
         Processes the user message, optionally indexes uploaded files,
         and streams the assistant's response using the configured tools.
         Creates the session on first call if it doesn't exist.
-        
+
         Args:
             session_id: Session ID for the chat.
             message: User message text.
             user: User identifier for the session.
             files: Optional list of files to upload and index for this session.
-        
+
         Yields:
             StreamChunk objects with response text and metadata.
         """
@@ -220,7 +229,9 @@ class ChatService:
                 instructions=self._instructions,
                 user=user,
             )
-            logger.info(f"[ChatService] Created new session: {session_id} for user: {user}")
+            logger.info(
+                f"[ChatService] Created new session: {session_id} for user: {user}"
+            )
 
         # index files
         new_file_names: List[str] = []
@@ -229,7 +240,9 @@ class ChatService:
                 doc_info = await self._index_file(file)
                 session.add_document(doc_info)
                 new_file_names.append(doc_info["filename"])
-                logger.info(f"[ChatService] Indexed file: {doc_info['filename']} -> {doc_info['id']}")
+                logger.info(
+                    f"[ChatService] Indexed file: {doc_info['filename']} -> {doc_info['id']}"
+                )
 
         document_scope = self._get_document_scope(session)
 
@@ -295,9 +308,7 @@ class ChatService:
                     finished=False,
                 )
 
-            session.messages.append(
-                Message(role="assistant", content=final_text)
-            )
+            session.messages.append(Message(role="assistant", content=final_text))
 
         # final chunk
         yield StreamChunk(
@@ -313,26 +324,28 @@ class ChatService:
 
         self._session_store.save(session)
         logger.debug(f"[ChatService] Completed response for session: {session_id}")
-    
+
     async def delete_chat(self, session_id: str) -> bool:
         """
         Delete a chat session and its associated documents.
-        
+
         Removes the session from storage and deletes all documents
         that were uploaded during this session from the knowledge store.
-        
+
         Args:
             session_id: Session ID to delete.
-        
+
         Returns:
             True if session was deleted, False if not found.
         """
         if not self._session_store.exists(session_id):
-            logger.warning(f"[ChatService] Session not found for deletion: {session_id}")
+            logger.warning(
+                f"[ChatService] Session not found for deletion: {session_id}"
+            )
             return False
-        
+
         session = self._session_store.get(session_id)
-        
+
         # Delete all session documents from knowledge store
         for doc in session.documents:
             doc_id = doc.get("id")
@@ -341,36 +354,38 @@ class ChatService:
                     self._knowledge_store.delete_document(doc_id)
                     logger.debug(f"[ChatService] Deleted document: {doc_id}")
                 except Exception as e:
-                    logger.warning(f"[ChatService] Failed to delete document {doc_id}: {e}")
-        
+                    logger.warning(
+                        f"[ChatService] Failed to delete document {doc_id}: {e}"
+                    )
+
         # Delete session
         self._session_store.delete(session_id)
-        
+
         logger.info(f"[ChatService] Deleted chat session: {session_id}")
-        
+
         return True
-    
+
     def get_session(self, session_id: str) -> Optional[Session]:
         """
         Get a session by ID.
-        
+
         Args:
             session_id: Session ID to retrieve.
-        
+
         Returns:
             Session object or None if not found.
         """
         if not self._session_store.exists(session_id):
             return None
         return self._session_store.get(session_id)
-    
+
     async def _index_file(self, file: ChatFile) -> dict:
         """
         Index a file into the knowledge store.
-        
+
         Args:
             file: File to index.
-        
+
         Returns:
             Document info dict with id, filename, etc.
         """
@@ -380,29 +395,30 @@ class ChatService:
             mime_type=file.content_type,
         )
         return doc_info
-    
+
     def _get_document_scope(self, session: Session) -> Optional[Set[str]]:
         """
         Get document IDs from session for scoped search.
-        
+
         Args:
             session: Session to extract document IDs from.
-        
+
         Returns:
             Set of document IDs or None if no documents.
         """
         if not session.documents:
             return None
-        
+
         return {doc["id"] for doc in session.documents if "id" in doc}
-    
+
     def _register_tools(self, agent: Agent) -> None:
         """
         Register tools with the agent.
-        
+
         Args:
             agent: Agent to register tools with.
         """
+
         @agent.tool
         async def search_knowledge(
             ctx: RunContext[ChatDeps],
@@ -410,36 +426,48 @@ class ChatService:
         ) -> str:
             """
             Search the knowledge base for relevant information from uploaded documents.
-            
+
             IMPORTANT: You MUST call this tool when the user has attached files or
             asks questions about documents. This is the ONLY way to access file contents.
-            
+
             Args:
                 query: Search query text to find relevant content in documents.
-            
+
             Returns:
                 Relevant text from documents or message if none found.
             """
             logger.debug(f"[ChatService] search_knowledge called with query: {query}")
-            
-            results = ctx.deps.knowledge_store.search(
+
+            results = ctx.deps.knowledge_store.search_scoped(
                 query=query,
-                top_k=5,
+                top_k=10,
                 document_ids=ctx.deps.document_scope,
             )
-            
+
             if not results:
-                return "No relevant information found in the uploaded documents."
-            
-            # Format results
+                logger.debug("[ChatService] search_knowledge: No results found")
+                return ""
+
+            # Format results for LLM context
             parts = []
+            parts.append(f'Search results for: "{query}"')
+            parts.append(f"Found {len(results)} relevant section(s):\n")
+
             for idx, result in enumerate(results, 1):
-                content = result.get("content", "")
-                source = result.get("metadata", {}).get("source", "unknown")
-                parts.append(f"[{idx}] From {source}:\n{content}")
-            
-            return "\n\n".join(parts)
-        
+                text = result.get("text", "")
+                metadata = result.get("metadata", {})
+                filename = result.get("filename") or metadata.get("filename", "unknown")
+                similarity = result.get("similarity", 0.0)
+
+                header = f"--- Section {idx} (Source: {filename}, Relevance: {similarity:.2f}) ---"
+                parts.append(f"{header}\n{text}")
+
+            formatted = "\n\n".join(parts)
+            logger.debug(
+                f"[ChatService] search_knowledge: Returning {len(results)} results"
+            )
+            return formatted
+
         @agent.tool
         async def search_web(
             ctx: RunContext[ChatDeps],
@@ -447,54 +475,56 @@ class ChatService:
         ) -> str:
             """
             Search the web for current information.
-            
+
             Use this tool for:
             - Current events and news
-            - Real-time information (weather, prices, etc.)
+            - Real-time information
             - Information that may have changed since training
-            
+
             Args:
                 query: Search query for web search.
-            
+
             Returns:
                 Web search results or error message.
             """
             logger.debug(f"[ChatService] search_web called with query: {query}")
-            
+
             if not ctx.deps.web_search_tool:
                 return "Web search is not available."
-            
+
             try:
                 results = ctx.deps.web_search_tool.search(query)
-                
+
                 if not results:
                     return ""
-                
+
                 # Format results
                 parts = [f'Web search results for: "{query}"\n']
-                
+
                 for idx, result in enumerate(results[:5], 1):
                     title = result.get("title", "")
                     snippet = result.get("snippet", "")
                     url = result.get("url", "")
                     parts.append(f"{idx}. {title}\n   {snippet}\n   Source: {url}")
-                
+
                 return "\n\n".join(parts)
-            
+
             except Exception as e:
                 logger.error(f"[ChatService] Web search error: {e}")
                 return ""
 
-    async def delete_session_document(self, session_id: str, document_id: str) -> Optional[bool]:
+    async def delete_session_document(
+        self, session_id: str, document_id: str
+    ) -> Optional[bool]:
         """
         Delete a single document from a session.
-        
+
         Removes the document from both the session and the knowledge store.
-        
+
         Args:
             session_id: Session ID containing the document.
             document_id: Document ID to delete.
-        
+
         Returns:
             True if document was deleted successfully.
             False if document was not found in session.
@@ -503,64 +533,34 @@ class ChatService:
         if not self._session_store.exists(session_id):
             logger.warning(f"[ChatService] Session not found: {session_id}")
             return None
-        
+
         session = self._session_store.get(session_id)
-        
+
         # Remove document from session
         removed = session.remove_document(document_id)
-        
+
         if not removed:
-            logger.warning(f"[ChatService] Document not found in session: {document_id}")
+            logger.warning(
+                f"[ChatService] Document not found in session: {document_id}"
+            )
             return False
-        
+
         # Delete from knowledge store
         try:
             self._knowledge_store.delete_document(document_id)
-            logger.debug(f"[ChatService] Deleted document from knowledge store: {document_id}")
+            logger.debug(
+                f"[ChatService] Deleted document from knowledge store: {document_id}"
+            )
         except Exception as e:
-            logger.warning(f"[ChatService] Failed to delete document from knowledge store {document_id}: {e}")
-        
+            logger.warning(
+                f"[ChatService] Failed to delete document from knowledge store {document_id}: {e}"
+            )
+
         # Save updated session
         self._session_store.save(session)
-        
-        logger.info(f"[ChatService] Deleted document {document_id} from session {session_id}")
-        
-        return True
 
-
-    async def truncate_messages(self, session_id: str, from_index: int) -> Optional[int]:
-        """
-        Truncate messages from a given index onwards.
-        
-        Used for edit-and-regenerate functionality where the user
-        edits a message and all subsequent messages are removed.
-        
-        Args:
-            session_id: Session ID to truncate messages from.
-            from_index: Index from which to truncate (inclusive).
-                        Messages at and after this index are removed.
-        
-        Returns:
-            Number of messages removed if successful.
-            None if session was not found.
-        
-        Raises:
-            ValueError: If from_index is negative.
-        """
-        if not self._session_store.exists(session_id):
-            logger.warning(f"[ChatService] Session not found: {session_id}")
-            return None
-        
-        session = self._session_store.get(session_id)
-        
-        removed_count = session.truncate_messages(from_index)
-        
-        # Save updated session
-        self._session_store.save(session)
-        
         logger.info(
-            f"[ChatService] Truncated {removed_count} messages from session {session_id} "
-            f"starting at index {from_index}"
+            f"[ChatService] Deleted document {document_id} from session {session_id}"
         )
-        
-        return removed_count
+
+        return True

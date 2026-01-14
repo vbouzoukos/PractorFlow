@@ -217,7 +217,7 @@ class TestKnowledgeSearchToolExecute:
 
         mock_knowledge_store.search_scoped.assert_called_once_with(
             query="test",
-            top_k=5,
+            top_k=10,
             document_ids={"doc-a", "doc-b"},
         )
 

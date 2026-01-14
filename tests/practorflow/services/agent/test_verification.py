@@ -1,4 +1,3 @@
-# tests/test_verification.py
 from practorflow.services.agent.verification import heuristic_verification
 from practorflow.services.agent.schemas import PlanStep, StepStatus, VerificationStatus, IssueType
 

@@ -27,6 +27,7 @@ from api.schemas import (
 )
 from practorflow.services.agent import AgentService
 from practorflow.services.agent.schemas import AgentTaskResult
+from practorflow.services.history.truncator import truncate_messages
 from practorflow.session_store.session_history import SessionHistory
 from practorflow.logger.logger import get_logger
 
@@ -322,6 +323,7 @@ async def get_history(
         updated_at=session.updated_at.isoformat(),
     )
 
+
 # Add this endpoint to api/routers/agent.py
 #
 # Update imports to include TruncateRequest and TruncateResponse:
@@ -343,7 +345,7 @@ async def get_history(
     summary="Truncate agent session messages",
     description="Removes all messages from the specified index onwards. Used for edit-and-regenerate functionality.",
 )
-async def truncate_messages(
+async def truncate_message_request(
     session_id: str,
     request: TruncateRequest,
     current_user: UserContext = Depends(get_current_user),
@@ -374,8 +376,8 @@ async def truncate_messages(
     )
 
     try:
-        truncated_count = await agent_service.truncate_messages(
-            session_id, request.from_index
+        truncated_count = await truncate_messages(
+            session_id, request.from_index, agent_service._session_store
         )
     except ValueError as e:
         logger.warning(f"[Agent API] Invalid truncate request: {e}")

@@ -2,10 +2,11 @@
 Unit tests for ChatService message history building.
 
 Tests:
-- _build_message_history
+- build_message_history
 """
 
 from practorflow.llm.base.session import Message, Session
+from practorflow.services.history.builder import build_message_history
 
 from tests.practorflow.common.fixtures import mock_knowledge_store
 from tests.practorflow.services.chat.common_chat_service import (
@@ -22,7 +23,7 @@ def test_build_message_history_empty(chat_service):
     """Test building message history with no messages."""
     session = Session(session_id="test", instructions="test", user="test")
 
-    result = chat_service._build_message_history(session)
+    result = build_message_history(session)
 
     assert result == []
 
@@ -36,7 +37,7 @@ def test_build_message_history_single_message(chat_service):
         messages=[Message(role="user", content="Hello")],
     )
 
-    result = chat_service._build_message_history(session)
+    result = build_message_history(session)
 
     assert result == []
 
@@ -53,7 +54,7 @@ def test_build_message_history_two_messages(chat_service):
         ],
     )
 
-    result = chat_service._build_message_history(session)
+    result = build_message_history(session)
 
     assert len(result) == 1
 
@@ -71,13 +72,13 @@ def test_build_message_history_multiple_messages(chat_service):
         ],
     )
 
-    result = chat_service._build_message_history(session)
+    result = build_message_history(session)
 
     assert len(result) == 2
 
 
 def test_build_message_history_excludes_last_message(chat_service):
-    """Test that _build_message_history excludes the last message."""
+    """Test that build_message_history excludes the last message."""
     session = Session(
         session_id="test",
         instructions="test",
@@ -89,7 +90,7 @@ def test_build_message_history_excludes_last_message(chat_service):
         ],
     )
 
-    result = chat_service._build_message_history(session)
+    result = build_message_history(session)
 
     assert len(result) == 2
 
@@ -109,7 +110,7 @@ def test_build_message_history_preserves_order(chat_service):
         ],
     )
 
-    result = chat_service._build_message_history(session)
+    result = build_message_history(session)
 
     assert len(result) == 4
 
@@ -129,6 +130,6 @@ def test_build_message_history_long_conversation(chat_service):
         messages=messages,
     )
 
-    result = chat_service._build_message_history(session)
+    result = build_message_history(session)
 
     assert len(result) == 20
