@@ -666,7 +666,7 @@ class ChatWindow(QMainWindow):
                     file_paths=[],
                     parent=self,
                 )
-                self._edit_resume_worker.completed.connect(lambda _: self._set_ui_busy(False))
+                self._edit_resume_worker.completed.connect(self._on_agent_edit_completed)
                 self._edit_resume_worker.error_occurred.connect(self._on_edit_resume_error)
             else:
                 self._chat_display.add_assistant_message("")
@@ -679,13 +679,31 @@ class ChatWindow(QMainWindow):
                     parent=self,
                 )
                 self._edit_resume_worker.chunk_received.connect(self._on_chunk_received)
-                self._edit_resume_worker.stream_finished.connect(lambda _: self._set_ui_busy(False))
+                self._edit_resume_worker.stream_finished.connect(self._on_chat_edit_finished)
                 self._edit_resume_worker.error_occurred.connect(self._on_edit_resume_error)
 
             self._edit_resume_worker.start()
         except Exception as e:
             self._set_ui_busy(False)
             self._status_bar.showMessage(f"Edit error: {e}", 5000)
+
+    @Slot(object)
+    def _on_agent_edit_completed(self, result: AgentTaskResult):
+        """Handle agent edit-resume completion."""
+        try:
+            self._set_ui_busy(False)
+            self._on_agent_task_completed(result)
+        except Exception:
+            pass
+
+    @Slot(dict)
+    def _on_chat_edit_finished(self, usage: dict):
+        """Handle chat edit-resume stream completion."""
+        try:
+            self._set_ui_busy(False)
+            self._on_stream_finished(usage)
+        except Exception:
+            pass
 
     @Slot(str)
     def _on_edit_resume_error(self, error: str):

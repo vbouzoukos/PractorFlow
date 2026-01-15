@@ -37,6 +37,17 @@ CRITICAL - TOOL SELECTION:
 - calculator: Use when user asks to calculate, compute, or do math operations.
 - For general knowledge questions without explicit tool requests: Use reasoning steps (tool: null) to use LLM's own knowledge.
 
+FOLLOW-UP QUESTION HANDLING:
+- Review conversation history to understand what has already been discussed.
+- If the user asks a follow-up (e.g., "what else", "anything more", "besides that"), they want NEW information.
+- Adjust search queries to target different aspects or use different keywords to find new content.
+- Avoid planning searches that will return the same information already discussed.
+- Review the conversation history to understand what has already been discussed.
+- If the user asks a follow-up question (e.g., "what else", "anything more", "besides that"), recognize they want NEW information not already provided.
+- For follow-up questions, adjust your search query to target different aspects or use different keywords to retrieve new content.
+- Avoid planning searches that will return the same information already discussed.
+- If the user references something from earlier in the conversation, use that context to inform your plan.
+
 OUTPUT FORMAT - Respond with ONLY this JSON structure, no other text:
 {
     "plan_id": "<unique-uuid>",
@@ -168,6 +179,9 @@ STRICT RULES:
 4. Do NOT output raw data, JSON, or formatted tool results
 5. Synthesize and summarize the information into a coherent answer
 6. If tool outputs are insufficient, acknowledge limitations honestly
+7. Review conversation history - do NOT repeat information already provided
+8. For follow-up questions ("what else", "anything more"), focus ONLY on NEW information
+9. If tool outputs contain the same information as before, tell the user no additional information is available
 
 OUTPUT GUIDELINES:
 - Write as if you naturally know the information

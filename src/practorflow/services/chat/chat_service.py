@@ -72,6 +72,12 @@ RESPONSE RULES:
 2. NEVER say "I will search" or "Let me search". Just call the tool silently.
 3. Present information naturally as if you already know it.
 
+CONVERSATION AWARENESS:
+4. Review conversation history - do NOT repeat information already provided.
+5. For follow-up questions ("what else", "anything more", "besides that"), focus ONLY on NEW information.
+6. If search results contain the same information as before, tell the user no additional information is available.
+7. Use different search queries for follow-ups to find new content.
+
 IMPORTANT OUTPUT RULES:
 - Tool calls MUST NEVER be written as text.
 - NEVER output JSON, tool names, arguments, or planning text.
@@ -493,21 +499,17 @@ class ChatService:
                 return "Web search is not available."
 
             try:
-                results = ctx.deps.web_search_tool.execute(query)
+                result = ctx.deps.web_search_tool.execute(query=query)
 
-                if not results:
+                if not result.success:
+                    logger.warning(f"[ChatService] Web search failed: {result.error}")
                     return ""
 
-                # Format results
-                parts = [f'Web search results for: "{query}"\n']
+                if not result.data:
+                    return ""
 
-                for idx, result in enumerate(results[:5], 1):
-                    title = result.get("title", "")
-                    snippet = result.get("snippet", "")
-                    url = result.get("url", "")
-                    parts.append(f"{idx}. {title}\n   {snippet}\n   Source: {url}")
-
-                return "\n\n".join(parts)
+                # result.data is already formatted by _format_results in the tool
+                return result.data
 
             except Exception as e:
                 logger.error(f"[ChatService] Web search error: {e}")

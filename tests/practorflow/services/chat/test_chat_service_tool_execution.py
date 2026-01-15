@@ -58,8 +58,16 @@ async def test_search_knowledge_returns_formatted_results(
 ):
     """Test search_knowledge returns formatted results from knowledge store."""
     mock_knowledge_store.search_scoped.return_value = [
-        {"text": "First result text", "metadata": {"filename": "doc1.txt"}, "similarity": 0.95},
-        {"text": "Second result text", "metadata": {"filename": "doc2.pdf"}, "similarity": 0.85},
+        {
+            "text": "First result text",
+            "metadata": {"filename": "doc1.txt"},
+            "similarity": 0.95,
+        },
+        {
+            "text": "Second result text",
+            "metadata": {"filename": "doc2.pdf"},
+            "similarity": 0.85,
+        },
     ]
 
     tools = _capture_tools(chat_service)
@@ -156,17 +164,29 @@ async def test_search_knowledge_with_none_document_scope(
 # ============================================================================
 
 
+class FakeWebSearchResult:
+    def __init__(self, success=True, data=""):
+        self.success = success
+        self.data = data
+        self.error = None
+
+
 @pytest.mark.asyncio
 async def test_search_web_returns_results(
     chat_service,
     mock_knowledge_store,
     mock_web_search_tool,
 ):
-    """Test search_web returns formatted results from web search tool."""
-    mock_web_search_tool.search.return_value = [
-        {"title": "Result 1", "snippet": "Snippet 1", "url": "https://example.com/1"},
-        {"title": "Result 2", "snippet": "Snippet 2", "url": "https://example.com/2"},
-    ]
+    formatted = (
+        'Web search results for: "latest news"\n\n'
+        "1. Result 1\nSnippet 1\nhttps://example.com/1\n\n"
+        "2. Result 2\nSnippet 2\nhttps://example.com/2"
+    )
+
+    mock_web_search_tool.execute.return_value = FakeWebSearchResult(
+        success=True,
+        data=formatted,
+    )
 
     tools = _capture_tools(chat_service)
     ctx = _create_mock_run_context(mock_knowledge_store, mock_web_search_tool)
@@ -178,7 +198,7 @@ async def test_search_web_returns_results(
     assert "Snippet 1" in result
     assert "https://example.com/1" in result
     assert "2. Result 2" in result
-    mock_web_search_tool.search.assert_called_once_with("latest news")
+    mock_web_search_tool.execute.assert_called_once_with(query="latest news")
 
 
 @pytest.mark.asyncio
@@ -188,7 +208,47 @@ async def test_search_web_no_results(
     mock_web_search_tool,
 ):
     """Test search_web returns message when no results found."""
-    mock_web_search_tool.search.return_value = []
+    mock_web_search_tool.execute.return_value = []
+
+    tools = _capture_tools(chat_service)
+    ctx = _create_mock_run_context(mock_knowledge_store, mock_web_search_tool)
+
+    result = await tools["search_web"](ctx, "obscure query")
+
+    assert "" in result
+
+
+@pytest.mark.asyncio
+async def test_search_web_success_false(
+    chat_service,
+    mock_knowledge_store,
+    mock_web_search_tool,
+):
+    """Test search_web returns message when no results found."""
+
+    mock_web_search_tool.execute.return_value = FakeWebSearchResult(
+        success=False,
+    )
+
+    tools = _capture_tools(chat_service)
+    ctx = _create_mock_run_context(mock_knowledge_store, mock_web_search_tool)
+
+    result = await tools["search_web"](ctx, "obscure query")
+
+    assert "" in result
+
+
+@pytest.mark.asyncio
+async def test_search_web_empty_data(
+    chat_service,
+    mock_knowledge_store,
+    mock_web_search_tool,
+):
+    """Test search_web returns message when no results found."""
+
+    mock_web_search_tool.execute.return_value = FakeWebSearchResult(
+        success=True, data=None
+    )
 
     tools = _capture_tools(chat_service)
     ctx = _create_mock_run_context(mock_knowledge_store, mock_web_search_tool)
@@ -219,7 +279,7 @@ async def test_search_web_handles_exception(
     mock_web_search_tool,
 ):
     """Test search_web handles exceptions gracefully."""
-    mock_web_search_tool.search.side_effect = Exception("Network error")
+    mock_web_search_tool.execute.side_effect = Exception("Network error")
 
     tools = _capture_tools(chat_service)
     ctx = _create_mock_run_context(mock_knowledge_store, mock_web_search_tool)
@@ -228,17 +288,19 @@ async def test_search_web_handles_exception(
 
     assert "" in result
 
+
 @pytest.mark.asyncio
 async def test_search_web_limits_results_to_five(
     chat_service,
     mock_knowledge_store,
     mock_web_search_tool,
 ):
-    """Test search_web limits results to 5 items."""
-    mock_web_search_tool.search.return_value = [
-        {"title": f"Result {i}", "snippet": f"Snippet {i}", "url": f"https://example.com/{i}"}
-        for i in range(10)
-    ]
+    formatted = "\n".join(f"{i+1}. Result {i}" for i in range(5))
+
+    mock_web_search_tool.execute.return_value = FakeWebSearchResult(
+        success=True,
+        data=formatted,
+    )
 
     tools = _capture_tools(chat_service)
     ctx = _create_mock_run_context(mock_knowledge_store, mock_web_search_tool)

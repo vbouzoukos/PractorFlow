@@ -7,7 +7,6 @@ from api.routes.agent.agent import router
 from api.dependencies import get_agent_service, get_session_history
 from api.auth import get_current_user
 
-from practorflow.services.agent.schemas import AgentTaskResult
 from tests.api.common_api_fixtures import (
     app_base,
     override_auth,
@@ -56,7 +55,7 @@ def test_agent_execute_task_failure(client, app, mock_agent_service, monkeypatch
     app.dependency_overrides[get_agent_service] = lambda: mock_agent_service
 
     resp = client.post(
-        "/agent/session-1",
+        "/agent/session-1/execute",
         data={"task": "do something"},
     )
 
@@ -224,7 +223,6 @@ def test_agent_truncate_session_not_found(client, app, mock_agent_service):
 
     assert resp.status_code == 404
 
-
 def test_agent_execute_task_success(
     client,
     app,
@@ -237,7 +235,7 @@ def test_agent_execute_task_success(
     app.dependency_overrides[get_agent_service] = lambda: mock_agent_service
 
     # mock the async job scheduler
-    def mock_start_agent_job(*, agent_service, session_id, task, user, files):
+    async def mock_start_agent_job(*, agent_service, session_id, task, user, files):
         assert agent_service is mock_agent_service
         assert session_id == "session-1"
         assert task == "do something"
@@ -251,7 +249,7 @@ def test_agent_execute_task_success(
     )
 
     resp = client.post(
-        "/agent/session-1",
+        "/agent/session-1/execute",
         data={"task": "do something"},
         files=[("files", ("test.txt", b"hello", "text/plain"))],
     )
