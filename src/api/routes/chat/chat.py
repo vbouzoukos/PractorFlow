@@ -404,24 +404,6 @@ async def delete_session_document(
         message="Document deleted successfully",
     )
 
-# Add this endpoint to api/routers/chat.py
-#
-# Update imports to include TruncateRequest and TruncateResponse:
-#
-# from api.schemas import (
-#     DeleteResponse,
-#     DocumentDeleteResponse,
-#     DocumentInfo,
-#     DocumentListResponse,
-#     MessageResponse,
-#     SessionHistoryResponse,
-#     SessionResponse,
-#     SessionSummary,
-#     StreamChunkData,
-#     TruncateRequest,      # <-- add
-#     TruncateResponse,     # <-- add
-# )
-
 
 @router.put(
     "/{session_id}/truncate",

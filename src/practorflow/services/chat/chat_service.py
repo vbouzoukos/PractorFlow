@@ -493,7 +493,7 @@ class ChatService:
                 return "Web search is not available."
 
             try:
-                results = ctx.deps.web_search_tool.search(query)
+                results = ctx.deps.web_search_tool.execute(query)
 
                 if not results:
                     return ""

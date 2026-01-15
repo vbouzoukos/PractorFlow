@@ -5,6 +5,7 @@ Handles agent API requests in a separate thread to keep
 the UI responsive during task execution.
 """
 
+import time
 from typing import Optional
 
 from PySide6.QtCore import QThread, Signal
@@ -64,11 +65,14 @@ class AgentTaskWorker(QThread):
                 job = self._client.get_job(job_id)
 
                 if job.status == "completed":
+                    # job.result is a dict containing the full AgentTaskResult from backend
+                    # Extract the relevant fields
+                    result_data = job.result or {}
                     self.task_completed.emit(
                         AgentTaskResult(
-                            success=True,
-                            output=job.result,
-                            error=None,
+                            success=result_data.get("success", False),
+                            output=result_data.get("output"),
+                            error=result_data.get("error"),
                         )
                     )
                     return
@@ -77,7 +81,7 @@ class AgentTaskWorker(QThread):
                     self.error_occurred.emit(job.error or "Agent job failed")
                     return
 
-                time.sleep(1)
+                time.sleep(0.5)
 
         except Exception as e:
             self.error_occurred.emit(str(e))
@@ -148,6 +152,7 @@ class DeleteAgentSessionWorker(QThread):
         if self.isRunning():
             self.wait(2000)
         self.deleteLater()
+
 
 class AgentEditResumeWorker(QThread):
     """

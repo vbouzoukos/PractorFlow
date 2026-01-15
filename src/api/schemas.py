@@ -22,7 +22,11 @@ class TruncateResponse(BaseModel):
     truncated_count: int = Field(..., description="Number of messages removed")
     remaining_count: int = Field(..., description="Number of messages remaining")
     message: str = Field(default="Messages truncated successfully")
-    
+
+class AgentStartResponse(BaseModel):
+    job_id: str
+    status: str
+
 class SessionResponse(BaseModel):
     """Response model for session creation."""
     

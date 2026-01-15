@@ -31,7 +31,7 @@ from gui.widgets.history_panel import HistoryPanel
 from gui.widgets.documents_panel import DocumentsPanel
 from gui.api.chat_client import ChatClient, SessionHistory
 from gui.api.agent_client import AgentClient, AgentTaskResult
-from gui.workers.stream_worker import StreamWorker,ChatEditResumeWorker
+from gui.workers.stream_worker import StreamWorker, ChatEditResumeWorker
 from gui.workers.session_worker import StartSessionWorker, DeleteSessionWorker
 from gui.workers.agent_worker import AgentTaskWorker, StartAgentSessionWorker, AgentEditResumeWorker
 
@@ -57,6 +57,7 @@ class ChatWindow(QMainWindow):
         self._agent_worker = None
         self._session_worker = None
         self._delete_worker = None
+        self._edit_resume_worker = None
         self._pending_close = False
         
         self._setup_ui()
@@ -96,6 +97,7 @@ class ChatWindow(QMainWindow):
         
         self._session_label = QLabel("Session: Connecting...")
         header_layout.addWidget(self._session_label)
+        
         # Reconnect
         self._reconnect_btn = QPushButton("Reconnect")
         self._reconnect_btn.setToolTip("Reconnect to server")
@@ -197,6 +199,19 @@ class ChatWindow(QMainWindow):
         self._agent_mode = checked
         mode_name = "Agent" if checked else "Chat"
         self._status_bar.showMessage(f"{mode_name} mode enabled", 3000)
+    
+    def _set_ui_busy(self, busy: bool):
+        """
+        Set UI busy state.
+        
+        Centralizes all UI locking/unlocking to avoid inconsistent states.
+        Disables input controls and message editing, but keeps chat display viewable.
+        
+        Args:
+            busy: True to disable input, False to enable.
+        """
+        self._input_widget.set_enabled(not busy)
+        self._chat_display.set_editing_enabled(not busy)
         
     def _start_new_session(self):
         """Start a new chat or agent session asynchronously."""
@@ -397,15 +412,12 @@ class ChatWindow(QMainWindow):
     
     @Slot(str, list)
     def _on_message_submitted(self, message: str, file_paths: list):
-        """
-        Handle message submission from input widget.
-        """
-        # Lock immediately
-        self._input_widget.set_enabled(False)
-        self._chat_display.setEnabled(False)
+        """Handle message submission from input widget."""
+        self._set_ui_busy(True)
 
         try:
             if not self._session_id:
+                self._set_ui_busy(False)
                 QMessageBox.warning(
                     self,
                     "No Session",
@@ -414,6 +426,7 @@ class ChatWindow(QMainWindow):
                 return
             
             if not message.strip():
+                self._set_ui_busy(False)
                 return
             
             # Add user message to display
@@ -426,21 +439,15 @@ class ChatWindow(QMainWindow):
                     f"Attached files: {', '.join(file_names)}"
                 )
             
-            # Dispatch async work
+            # Dispatch async work (handlers will call _set_ui_busy(False) on completion)
             if self._agent_mode:
                 self._execute_agent_task(message, file_paths)
             else:
                 self._execute_chat_stream(message, file_paths)
 
         except Exception as e:
+            self._set_ui_busy(False)
             self._status_bar.showMessage(f"Error: {e}", 5000)
-
-        finally:
-            # Async path will re-lock/re-unlock properly,
-            # but this guarantees we never leave the UI stuck
-            if not self._stream_worker and not self._agent_worker:
-                self._input_widget.set_enabled(True)
-                self._chat_display.setEnabled(True)
 
     
     def _execute_chat_stream(self, message: str, file_paths: list):
@@ -489,6 +496,7 @@ class ChatWindow(QMainWindow):
     def _cleanup_stream_worker(self):
         """Clean up stream worker after it finishes."""
         try:
+            self._set_ui_busy(False)
             if self._stream_worker:
                 self._stream_worker.deleteLater()
                 self._stream_worker = None
@@ -499,6 +507,7 @@ class ChatWindow(QMainWindow):
     def _cleanup_agent_worker(self):
         """Clean up agent worker after it finishes."""
         try:
+            self._set_ui_busy(False)
             if self._agent_worker:
                 self._agent_worker.deleteLater()
                 self._agent_worker = None
@@ -517,7 +526,6 @@ class ChatWindow(QMainWindow):
     def _on_stream_finished(self, usage: dict):
         """Handle stream completion."""
         try:
-            self._input_widget.set_enabled(True)
             self._input_widget.clear_input()
             
             if usage:
@@ -542,9 +550,7 @@ class ChatWindow(QMainWindow):
     def _on_stream_error(self, error: str):
         """Handle streaming error."""
         try:
-            self._input_widget.set_enabled(True)
             self._status_bar.showMessage(f"Error: {error}", 5000)
-            
             self._chat_display.add_system_message(f"Error: {error}")
         except Exception:
             pass
@@ -553,7 +559,6 @@ class ChatWindow(QMainWindow):
     def _on_agent_task_completed(self, result: AgentTaskResult):
         """Handle agent task completion."""
         try:
-            self._input_widget.set_enabled(True)
             self._input_widget.clear_input()
             
             if result.success:
@@ -580,9 +585,7 @@ class ChatWindow(QMainWindow):
     def _on_agent_task_error(self, error: str):
         """Handle agent task error."""
         try:
-            self._input_widget.set_enabled(True)
             self._status_bar.showMessage(f"Error: {error}", 5000)
-            
             self._chat_display.add_system_message(f"Agent error: {error}")
         except Exception:
             pass
@@ -619,6 +622,13 @@ class ChatWindow(QMainWindow):
                 self._delete_worker.deleteLater()
                 self._delete_worker = None
             
+            # Wait for edit resume worker
+            if self._edit_resume_worker:
+                if self._edit_resume_worker.isRunning():
+                    self._edit_resume_worker.wait(2000)
+                self._edit_resume_worker.deleteLater()
+                self._edit_resume_worker = None
+            
             # Shutdown history panel workers
             self._history_panel.shutdown()
             
@@ -631,11 +641,10 @@ class ChatWindow(QMainWindow):
         # Always accept close event
         event.accept()
 
-
     @Slot(int, str)
     def _on_message_edit_requested(self, index: int, new_content: str):
+        """Handle message edit request from chat display."""
         try:
-
             if not self._session_id:
                 QMessageBox.warning(
                     self,
@@ -644,11 +653,7 @@ class ChatWindow(QMainWindow):
                 )
                 return
 
-            # Lock edits + input immediately
-            self._chat_display.setEnabled(False)
-            self._input_widget.set_enabled(False)
-
-            # Update UI
+            self._set_ui_busy(True)
             self._chat_display.truncate_from_index(index)
             self._chat_display.add_user_message(new_content)
 
@@ -661,27 +666,10 @@ class ChatWindow(QMainWindow):
                     file_paths=[],
                     parent=self,
                 )
-
-                self._edit_resume_worker.completed.connect(
-                    lambda _: self._chat_display.setEnabled(True)
-                )
-                self._edit_resume_worker.completed.connect(
-                    lambda _: self._input_widget.set_enabled(True)
-                )
-                self._edit_resume_worker.error_occurred.connect(
-                    lambda e: (
-                        self._chat_display.setEnabled(True),
-                        self._input_widget.set_enabled(True),
-                        self._status_bar.showMessage(
-                            f"Agent edit-resume failed: {e}", 5000
-                        )
-                    )
-                )
-
+                self._edit_resume_worker.completed.connect(lambda _: self._set_ui_busy(False))
+                self._edit_resume_worker.error_occurred.connect(self._on_edit_resume_error)
             else:
-                # Assistant placeholder for streaming
                 self._chat_display.add_assistant_message("")
-
                 self._edit_resume_worker = ChatEditResumeWorker(
                     client=self._client,
                     session_id=self._session_id,
@@ -690,33 +678,20 @@ class ChatWindow(QMainWindow):
                     file_paths=[],
                     parent=self,
                 )
-
-                self._edit_resume_worker.chunk_received.connect(
-                    self._on_chunk_received
-                )
-                self._edit_resume_worker.stream_finished.connect(
-                    lambda _: (
-                        self._chat_display.setEnabled(True),
-                        self._input_widget.set_enabled(True)
-                    )
-                )
-                self._edit_resume_worker.error_occurred.connect(
-                    lambda e: (
-                        self._chat_display.setEnabled(True),
-                        self._input_widget.set_enabled(True),
-                        self._status_bar.showMessage(
-                            f"Chat edit-resume failed: {e}", 5000
-                        )
-                    )
-                )
+                self._edit_resume_worker.chunk_received.connect(self._on_chunk_received)
+                self._edit_resume_worker.stream_finished.connect(lambda _: self._set_ui_busy(False))
+                self._edit_resume_worker.error_occurred.connect(self._on_edit_resume_error)
 
             self._edit_resume_worker.start()
-
         except Exception as e:
-            self._chat_display.setEnabled(True)
-            self._input_widget.set_enabled(True)
-            QMessageBox.critical(
-                self,
-                "Edit Error",
-                str(e),
-            )
+            self._set_ui_busy(False)
+            self._status_bar.showMessage(f"Edit error: {e}", 5000)
+
+    @Slot(str)
+    def _on_edit_resume_error(self, error: str):
+        """Handle edit-resume error."""
+        try:
+            self._set_ui_busy(False)
+            self._status_bar.showMessage(f"Edit-resume failed: {error}", 5000)
+        except Exception:
+            pass

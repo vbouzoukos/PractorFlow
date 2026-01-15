@@ -17,6 +17,7 @@ from api.dependencies import get_agent_service, get_session_history
 from api.auth import get_current_user, UserContext
 from api.routes.agent.agent_task import get_job, start_agent_job
 from api.schemas import (
+    AgentStartResponse,
     DeleteResponse,
     SessionResponse,
     SessionSummary,
@@ -26,7 +27,6 @@ from api.schemas import (
     TruncateResponse,
 )
 from practorflow.services.agent import AgentService
-from practorflow.services.agent.schemas import AgentTaskResult
 from practorflow.services.history.truncator import truncate_messages
 from practorflow.session_store.session_history import SessionHistory
 from practorflow.logger.logger import get_logger
@@ -69,8 +69,8 @@ async def start_session(
 
 
 @router.post(
-    "/{session_id}",
-    response_model=AgentTaskResult,
+    "/{session_id}/execute",
+    response_model=AgentStartResponse,
     summary="Execute an agent task",
     description="Execute a task using the multi-agent pipeline with optional file uploads.",
 )
@@ -82,7 +82,7 @@ async def execute_task(
     ),
     current_user: UserContext = Depends(get_current_user),
     agent_service: AgentService = Depends(get_agent_service),
-) -> AgentTaskResult:
+) -> AgentStartResponse:
     """
     Execute a task using the multi-agent pipeline.
 
@@ -109,7 +109,7 @@ async def execute_task(
         logger.info(f"[Agent API] Files uploaded: {filenames}")
 
     try:
-        job_id = start_agent_job(
+        job_id = await start_agent_job(
             agent_service=agent_service,
             session_id=session_id,
             task=task,
@@ -119,10 +119,7 @@ async def execute_task(
 
         logger.info(f"[Agent API] Job {job_id} scheduled for session: {session_id}")
 
-        return {
-            "job_id": job_id,
-            "status": "scheduled",
-        }
+        return AgentStartResponse(job_id=job_id, status="scheduled")
 
     except Exception as e:
         logger.error(f"[Agent API] Failed to schedule job: {e}")
@@ -322,21 +319,6 @@ async def get_history(
         created_at=session.created_at.isoformat(),
         updated_at=session.updated_at.isoformat(),
     )
-
-
-# Add this endpoint to api/routers/agent.py
-#
-# Update imports to include TruncateRequest and TruncateResponse:
-#
-# from api.schemas import (
-#     DeleteResponse,
-#     MessageResponse,
-#     SessionHistoryResponse,
-#     SessionResponse,
-#     SessionSummary,
-#     TruncateRequest,      # <-- add
-#     TruncateResponse,     # <-- add
-# )
 
 
 @router.put(

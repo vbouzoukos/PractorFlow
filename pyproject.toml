@@ -100,7 +100,7 @@ asyncio_mode = "auto"
 addopts = [
     "-v",
     "--tb=short",
-    "--cov=practorflow",
+    "--cov=src/api",
     "--cov-report=term-missing",
     "--cov-report=xml",
     "--ignore=tests/practorflow/common",

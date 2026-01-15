@@ -231,7 +231,7 @@ class AgentClient:
             file_paths: Optional list of file paths to upload.
         
         Returns:
-            AgentTaskResult with task outcome.
+            Job ID with task outcome.
         
         Raises:
             httpx.HTTPError: If the request fails.
