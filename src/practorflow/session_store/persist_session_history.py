@@ -13,6 +13,7 @@ from tinydb import TinyDB, Query
 from practorflow.llm.base.session import Message, Session
 from practorflow.session_store.session_history import SessionHistory
 
+
 class PersistSessionHistory(SessionHistory):
     """
     TinyDB-based implementation of SessionHistory.
@@ -102,6 +103,7 @@ class PersistSessionHistory(SessionHistory):
             created_at=self._deserialize_datetime(data.get("created_at")),
             updated_at=self._deserialize_datetime(data.get("updated_at")),
             user=data.get("user"),
+            title=data.get("title"),
         )
 
     def _deserialize_message(self, data: Dict[str, Any]) -> Message:

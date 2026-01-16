@@ -217,7 +217,7 @@ class TestTransformersRunnerGenerateStream:
             
             runner.tokenizer.apply_chat_template.assert_called_once()
             call_args = runner.tokenizer.apply_chat_template.call_args[0][0]
-            assert len(call_args) == 3
+            assert len(call_args) == 4
 
     @pytest.mark.asyncio
     async def test_generate_stream_with_instructions(self, runner):

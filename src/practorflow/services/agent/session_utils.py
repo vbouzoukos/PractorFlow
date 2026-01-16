@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional, Set
 
 from practorflow.llm.base.session import Session
 from practorflow.llm.base.session_store import SessionStore
+from practorflow.llm.pool.model_pool import ModelPool
+from practorflow.llm.llm_config import LLMConfig
 
 from practorflow.services.agent.schemas import (
     Plan,
@@ -18,6 +20,7 @@ from practorflow.services.agent.schemas import (
     StepStatus,
     VerificationResult,
 )
+from practorflow.services.history.session_summary import generate_session_title
 
 
 def get_document_context(
@@ -78,12 +81,14 @@ def get_document_scope(
     return scope if scope else None
 
 
-def persist_to_session(
+async def persist_to_session(
     session: Session,
     session_store: SessionStore,
     plan: Optional[Plan],
     execution_result: Optional[ExecutionResult],
     verification_result: Optional[VerificationResult],
+    model_pool: Optional[ModelPool] = None,
+    model_config: Optional[LLMConfig] = None,
 ) -> None:
     """
     Persist agent artifacts to session metadata.
@@ -94,6 +99,8 @@ def persist_to_session(
         plan: The execution plan.
         execution_result: Results from execution.
         verification_result: Results from verification.
+        model_pool: Pool for acquiring LLM handles (for title generation).
+        model_config: Configuration for the LLM model (for title generation).
     """
     session.metadata["type"] = "agent"
 
@@ -105,6 +112,16 @@ def persist_to_session(
 
     if verification_result:
         session.metadata["verification"] = verification_result.model_dump()
+
+    # Generate session title if not already set
+    if session.title is None and model_pool is not None and model_config is not None:
+        title = await generate_session_title(
+            messages=session.messages,
+            model_pool=model_pool,
+            model_config=model_config,
+        )
+        if title:
+            session.title = title
 
     session.updated_at = datetime.now()
     session_store.save(session)

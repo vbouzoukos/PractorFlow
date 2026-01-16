@@ -209,8 +209,6 @@ class AgentService:
                 usage=total_usage,
             )
 
-        persist_to_session(session, self._session_store, plan, None, None)
-
         retries = 0
         max_retries = plan.retry_policy.max_retries
 
@@ -234,8 +232,6 @@ class AgentService:
             )
             execution_result.synthesized_output = synthesized_output
 
-            persist_to_session(session, self._session_store, plan, execution_result, None)
-
             verification_result = await run_verifier(
                 plan=plan,
                 execution_result=execution_result,
@@ -243,8 +239,6 @@ class AgentService:
                 model_config=self._model_config,
                 knowledge_store=self._knowledge_store,
             )
-
-            persist_to_session(session, self._session_store, plan, execution_result, verification_result)
 
             if verification_result.verification_status in (
                 VerificationStatus.PASSED,
@@ -272,7 +266,15 @@ class AgentService:
         ):
             output = extract_final_output(plan, execution_result)
             session.messages.append(Message(role="assistant", content=output))
-            persist_to_session(session, self._session_store, plan, execution_result, verification_result)
+            await persist_to_session(
+                session=session,
+                session_store=self._session_store,
+                plan=plan,
+                execution_result=execution_result,
+                verification_result=verification_result,
+                model_pool=self._model_pool,
+                model_config=self._model_config,
+            )
 
             return AgentTaskResult(
                 success=True,
@@ -284,8 +286,6 @@ class AgentService:
             )
 
         error_msg = build_failure_message(verification_result)
-        session.messages.append(Message(role="assistant", content=error_msg))
-        persist_to_session(session, self._session_store, plan, execution_result, verification_result)
 
         return AgentTaskResult(
             success=False,
@@ -340,4 +340,3 @@ class AgentService:
         logger.info(f"[AgentService] Deleted session: {session_id}")
 
         return True
-

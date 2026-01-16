@@ -270,7 +270,7 @@ async def test_execute_task_failure_message_and_persist_called(
     assert result.success is False
     assert result.error == "final-failure"
     assert result.verification_result.verification_status == VerificationStatus.FAILED
-    persist.assert_called()
+    persist.assert_not_called()
 
 
 @pytest.mark.asyncio

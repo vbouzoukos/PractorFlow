@@ -28,7 +28,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 from PySide6.QtGui import QAction, QIcon
 
-from gui.api.chat_client import ChatClient, SessionSummary, SessionHistory
+from gui.api.chat_client import ChatClient
+from gui.api.client_data import SessionSummary, SessionHistory
 from gui.workers.history_worker import ListSessionsWorker, GetHistoryWorker, DeleteSessionWorker
 
 
@@ -99,10 +100,10 @@ class SessionItemWidget(QWidget):
             msg_count = self.session.message_count
             msg_text = f"{msg_count} msg" if msg_count == 1 else f"{msg_count} msgs"
             
-            # Use session ID prefix as placeholder for future title
-            session_preview = self.session.session_id[:16] + "..."
+            # Use title if available, otherwise "Untitled"
+            session_title = self.session.title if self.session.title else "Untitled"
             
-            display_text = f"<b>{session_preview}</b><br/><small>{time_str} · {msg_text}</small>"
+            display_text = f"<b>{session_title}</b><br/><small>{time_str} · {msg_text}</small>"
             self._info_label.setText(display_text)
         except Exception:
             self._info_label.setText("Session")
@@ -191,16 +192,16 @@ class HistoryPanel(QFrame):
         
         # Search box (disabled for now - placeholder for future title search)
         self._search_box = QLineEdit()
-        self._search_box.setPlaceholderText("Search (coming soon)...")
+        self._search_box.setPlaceholderText("Search...")
         self._search_box.setEnabled(False)
-        self._search_box.setToolTip("Search requires session titles (future feature)")
+        self._search_box.setToolTip("Search by title")
         layout.addWidget(self._search_box)
         
         # Session list
         self._session_list = QListWidget()
         self._session_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self._session_list.setSpacing(2)
-        self._session_list.setAlternatingRowColors(True)
+        self._session_list.setAlternatingRowColors(False)
         layout.addWidget(self._session_list, stretch=1)
         
         # Status label

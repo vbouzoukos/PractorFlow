@@ -25,6 +25,7 @@ from practorflow.llm.tools.base_web_search import DuckDuckGoSearchTool
 from practorflow.services.dto.chat_file import ChatFile
 from practorflow.logger.logger import get_logger
 from practorflow.services.history.truncator import truncate_messages
+from practorflow.services.history.session_summary import update_session_title
 from practorflow.settings.app_settings import appConfiguration
 
 from practorflow.services.history.builder import build_message_history
@@ -306,15 +307,25 @@ class ChatService:
                     total_output_tokens = usage.output_tokens
                     final_text = agent_run.result.output or ""
 
+
         # stream final result
         if final_text:
+            # generate session title if not already set
+            session.messages.append(Message(role="assistant", content=final_text))
+            if session.title is None:
+                await update_session_title(
+                    session=session,
+                    model_pool=self._model_pool,
+                    model_config=self._model_config,
+                )
+
+            self._session_store.save(session)
+            
             for i in range(0, len(final_text), _CHUNK_SIZE):
                 yield StreamChunk(
                     text=final_text[i : i + _CHUNK_SIZE],
                     finished=False,
                 )
-
-            session.messages.append(Message(role="assistant", content=final_text))
 
         # final chunk
         yield StreamChunk(
@@ -328,7 +339,6 @@ class ChatService:
             },
         )
 
-        self._session_store.save(session)
         logger.debug(f"[ChatService] Completed response for session: {session_id}")
 
     async def delete_chat(self, session_id: str) -> bool:
@@ -475,10 +485,7 @@ class ChatService:
             return formatted
 
         @agent.tool
-        async def search_web(
-            ctx: RunContext[ChatDeps],
-            query: str,
-        ) -> str:
+        async def search_web(ctx: RunContext[ChatDeps], query: str) -> str:
             """
             Search the web for current information.
 

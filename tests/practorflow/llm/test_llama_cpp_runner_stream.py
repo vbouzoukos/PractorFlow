@@ -146,7 +146,7 @@ class TestLlamaCppRunnerGenerateStream:
             chunks.append(chunk)
 
         call_kwargs = runner.model.create_chat_completion.call_args[1]
-        assert len(call_kwargs["messages"]) == 3
+        assert len(call_kwargs["messages"]) == 4
 
     @pytest.mark.asyncio
     async def test_generate_stream_with_instructions(self, runner):

@@ -11,6 +11,13 @@ from dataclasses import dataclass
 
 import httpx
 
+from gui.api.client_data import (
+    SessionSummary,
+    MessageInfo,
+    SessionHistory,
+    AuthStatus,
+)
+
 
 @dataclass
 class AgentTaskResult:
@@ -19,49 +26,6 @@ class AgentTaskResult:
     output: Optional[str] = None
     error: Optional[str] = None
 
-
-@dataclass
-class SessionSummary:
-    """Summary information for a session."""
-    session_id: str
-    user: Optional[str] = None
-    message_count: int = 0
-    document_count: int = 0
-    created_at: str = ""
-    updated_at: str = ""
-
-
-@dataclass
-class MessageInfo:
-    """Information for a single message."""
-    id: str
-    role: str
-    content: str
-    timestamp: str
-
-
-@dataclass
-class SessionHistory:
-    """Full session with message history."""
-    session_id: str
-    user: Optional[str] = None
-    instructions: Optional[str] = None
-    messages: List[MessageInfo] = None
-    document_count: int = 0
-    created_at: str = ""
-    updated_at: str = ""
-    
-    def __post_init__(self):
-        if self.messages is None:
-            self.messages = []
-
-
-@dataclass
-class AuthStatus:
-    """Authentication status information."""
-    provider: str
-    requires_credentials: bool
-    is_open_mode: bool
 
 @dataclass
 class AgentJobStatus:
@@ -333,6 +297,7 @@ class AgentClient:
                     document_count=s.get("document_count", 0),
                     created_at=s.get("created_at", ""),
                     updated_at=s.get("updated_at", ""),
+                    title=s.get("title"),
                 )
                 for s in data
             ]

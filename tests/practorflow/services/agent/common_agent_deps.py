@@ -116,6 +116,22 @@ def make_session(
         session_id=session_id,
         instructions="test",
         user=user,
+        title="test",
+        metadata={"type": "agent"},
+    )
+    session.created_at = datetime.now()
+    session.updated_at = session.created_at
+    return session
+
+def make_session_no_title(
+    session_id: str = "session-123",
+    user: str = DEFAULT_USER,
+) -> Session:
+    session = Session(
+        session_id=session_id,
+        instructions="test",
+        user=user,
+        title=None,
         metadata={"type": "agent"},
     )
     session.created_at = datetime.now()

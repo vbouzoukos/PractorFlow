@@ -22,6 +22,7 @@ def mock_session():
     session = MagicMock()
     session.session_id = "session-1"
     session.user = "test-user"
+    session.title = "test"
     session.instructions = "instructions"
     session.documents = []
     session.messages = []

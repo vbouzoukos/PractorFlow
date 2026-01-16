@@ -29,8 +29,11 @@ class TestLlamaCppRunnerBuildChatMessages:
     def test_build_chat_messages_with_messages_only(self, runner, sample_chat_messages):
         """Builds messages from provided message list."""
         result = runner._build_chat_messages(messages=sample_chat_messages)
-
-        assert len(result) == len(sample_chat_messages)
+        # plus the system message for not repeating answer
+        assert len(result) == len(sample_chat_messages) + 1
+        # next we remove it
+        result = [m for m in result if not m["role"] == "system"]
+        
         for i, msg in enumerate(sample_chat_messages):
             assert result[i]["role"] == msg["role"]
             assert result[i]["content"] == msg["content"]
@@ -124,7 +127,7 @@ class TestLlamaCppRunnerBuildChatMessages:
             {"role": "assistant", "content": "Fourth"},
         ]
         result = runner._build_chat_messages(messages=messages)
-
+        result = [m for m in result if m.get("role") != "system"]
         assert result[0]["content"] == "First"
         assert result[1]["content"] == "Second"
         assert result[2]["content"] == "Third"

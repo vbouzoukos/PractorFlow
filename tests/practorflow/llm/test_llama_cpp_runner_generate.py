@@ -52,7 +52,8 @@ class TestLlamaCppRunnerGenerate:
         
         call_kwargs = runner.model.create_chat_completion.call_args[1]
         messages = call_kwargs["messages"]
-        assert len(messages) == len(sample_chat_messages)
+        # plus the system message for not repeating answer 
+        assert len(messages) == len(sample_chat_messages) + 1
 
     @pytest.mark.asyncio
     async def test_generate_with_instructions(self, runner):

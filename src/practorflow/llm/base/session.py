@@ -49,7 +49,7 @@ class Session:
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     user:Optional[str] = None
-
+    title:Optional[str] = None
     def add_document(self, document: Dict[str, Any]) -> None:
         """
         Add a document to the session.

@@ -39,6 +39,7 @@ class SessionSummary(BaseModel):
     
     session_id: str = Field(..., description="Unique session identifier")
     user: Optional[str] = Field(default=None, description="User identifier")
+    title: Optional[str] = Field(default=None, description="User identifier")
     message_count: int = Field(..., description="Number of messages in session")
     document_count: int = Field(..., description="Number of documents in session")
     created_at: str = Field(..., description="Session creation timestamp (ISO format)")

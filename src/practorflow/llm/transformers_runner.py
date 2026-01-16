@@ -50,53 +50,59 @@ class TransformersRunner(LLMRunner):
     def _chat_template_starts_with_think(self) -> bool:
         """
         Detect if the chat template prepends <think> in the generation prompt.
-        
+
         Returns:
             True if the chat template prepends <think> to assistant responses.
         """
         try:
             chat_template = None
-            if self.tokenizer and hasattr(self.tokenizer, 'chat_template'):
+            if self.tokenizer and hasattr(self.tokenizer, "chat_template"):
                 chat_template = self.tokenizer.chat_template
-            
+
             if not chat_template:
                 return False
-            
+
             template_str = str(chat_template)
-            
+
             # Pattern 1: Look for generation_prompt that ends with <think>
             gen_prompt_think_pattern = re.compile(
-                r'add_generation_prompt.*?<think>\s*\{%-?\s*endif\s*-?%\}',
-                re.IGNORECASE | re.DOTALL
+                r"add_generation_prompt.*?<think>\s*\{%-?\s*endif\s*-?%\}",
+                re.IGNORECASE | re.DOTALL,
             )
             if gen_prompt_think_pattern.search(template_str):
-                logger.info("[TransformersRunner] Detected thinking model (generation_prompt ends with <think>)")
+                logger.info(
+                    "[TransformersRunner] Detected thinking model (generation_prompt ends with <think>)"
+                )
                 return True
-            
+
             # Pattern 2: Assistant prefix contains <think> within 50 chars
-            for match in re.finditer(r'assistant', template_str, re.IGNORECASE):
+            for match in re.finditer(r"assistant", template_str, re.IGNORECASE):
                 start_pos = match.end()
                 end_pos = min(start_pos + 50, len(template_str))
                 snippet = template_str[start_pos:end_pos]
-                if '<think>' in snippet:
-                    logger.info("[TransformersRunner] Detected thinking model (assistant prefix contains <think>)")
+                if "<think>" in snippet:
+                    logger.info(
+                        "[TransformersRunner] Detected thinking model (assistant prefix contains <think>)"
+                    )
                     return True
-            
+
             # Pattern 3: Explicit think tag at end of template
-            if template_str.rstrip().endswith('<think>'):
-                logger.info("[TransformersRunner] Detected thinking model (template ends with <think>)")
+            if template_str.rstrip().endswith("<think>"):
+                logger.info(
+                    "[TransformersRunner] Detected thinking model (template ends with <think>)"
+                )
                 return True
-            
+
             return False
-            
+
         except Exception as e:
             logger.warning(f"[TransformersRunner] Error detecting thinking model: {e}")
-            return False 
+            return False
 
     def supports_function_calling(self) -> bool:
         """
         Check if the transformers model supports native function calling.
-        
+
         Returns:
             True if model supports native function calling, False otherwise
         """
@@ -147,13 +153,13 @@ class TransformersRunner(LLMRunner):
     def _parse_thinking_response(self, text: str) -> Tuple[Optional[str], str]:
         """
         Parse response text to extract thinking/reasoning traces.
-        
+
         Handles models like Nemotron 3 that use <think>...</think> tags
         for chain-of-thought reasoning.
-        
+
         Args:
             text: Raw response text from the model
-            
+
         Returns:
             Tuple of (thinking_content, reply_content):
                 - thinking_content: Content inside <think> tags, or None if not present
@@ -161,29 +167,33 @@ class TransformersRunner(LLMRunner):
         """
         if not text:
             return None, ""
-        
+
         # Pattern to match <think>...</think> blocks (handles multiline)
-        think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL)
-        
+        think_pattern = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+
         # Find all thinking blocks
         think_matches = think_pattern.findall(text)
-        
+
         if not think_matches:
             # No thinking tags found, return original text as reply
             return None, text.strip()
-        
+
         # Combine all thinking content
-        thinking_content = "\n".join(match.strip() for match in think_matches if match.strip())
-        
+        thinking_content = "\n".join(
+            match.strip() for match in think_matches if match.strip()
+        )
+
         # Remove thinking blocks from text to get the reply
-        reply_content = think_pattern.sub('', text).strip()
-        
+        reply_content = think_pattern.sub("", text).strip()
+
         # Handle empty thinking (e.g., <think></think>)
         if not thinking_content:
             thinking_content = None
-        
-        logger.debug(f"[TransformersRunner] Parsed thinking: {len(thinking_content) if thinking_content else 0} chars, reply: {len(reply_content)} chars")
-        
+
+        logger.debug(
+            f"[TransformersRunner] Parsed thinking: {len(thinking_content) if thinking_content else 0} chars, reply: {len(reply_content)} chars"
+        )
+
         return thinking_content, reply_content
 
     def _build_chat_messages(
@@ -213,6 +223,21 @@ class TransformersRunner(LLMRunner):
                 "Quote or reference specific parts when relevant."
             )
             system_parts.append(f"REFERENCE DOCUMENTS:\n{context}\nEND OF DOCUMENTS.")
+
+        # Check for prior assistant messages and add anti-repetition instruction
+        if messages is not None:
+            has_prior_assistant = any(
+                msg.get("role") == "assistant" for msg in messages
+            )
+            if has_prior_assistant:
+                system_parts.append(
+                    "CONVERSATION AWARENESS - CRITICAL:\n"
+                    "The conversation history above contains your prior responses. "
+                    "You MUST NOT repeat information you already provided. "
+                    "If the user asks a follow-up question (like 'what else', 'anything more', 'besides that'), "
+                    "provide ONLY new information not covered in your previous responses. "
+                    "If you have no new information to add, say so clearly instead of repeating yourself."
+                )
 
         if system_parts:
             chat_messages.append(
@@ -388,22 +413,22 @@ class TransformersRunner(LLMRunner):
         latency = time.perf_counter() - start_time
 
         # Handle thinking model response
-        if self._thinking_model and '</think>' in response_text:
+        if self._thinking_model and "</think>" in response_text:
             # Split on </think> - content before is thinking, after is reply
-            parts = response_text.split('</think>', 1)
+            parts = response_text.split("</think>", 1)
             thinking_part = parts[0].strip()
             reply_part = parts[1].strip() if len(parts) > 1 else ""
             # Remove leading <think> if present
-            if thinking_part.startswith('<think>'):
+            if thinking_part.startswith("<think>"):
                 thinking_part = thinking_part[7:].strip()
             thinking = thinking_part if thinking_part else None
             reply = reply_part
-        elif self._thinking_model and '</think>' not in response_text:
+        elif self._thinking_model and "</think>" not in response_text:
             # No closing tag found - this is a normal model response
             thinking = None
             reply = response_text.strip()
             # Remove leading <think> if present (from template)
-            if reply.startswith('<think>'):
+            if reply.startswith("<think>"):
                 reply = reply[7:].strip()
         else:
             # Parse thinking from response
@@ -422,7 +447,9 @@ class TransformersRunner(LLMRunner):
         # Include thinking if present
         if thinking:
             response["thinking"] = thinking
-            logger.info(f"[TransformersRunner] Extracted thinking trace ({len(thinking)} chars)")
+            logger.info(
+                f"[TransformersRunner] Extracted thinking trace ({len(thinking)} chars)"
+            )
 
         if context:
             response["context_used"] = context
@@ -540,10 +567,10 @@ class TransformersRunner(LLMRunner):
             if text:
                 # Accumulate text for final thinking extraction
                 accumulated_text += text
-                
+
                 # Add to pending buffer for tag processing
                 pending_text += text
-                
+
                 # Process pending text for <think> tags
                 text_to_yield = ""
                 while pending_text:
@@ -553,7 +580,9 @@ class TransformersRunner(LLMRunner):
                         if think_start == -1:
                             # No <think> tag, check if we might have partial tag at end
                             # Keep last 6 chars in case of partial "<think"
-                            if len(pending_text) > 6 and pending_text[-6:].startswith("<"):
+                            if len(pending_text) > 6 and pending_text[-6:].startswith(
+                                "<"
+                            ):
                                 text_to_yield += pending_text[:-6]
                                 pending_text = pending_text[-6:]
                             else:
@@ -573,7 +602,9 @@ class TransformersRunner(LLMRunner):
                         if think_end == -1:
                             # No </think> yet, accumulate thinking content
                             # But keep buffer in case of partial "</think"
-                            if len(pending_text) > 7 and pending_text[-7:].startswith("<"):
+                            if len(pending_text) > 7 and pending_text[-7:].startswith(
+                                "<"
+                            ):
                                 accumulated_thinking += pending_text[:-7]
                                 pending_text = pending_text[-7:]
                             else:
@@ -585,8 +616,10 @@ class TransformersRunner(LLMRunner):
                             accumulated_thinking += pending_text[:think_end]
                             saw_think_close = True
                             in_thinking = False
-                            pending_text = pending_text[think_end + 8:]  # Skip "</think>"
-                
+                            pending_text = pending_text[
+                                think_end + 8 :
+                            ]  # Skip "</think>"
+
                 if text_to_yield:
                     yield StreamChunk(text=text_to_yield, finished=False)
 

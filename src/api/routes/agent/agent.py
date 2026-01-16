@@ -249,6 +249,7 @@ async def list_sessions(
                 SessionSummary(
                     session_id=session.session_id,
                     user=session.user,
+                    title=session.title,
                     message_count=len(session.messages),
                     document_count=len(session.documents),
                     created_at=session.created_at.isoformat(),

@@ -120,7 +120,6 @@ def sample_chat_messages() -> List[Dict[str, str]]:
     Returns a typical conversation history.
     """
     return [
-        {"role": "system", "content": "You are a helpful assistant."},
         {"role": "user", "content": "Hello, how are you?"},
         {"role": "assistant", "content": "I'm doing well, thank you! How can I help you today?"},
         {"role": "user", "content": "What is the capital of France?"},

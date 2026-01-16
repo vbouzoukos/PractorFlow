@@ -34,49 +34,57 @@ class LlamaCppRunner(LLMRunner):
     def _chat_template_starts_with_think(self) -> bool:
         """
         Detect if the chat template prepends <think> in the generation prompt.
-        
+
         This checks the chat template for patterns that indicate the model
         starts its response with a <think> tag (e.g., DeepSeek-R1, QwQ models).
-        
+
         Returns:
             True if the chat template prepends <think> to assistant responses.
         """
         try:
-            metadata = self.model.metadata if hasattr(self.model, 'metadata') else {}
-            chat_template = metadata.get("tokenizer.chat_template", "") if metadata else ""
-            
+            metadata = self.model.metadata if hasattr(self.model, "metadata") else {}
+            chat_template = (
+                metadata.get("tokenizer.chat_template", "") if metadata else ""
+            )
+
             if not chat_template:
                 return False
-            
+
             template_str = str(chat_template)
-            
+
             # Pattern 1: Look for generation_prompt that ends with <think>
             # Common pattern: {%- if add_generation_prompt %}...<think>{%- endif %}
             gen_prompt_think_pattern = re.compile(
-                r'add_generation_prompt.*?<think>\s*\{%-?\s*endif\s*-?%\}',
-                re.IGNORECASE | re.DOTALL
+                r"add_generation_prompt.*?<think>\s*\{%-?\s*endif\s*-?%\}",
+                re.IGNORECASE | re.DOTALL,
             )
             if gen_prompt_think_pattern.search(template_str):
-                logger.info("[LlamaCppRunner] Detected thinking model (generation_prompt ends with <think>)")
+                logger.info(
+                    "[LlamaCppRunner] Detected thinking model (generation_prompt ends with <think>)"
+                )
                 return True
-            
+
             # Pattern 2: Assistant prefix contains <think> within 50 chars
             # e.g., assistant header like "<|assistant|>\n<think>"
-            for match in re.finditer(r'assistant', template_str, re.IGNORECASE):
+            for match in re.finditer(r"assistant", template_str, re.IGNORECASE):
                 start_pos = match.end()
                 end_pos = min(start_pos + 50, len(template_str))
                 snippet = template_str[start_pos:end_pos]
-                if '<think>' in snippet:
-                    logger.info("[LlamaCppRunner] Detected thinking model (assistant prefix contains <think>)")
+                if "<think>" in snippet:
+                    logger.info(
+                        "[LlamaCppRunner] Detected thinking model (assistant prefix contains <think>)"
+                    )
                     return True
-            
+
             # Pattern 3: Explicit think tag at end of template
-            if template_str.rstrip().endswith('<think>'):
-                logger.info("[LlamaCppRunner] Detected thinking model (template ends with <think>)")
+            if template_str.rstrip().endswith("<think>"):
+                logger.info(
+                    "[LlamaCppRunner] Detected thinking model (template ends with <think>)"
+                )
                 return True
-            
+
             return False
-            
+
         except Exception as e:
             logger.warning(f"[LlamaCppRunner] Error detecting thinking model: {e}")
             return False
@@ -84,41 +92,56 @@ class LlamaCppRunner(LLMRunner):
     def supports_function_calling(self) -> bool:
         """
         Check if the llama.cpp model supports native function calling.
-        
+
         Returns:
             True if model supports native function calling, False otherwise
         """
         try:
-            metadata = self.model.metadata if hasattr(self.model, 'metadata') else {}
-            
+            metadata = self.model.metadata if hasattr(self.model, "metadata") else {}
+
             if metadata:
                 chat_template = metadata.get("tokenizer.chat_template", "")
                 if chat_template:
                     template_lower = str(chat_template).lower()
-                    if any(keyword in template_lower for keyword in [
-                        'tool', 'function', '<tool_call>', '<function_call>',
-                        'tools', 'functions', 'tool_use', 'function_use'
-                    ]):
-                        logger.info(f"[LlamaCppRunner] Model supports function calling (detected in chat template)")
+                    if any(
+                        keyword in template_lower
+                        for keyword in [
+                            "tool",
+                            "function",
+                            "<tool_call>",
+                            "<function_call>",
+                            "tools",
+                            "functions",
+                            "tool_use",
+                            "function_use",
+                        ]
+                    ):
+                        logger.info(
+                            f"[LlamaCppRunner] Model supports function calling (detected in chat template)"
+                        )
                         return True
-            
-            logger.info(f"[LlamaCppRunner] Model does NOT support native function calling")
+
+            logger.info(
+                f"[LlamaCppRunner] Model does NOT support native function calling"
+            )
             return False
-            
+
         except Exception as e:
-            logger.warning(f"[LlamaCppRunner] Error detecting function calling support: {e}")
+            logger.warning(
+                f"[LlamaCppRunner] Error detecting function calling support: {e}"
+            )
             return False
 
     def _parse_thinking_response(self, text: str) -> Tuple[Optional[str], str]:
         """
         Parse response text to extract thinking/reasoning traces.
-        
+
         Handles models like Nemotron 3 that use <think>...</think> tags
         for chain-of-thought reasoning.
-        
+
         Args:
             text: Raw response text from the model
-            
+
         Returns:
             Tuple of (thinking_content, reply_content):
                 - thinking_content: Content inside <think> tags, or None if not present
@@ -126,55 +149,61 @@ class LlamaCppRunner(LLMRunner):
         """
         if not text:
             return None, ""
-        
+
         # Pattern to match <think>...</think> blocks (handles multiline)
-        think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL)
-        
+        think_pattern = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+
         # Find all thinking blocks
         think_matches = think_pattern.findall(text)
-        
+
         if not think_matches:
             # No thinking tags found, return original text as reply
             return None, text.strip()
-        
+
         # Combine all thinking content
-        thinking_content = "\n".join(match.strip() for match in think_matches if match.strip())
-        
+        thinking_content = "\n".join(
+            match.strip() for match in think_matches if match.strip()
+        )
+
         # Remove thinking blocks from text to get the reply
-        reply_content = think_pattern.sub('', text).strip()
-        
+        reply_content = think_pattern.sub("", text).strip()
+
         # Handle empty thinking (e.g., <think></think>)
         if not thinking_content:
             thinking_content = None
-        
-        logger.debug(f"[LlamaCppRunner] Parsed thinking: {len(thinking_content) if thinking_content else 0} chars, reply: {len(reply_content)} chars")
-        
+
+        logger.debug(
+            f"[LlamaCppRunner] Parsed thinking: {len(thinking_content) if thinking_content else 0} chars, reply: {len(reply_content)} chars"
+        )
+
         return thinking_content, reply_content
 
     def _extract_content_from_response(self, response: Dict[str, Any]) -> str:
         """
         Extract text content from llama.cpp response.
-        
+
         Args:
             response: Response from create_chat_completion
-            
+
         Returns:
             Text content from the response
         """
         choices = response.get("choices", [])
         if not choices:
             return ""
-        
+
         message = choices[0].get("message", {})
         return message.get("content", "") or ""
 
-    def _convert_tools_to_llama_format(self, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _convert_tools_to_llama_format(
+        self, tools: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """
         Convert tool definitions to llama.cpp native format.
-        
+
         Args:
             tools: List of tool definitions in OpenAI/Pydantic AI format
-            
+
         Returns:
             List of tools in llama.cpp format
         """
@@ -190,12 +219,14 @@ class LlamaCppRunner(LLMRunner):
                     "function": {
                         "name": tool["name"],
                         "description": tool["description"],
-                        "parameters": tool.get("parameters", tool.get("parameters_json_schema", {
-                            "type": "object",
-                            "properties": {},
-                            "required": []
-                        }))
-                    }
+                        "parameters": tool.get(
+                            "parameters",
+                            tool.get(
+                                "parameters_json_schema",
+                                {"type": "object", "properties": {}, "required": []},
+                            ),
+                        ),
+                    },
                 }
                 llama_tools.append(llama_tool)
             else:
@@ -203,45 +234,48 @@ class LlamaCppRunner(LLMRunner):
         return llama_tools
 
     def _extract_tool_calls_from_response(
-        self, 
-        response: Dict[str, Any]
+        self, response: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
         Extract tool calls from llama.cpp native response.
-        
+
         Args:
             response: Response from create_chat_completion
-            
+
         Returns:
             List of tool call dicts with tool_name, args, tool_call_id
         """
         tool_calls = []
         choices = response.get("choices", [])
-        
+
         if not choices:
             return tool_calls
-        
+
         message = choices[0].get("message", {})
         native_tool_calls = message.get("tool_calls", [])
-        
+
         for tc in native_tool_calls:
             func = tc.get("function", {})
             tool_name = func.get("name", "")
             args_str = func.get("arguments", "{}")
-            
+
             # Parse arguments
             try:
                 args = json.loads(args_str) if isinstance(args_str, str) else args_str
             except json.JSONDecodeError:
                 args = {}
-                logger.warning(f"[LlamaCppRunner] Failed to parse tool arguments: {args_str}")
-            
-            tool_calls.append({
-                "tool_name": tool_name,
-                "args": args,
-                "tool_call_id": tc.get("id", f"call_{len(tool_calls)}")
-            })
-        
+                logger.warning(
+                    f"[LlamaCppRunner] Failed to parse tool arguments: {args_str}"
+                )
+
+            tool_calls.append(
+                {
+                    "tool_name": tool_name,
+                    "args": args,
+                    "tool_call_id": tc.get("id", f"call_{len(tool_calls)}"),
+                }
+            )
+
         return tool_calls
 
     def _build_chat_messages(
@@ -273,6 +307,21 @@ class LlamaCppRunner(LLMRunner):
                 "Quote or reference specific parts when relevant."
             )
             system_parts.append(f"REFERENCE DOCUMENTS:\n{context}\nEND OF DOCUMENTS.")
+
+        # Check for prior assistant messages and add anti-repetition instruction
+        if messages is not None:
+            has_prior_assistant = any(
+                msg.get("role") == "assistant" for msg in messages
+            )
+            if has_prior_assistant:
+                system_parts.append(
+                    "CONVERSATION AWARENESS - CRITICAL:\n"
+                    "The conversation history above contains your prior responses. "
+                    "You MUST NOT repeat information you already provided. "
+                    "If the user asks a follow-up question (like 'what else', 'anything more', 'besides that'), "
+                    "provide ONLY new information not covered in your previous responses. "
+                    "If you have no new information to add, say so clearly instead of repeating yourself."
+                )
 
         if system_parts:
             chat_messages.append(
@@ -315,7 +364,9 @@ class LlamaCppRunner(LLMRunner):
             if llama_tools:
                 completion_kwargs["tools"] = llama_tools
                 completion_kwargs["tool_choice"] = "auto"
-                logger.debug(f"[LlamaCppRunner] Passing {len(llama_tools)} tools to native API")
+                logger.debug(
+                    f"[LlamaCppRunner] Passing {len(llama_tools)} tools to native API"
+                )
 
         return self.model.create_chat_completion(**completion_kwargs)
 
@@ -331,7 +382,7 @@ class LlamaCppRunner(LLMRunner):
     ) -> Dict[str, Any]:
         """
         Async generate with optional context from prior search() call.
-        
+
         Args:
             messages: List of message dicts with 'role' and 'content' keys
             prompt: Single prompt string (alternative to messages)
@@ -339,7 +390,7 @@ class LlamaCppRunner(LLMRunner):
             temperature: Sampling temperature (uses config default if None)
             top_p: Nucleus sampling parameter (uses config default if None)
             tools: Optional list of tool definitions for native function calling
-            
+
         Returns:
             Dictionary with reply, latency_seconds, and optional thinking/tool_calls/context
         """
@@ -375,25 +426,25 @@ class LlamaCppRunner(LLMRunner):
 
         # Extract content and parse thinking
         raw_content = self._extract_content_from_response(result)
-        
+
         # For thinking models, handle case where response starts mid-thinking
         # (template already added <think>, so content may start with thinking)
-        if self._thinking_model and '</think>' in raw_content:
+        if self._thinking_model and "</think>" in raw_content:
             # Split on </think> - content before is thinking, after is reply
-            parts = raw_content.split('</think>', 1)
+            parts = raw_content.split("</think>", 1)
             thinking_part = parts[0].strip()
             reply_part = parts[1].strip() if len(parts) > 1 else ""
             # Remove leading <think> if present
-            if thinking_part.startswith('<think>'):
+            if thinking_part.startswith("<think>"):
                 thinking_part = thinking_part[7:].strip()
             thinking = thinking_part if thinking_part else None
             reply = reply_part
-        elif self._thinking_model and '</think>' not in raw_content:
+        elif self._thinking_model and "</think>" not in raw_content:
             # No closing tag found - this is a normal model response
             thinking = None
             reply = raw_content.strip()
             # Remove leading <think> if present (from template)
-            if reply.startswith('<think>'):
+            if reply.startswith("<think>"):
                 reply = reply[7:].strip()
         else:
             thinking, reply = self._parse_thinking_response(raw_content)
@@ -409,11 +460,15 @@ class LlamaCppRunner(LLMRunner):
         # Include thinking if present
         if thinking:
             response["thinking"] = thinking
-            logger.info(f"[LlamaCppRunner] Extracted thinking trace ({len(thinking)} chars)")
+            logger.info(
+                f"[LlamaCppRunner] Extracted thinking trace ({len(thinking)} chars)"
+            )
 
         if tool_calls:
             response["tool_calls"] = tool_calls
-            logger.info(f"[LlamaCppRunner] Native tool calls extracted: {[tc['tool_name'] for tc in tool_calls]}")
+            logger.info(
+                f"[LlamaCppRunner] Native tool calls extracted: {[tc['tool_name'] for tc in tool_calls]}"
+            )
 
         if context:
             response["context_used"] = context
@@ -434,7 +489,7 @@ class LlamaCppRunner(LLMRunner):
     ) -> AsyncIterator[StreamChunk]:
         """
         Async streaming generation.
-        
+
         Args:
             messages: List of message dicts with 'role' and 'content' keys
             prompt: Single prompt string (alternative to messages)
@@ -442,7 +497,7 @@ class LlamaCppRunner(LLMRunner):
             temperature: Sampling temperature (uses config default if None)
             top_p: Nucleus sampling parameter (uses config default if None)
             tools: Optional list of tool definitions for native function calling
-            
+
         Yields:
             StreamChunk objects with text deltas and final metadata
         """
@@ -523,26 +578,32 @@ class LlamaCppRunner(LLMRunner):
                         for tc in delta["tool_calls"]:
                             idx = tc.get("index", 0)
                             while len(accumulated_tool_calls) <= idx:
-                                accumulated_tool_calls.append({
-                                    "id": "",
-                                    "function": {"name": "", "arguments": ""}
-                                })
-                            
+                                accumulated_tool_calls.append(
+                                    {
+                                        "id": "",
+                                        "function": {"name": "", "arguments": ""},
+                                    }
+                                )
+
                             if "id" in tc:
                                 accumulated_tool_calls[idx]["id"] = tc["id"]
                             if "function" in tc:
                                 if "name" in tc["function"]:
-                                    accumulated_tool_calls[idx]["function"]["name"] += tc["function"]["name"]
+                                    accumulated_tool_calls[idx]["function"][
+                                        "name"
+                                    ] += tc["function"]["name"]
                                 if "arguments" in tc["function"]:
-                                    accumulated_tool_calls[idx]["function"]["arguments"] += tc["function"]["arguments"]
+                                    accumulated_tool_calls[idx]["function"][
+                                        "arguments"
+                                    ] += tc["function"]["arguments"]
 
                     if content:
                         # Accumulate full text for reference
                         accumulated_text += content
-                        
+
                         # Add to pending buffer for tag processing
                         pending_text += content
-                        
+
                         # Process pending text for <think> tags
                         text_to_yield = ""
                         while pending_text:
@@ -552,7 +613,9 @@ class LlamaCppRunner(LLMRunner):
                                 if think_start == -1:
                                     # No <think> tag, check if we might have partial tag at end
                                     # Keep last 6 chars in case of partial "<think"
-                                    if len(pending_text) > 6 and pending_text[-6:].startswith("<"):
+                                    if len(pending_text) > 6 and pending_text[
+                                        -6:
+                                    ].startswith("<"):
                                         text_to_yield += pending_text[:-6]
                                         pending_text = pending_text[-6:]
                                     else:
@@ -572,7 +635,9 @@ class LlamaCppRunner(LLMRunner):
                                 if think_end == -1:
                                     # No </think> yet, accumulate thinking content
                                     # But keep buffer in case of partial "</think"
-                                    if len(pending_text) > 7 and pending_text[-7:].startswith("<"):
+                                    if len(pending_text) > 7 and pending_text[
+                                        -7:
+                                    ].startswith("<"):
                                         accumulated_thinking += pending_text[:-7]
                                         pending_text = pending_text[-7:]
                                     else:
@@ -584,12 +649,17 @@ class LlamaCppRunner(LLMRunner):
                                     accumulated_thinking += pending_text[:think_end]
                                     saw_think_close = True
                                     in_thinking = False
-                                    pending_text = pending_text[think_end + 8:]  # Skip "</think>"
-                        
+                                    pending_text = pending_text[
+                                        think_end + 8 :
+                                    ]  # Skip "</think>"
+
                         if text_to_yield:
                             # Put chunk in queue (blocking call from thread)
                             asyncio.run_coroutine_threadsafe(
-                                queue.put(StreamChunk(text=text_to_yield, finished=False)), loop
+                                queue.put(
+                                    StreamChunk(text=text_to_yield, finished=False)
+                                ),
+                                loop,
                             ).result()
 
                 # Handle remaining pending_text at end of stream
@@ -600,7 +670,8 @@ class LlamaCppRunner(LLMRunner):
                         all_text = accumulated_thinking + pending_text
                         if all_text:
                             asyncio.run_coroutine_threadsafe(
-                                queue.put(StreamChunk(text=all_text, finished=False)), loop
+                                queue.put(StreamChunk(text=all_text, finished=False)),
+                                loop,
                             ).result()
                         # Clear thinking since this is normal output
                         accumulated_thinking = ""
@@ -610,7 +681,8 @@ class LlamaCppRunner(LLMRunner):
                         all_text = accumulated_thinking + pending_text
                         if all_text:
                             asyncio.run_coroutine_threadsafe(
-                                queue.put(StreamChunk(text=all_text, finished=False)), loop
+                                queue.put(StreamChunk(text=all_text, finished=False)),
+                                loop,
                             ).result()
                         accumulated_thinking = ""
 
@@ -620,18 +692,22 @@ class LlamaCppRunner(LLMRunner):
                     func = tc.get("function", {})
                     tool_name = func.get("name", "")
                     args_str = func.get("arguments", "{}")
-                    
+
                     try:
                         args = json.loads(args_str) if args_str else {}
                     except json.JSONDecodeError:
                         args = {}
-                    
+
                     if tool_name:
-                        tool_calls_result.append({
-                            "tool_name": tool_name,
-                            "args": args,
-                            "tool_call_id": tc.get("id", f"call_{len(tool_calls_result)}")
-                        })
+                        tool_calls_result.append(
+                            {
+                                "tool_name": tool_name,
+                                "args": args,
+                                "tool_call_id": tc.get(
+                                    "id", f"call_{len(tool_calls_result)}"
+                                ),
+                            }
+                        )
 
                 # Determine thinking result for final metadata
                 thinking_result = None
@@ -655,13 +731,15 @@ class LlamaCppRunner(LLMRunner):
                     finish_reason=finish_reason,
                     latency_seconds=latency,
                     context_used=context,
-                    search_metadata=final_metadata if final_metadata else context_metadata,
+                    search_metadata=(
+                        final_metadata if final_metadata else context_metadata
+                    ),
                 )
-                
+
                 # Attach tool calls to final chunk if present
                 if tool_calls_result:
                     final_chunk.tool_calls = tool_calls_result
-                    
+
                 asyncio.run_coroutine_threadsafe(queue.put(final_chunk), loop).result()
 
             except Exception as e:
