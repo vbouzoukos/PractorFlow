@@ -91,8 +91,8 @@ class AgentService:
         logger.info("[AgentService] Initialized")
 
     def _generate_session_id(self) -> str:
-        """Generate a unique session ID for agent tasks."""
-        return f"agent_{uuid.uuid4().hex}"
+        """Generate a unique session ID."""
+        return f"session_{uuid.uuid4().hex}"
 
     async def _index_file(self, file: ChatFile) -> Dict[str, Any]:
         """

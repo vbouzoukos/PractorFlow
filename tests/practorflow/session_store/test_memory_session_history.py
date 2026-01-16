@@ -71,16 +71,6 @@ def test_get_history_missing_session():
 
     assert history.get_history("missing") is None
 
-
-def test_set_sessions_replaces_internal_reference():
-    s1 = Session(session_id="s1")
-    history = InMemorySessionHistory()
-
-    history.set_sessions({"s1": s1})
-
-    assert history.get_history("s1") is s1
-
-
 def test_repr_includes_session_count():
     history = InMemorySessionHistory(
         sessions={

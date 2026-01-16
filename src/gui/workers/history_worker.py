@@ -1,20 +1,20 @@
 """
 History worker - Background threads for session history operations.
 
-Handles session listing and history retrieval in background threads
-to keep the UI responsive.
+Handles session listing, history retrieval, and session deletion
+in background threads to keep the UI responsive.
 """
 
-from typing import List, Optional
+from typing import Optional
 
 from PySide6.QtCore import QThread, Signal
 
-from gui.api.chat_client import ChatClient, SessionSummary, SessionHistory
+from gui.api.session_client import SessionClient
 
 
 class ListSessionsWorker(QThread):
     """
-    Worker thread for listing chat sessions.
+    Worker thread for listing sessions.
     
     Signals:
         sessions_loaded: Emitted with list of SessionSummary on success.
@@ -24,14 +24,24 @@ class ListSessionsWorker(QThread):
     sessions_loaded = Signal(list)
     error_occurred = Signal(str)
     
-    def __init__(self, client: ChatClient, user: Optional[str] = None, parent=None):
+    def __init__(
+        self,
+        client: SessionClient,
+        user: Optional[str] = None,
+        session_type: Optional[str] = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self._client = client
         self._user = user
+        self._session_type = session_type
     
     def run(self):
         try:
-            sessions = self._client.list_sessions(user=self._user)
+            sessions = self._client.list_sessions(
+                user=self._user,
+                session_type=self._session_type,
+            )
             self.sessions_loaded.emit(sessions)
         except Exception as e:
             self.error_occurred.emit(str(e))
@@ -57,7 +67,7 @@ class GetHistoryWorker(QThread):
     not_found = Signal(str)
     error_occurred = Signal(str)
     
-    def __init__(self, client: ChatClient, session_id: str, parent=None):
+    def __init__(self, client: SessionClient, session_id: str, parent=None):
         super().__init__(parent)
         self._client = client
         self._session_id = session_id
@@ -82,7 +92,7 @@ class GetHistoryWorker(QThread):
 
 class DeleteSessionWorker(QThread):
     """
-    Worker thread for deleting a session from history.
+    Worker thread for deleting a session.
     
     Signals:
         session_deleted: Emitted with session_id on success.
@@ -92,7 +102,7 @@ class DeleteSessionWorker(QThread):
     session_deleted = Signal(str)
     error_occurred = Signal(str)
     
-    def __init__(self, client: ChatClient, session_id: str, parent=None):
+    def __init__(self, client: SessionClient, session_id: str, parent=None):
         super().__init__(parent)
         self._client = client
         self._session_id = session_id

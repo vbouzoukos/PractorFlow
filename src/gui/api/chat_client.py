@@ -2,7 +2,7 @@
 Chat API client.
 
 HTTP client for communicating with the PractorFlow FastAPI backend.
-Supports session management, message sending with file uploads,
+Supports session creation, message sending with file uploads,
 SSE streaming responses, and JWT authentication.
 """
 
@@ -13,13 +13,7 @@ from dataclasses import dataclass
 import httpx
 from httpx_sse import connect_sse
 
-from gui.api.client_data import (
-    SessionSummary,
-    MessageInfo,
-    SessionHistory,
-    DocumentInfo,
-    AuthStatus,
-)
+from gui.api.client_data import AuthStatus
 
 
 @dataclass
@@ -41,11 +35,6 @@ class ChatClient:
     - Starting chat sessions
     - Sending messages with optional file uploads
     - Streaming responses via SSE
-    - Deleting sessions
-    - Listing all sessions
-    - Retrieving session history
-    - Listing session documents
-    - Deleting session documents
     """
     
     def __init__(
@@ -150,11 +139,9 @@ class ChatClient:
         if self._access_token:
             return
         
-        # Get auth status to determine mode
         if self._auth_status is None:
             self.get_auth_status()
         
-        # Authenticate (works for both open mode and secure mode)
         self.authenticate()
     
     def clear_token(self) -> None:
@@ -182,184 +169,6 @@ class ChatClient:
             data = response.json()
             return data["session_id"]
     
-    def delete_session(self, session_id: str) -> bool:
-        """
-        Delete a chat session.
-        
-        Args:
-            session_id: Session ID to delete.
-        
-        Returns:
-            True if deleted successfully.
-        
-        Raises:
-            httpx.HTTPError: If the request fails.
-        """
-        self.ensure_authenticated()
-        
-        url = f"{self._base_url}/chat/{session_id}"
-        
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.delete(url, headers=self._get_auth_headers())
-            response.raise_for_status()
-            
-            data = response.json()
-            return data.get("deleted", False)
-    
-    def list_sessions(self, user: Optional[str] = None) -> List[SessionSummary]:
-        """
-        List all chat sessions.
-        
-        Args:
-            user: Optional user identifier to filter sessions.
-        
-        Returns:
-            List of SessionSummary objects sorted by updated_at descending.
-        
-        Raises:
-            httpx.HTTPError: If the request fails.
-        """
-        self.ensure_authenticated()
-        
-        url = f"{self._base_url}/chat/sessions"
-        params = {}
-        if user is not None:
-            params["user"] = user
-        
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(
-                url,
-                params=params,
-                headers=self._get_auth_headers(),
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            return [
-                SessionSummary(
-                    session_id=item.get("session_id", ""),
-                    user=item.get("user"),
-                    message_count=item.get("message_count", 0),
-                    document_count=item.get("document_count", 0),
-                    created_at=item.get("created_at", ""),
-                    updated_at=item.get("updated_at", ""),
-                    title=item.get("title"),
-                )
-                for item in data
-            ]
-    
-    def get_history(self, session_id: str) -> Optional[SessionHistory]:
-        """
-        Get full session with message history.
-        
-        Args:
-            session_id: Session ID to retrieve.
-        
-        Returns:
-            SessionHistory object with full message history,
-            or None if session not found.
-        
-        Raises:
-            httpx.HTTPError: If the request fails (except 404).
-        """
-        self.ensure_authenticated()
-        
-        url = f"{self._base_url}/chat/{session_id}/history"
-        
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url, headers=self._get_auth_headers())
-            
-            if response.status_code == 404:
-                return None
-            
-            response.raise_for_status()
-            
-            data = response.json()
-            messages = [
-                MessageInfo(
-                    id=msg.get("id", ""),
-                    role=msg.get("role", ""),
-                    content=msg.get("content", ""),
-                    timestamp=msg.get("timestamp", ""),
-                )
-                for msg in data.get("messages", [])
-            ]
-            
-            return SessionHistory(
-                session_id=data.get("session_id", ""),
-                user=data.get("user"),
-                instructions=data.get("instructions"),
-                messages=messages,
-                document_count=data.get("document_count", 0),
-                created_at=data.get("created_at", ""),
-                updated_at=data.get("updated_at", ""),
-            )
-    
-    def list_session_documents(self, session_id: str) -> Optional[List[DocumentInfo]]:
-        """
-        List all documents in a session.
-        
-        Args:
-            session_id: Session ID to retrieve documents for.
-        
-        Returns:
-            List of DocumentInfo objects, or None if session not found.
-        
-        Raises:
-            httpx.HTTPError: If the request fails (except 404).
-        """
-        self.ensure_authenticated()
-        
-        url = f"{self._base_url}/chat/{session_id}/documents"
-        
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url, headers=self._get_auth_headers())
-            
-            if response.status_code == 404:
-                return None
-            
-            response.raise_for_status()
-            
-            data = response.json()
-            return [
-                DocumentInfo(
-                    id=doc.get("id", ""),
-                    filename=doc.get("filename", ""),
-                    file_type=doc.get("file_type", "unknown"),
-                )
-                for doc in data.get("documents", [])
-            ]
-    
-    def delete_session_document(self, session_id: str, document_id: str) -> Optional[bool]:
-        """
-        Delete a document from a session.
-        
-        Args:
-            session_id: Session ID containing the document.
-            document_id: Document ID to delete.
-        
-        Returns:
-            True if deleted successfully.
-            None if session or document not found.
-        
-        Raises:
-            httpx.HTTPError: If the request fails (except 404).
-        """
-        self.ensure_authenticated()
-        
-        url = f"{self._base_url}/chat/{session_id}/documents/{document_id}"
-        
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.delete(url, headers=self._get_auth_headers())
-            
-            if response.status_code == 404:
-                return None
-            
-            response.raise_for_status()
-            
-            data = response.json()
-            return data.get("deleted", False)
-    
     def send_message_stream(
         self,
         session_id: str,
@@ -384,7 +193,6 @@ class ChatClient:
         
         url = f"{self._base_url}/chat/{session_id}"
         
-        # Build multipart form data
         files = []
         if file_paths:
             for path in file_paths:
@@ -424,44 +232,5 @@ class ChatClient:
                         except json.JSONDecodeError:
                             continue
         finally:
-            # Close any open file handles
             for _, f in files:
                 f.close()
-
-
-    def truncate_messages(self, session_id: str, from_index: int) -> Optional[dict]:
-        """
-        Truncate messages from a given index onwards.
-        
-        Args:
-            session_id: Session ID to truncate messages from.
-            from_index: Index from which to truncate (inclusive).
-        
-        Returns:
-            Dict with truncated_count and remaining_count,
-            or None if session not found.
-        
-        Raises:
-            httpx.HTTPError: If the request fails (except 404).
-        """
-        self.ensure_authenticated()
-        
-        url = f"{self._base_url}/chat/{session_id}/truncate"
-        
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.put(
-                url,
-                json={"from_index": from_index},
-                headers=self._get_auth_headers(),
-            )
-            
-            if response.status_code == 404:
-                return None
-            
-            response.raise_for_status()
-            
-            data = response.json()
-            return {
-                "truncated_count": data.get("truncated_count", 0),
-                "remaining_count": data.get("remaining_count", 0),
-            }

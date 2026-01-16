@@ -6,6 +6,7 @@ Sets up the FastAPI application with:
 - Authentication configuration and service
 - Chat routes
 - Agent routes
+- Session routes
 - CORS middleware
 - Background cleanup scheduler for orphaned documents
 """
@@ -43,7 +44,8 @@ from api.config import get_api_configuration
 from api.auth import AuthService, set_auth_service
 from api.routes.auth import router as auth_router
 from api.routes.chat import router as chat_router
-from api.routes.agent.agent import router as agent_router
+from api.routes.agent import router as agent_router
+from api.routes.session import router as session_router
 from api.services.maintenance.orphan_cleanup_service import OrphanCleanupService
 from api.scheduler.cleanup_scheduler import CleanupScheduler
 
@@ -191,6 +193,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(agent_router)
+app.include_router(session_router)
 
 
 @app.get("/health", tags=["health"])

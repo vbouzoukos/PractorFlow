@@ -6,6 +6,7 @@ Sessions persist across application restarts.
 """
 
 from datetime import datetime
+import re
 from typing import Any, Dict, List, Optional
 
 from tinydb import TinyDB, Query
@@ -81,6 +82,40 @@ class PersistSessionHistory(SessionHistory):
             return None
 
         return self._deserialize_session(result)
+
+    def sessions_by_title(self, title: str, user: Optional[str] = None) -> List[Session]:
+        """
+        Get sessions where their titles contain the search term.
+
+        Args:
+            title: Search term (case-insensitive).
+            user: Optional user identifier to filter sessions.
+
+        Returns:
+            List of Session objects sorted by relevance then updated_at.
+        """
+        search_term = title.lower()
+
+        query = (
+            self._query.title.exists()
+            & self._query.title.search(search_term, flags=re.IGNORECASE)
+        )
+
+        if user is not None:
+            query = query & (self._query.user == user)
+
+        results = self._sessions.search(query)
+
+        sessions = [self._deserialize_session(data) for data in results]
+
+        sessions.sort(
+            key=lambda s: (
+                not s.title.lower().startswith(search_term),
+                -s.updated_at.timestamp(),
+            )
+        )
+
+        return sessions
 
     def _deserialize_session(self, data: Dict[str, Any]) -> Session:
         """

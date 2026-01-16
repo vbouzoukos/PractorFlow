@@ -2,7 +2,7 @@
 History panel - Collapsible panel for displaying and selecting past sessions.
 
 Provides a sidebar panel with:
-- List of past chat sessions
+- List of past sessions
 - Click to load/switch session
 - Delete session from history
 - Search/filter (placeholder for future LLM-generated titles)
@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 from PySide6.QtGui import QAction, QIcon
 
-from gui.api.chat_client import ChatClient
+from gui.api.session_client import SessionClient
 from gui.api.client_data import SessionSummary, SessionHistory
 from gui.workers.history_worker import ListSessionsWorker, GetHistoryWorker, DeleteSessionWorker
 
@@ -130,7 +130,7 @@ class SessionItemWidget(QWidget):
 
 class HistoryPanel(QFrame):
     """
-    Collapsible panel for chat history.
+    Collapsible panel for session history.
     
     Signals:
         session_selected: Emitted with SessionHistory when a session is loaded.
@@ -140,7 +140,7 @@ class HistoryPanel(QFrame):
     session_selected = Signal(object)
     session_deleted = Signal(str)
     
-    def __init__(self, client: ChatClient, parent=None):
+    def __init__(self, client: SessionClient, parent=None):
         super().__init__(parent)
         
         self._client = client
@@ -177,7 +177,7 @@ class HistoryPanel(QFrame):
         self._collapse_btn.setToolTip("Collapse panel")
         header_layout.addWidget(self._collapse_btn)
         
-        self._title_label = QLabel("Chat History")
+        self._title_label = QLabel("Session History")
         self._title_label.setStyleSheet("font-weight: bold;")
         header_layout.addWidget(self._title_label)
         

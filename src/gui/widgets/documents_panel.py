@@ -24,7 +24,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QSize, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QIcon
 
-from gui.api.chat_client import ChatClient, DocumentInfo
+from gui.api.session_client import SessionClient
+from gui.api.client_data import DocumentInfo
 from gui.workers.document_worker import ListDocumentsWorker, DeleteDocumentWorker
 
 
@@ -146,7 +147,7 @@ class DocumentsPanel(QFrame):
     
     document_deleted = Signal(str)
     
-    def __init__(self, client: ChatClient, parent=None):
+    def __init__(self, client: SessionClient, parent=None):
         super().__init__(parent)
         
         self._client = client

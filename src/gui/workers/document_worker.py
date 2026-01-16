@@ -7,7 +7,7 @@ to keep the UI responsive.
 
 from PySide6.QtCore import QThread, Signal
 
-from gui.api.chat_client import ChatClient, DocumentInfo
+from gui.api.session_client import SessionClient
 
 
 class ListDocumentsWorker(QThread):
@@ -22,7 +22,7 @@ class ListDocumentsWorker(QThread):
     documents_loaded = Signal(list)
     error_occurred = Signal(str)
     
-    def __init__(self, client: ChatClient, session_id: str, parent=None):
+    def __init__(self, client: SessionClient, session_id: str, parent=None):
         super().__init__(parent)
         self._client = client
         self._session_id = session_id
@@ -57,7 +57,7 @@ class DeleteDocumentWorker(QThread):
     document_deleted = Signal(str)
     error_occurred = Signal(str)
     
-    def __init__(self, client: ChatClient, session_id: str, document_id: str, parent=None):
+    def __init__(self, client: SessionClient, session_id: str, document_id: str, parent=None):
         super().__init__(parent)
         self._client = client
         self._session_id = session_id

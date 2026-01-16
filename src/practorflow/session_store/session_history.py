@@ -30,9 +30,7 @@ class SessionHistory(ABC):
                   If None, returns all sessions.
         
         Returns:
-            List of Session objects. Sessions may have empty
-            messages list for performance; use get_history()
-            to retrieve full message history.
+            List of Session objects.
         """
         pass  # pragma: no cover
     
@@ -47,5 +45,18 @@ class SessionHistory(ABC):
         Returns:
             Session object with full message history,
             or None if session not found.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    def sessions_by_title(self, title: str) -> List[Session]:
+        """
+        Get session where their titles are like title argument.
+        
+        Args:
+            title: Search term.
+        
+        Returns:
+            List of Session objects.
         """
         pass  # pragma: no cover

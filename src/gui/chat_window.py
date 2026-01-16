@@ -29,8 +29,10 @@ from gui.widgets.chat_display import ChatDisplay
 from gui.widgets.input_widget import InputWidget
 from gui.widgets.history_panel import HistoryPanel
 from gui.widgets.documents_panel import DocumentsPanel
-from gui.api.chat_client import ChatClient, SessionHistory
+from gui.api.chat_client import ChatClient
 from gui.api.agent_client import AgentClient, AgentTaskResult
+from gui.api.session_client import SessionClient
+from gui.api.client_data import SessionHistory
 from gui.workers.stream_worker import StreamWorker, ChatEditResumeWorker
 from gui.workers.session_worker import StartSessionWorker, DeleteSessionWorker
 from gui.workers.agent_worker import AgentTaskWorker, StartAgentSessionWorker, AgentEditResumeWorker
@@ -51,6 +53,7 @@ class ChatWindow(QMainWindow):
         self._api_url = api_url
         self._client = ChatClient(base_url=api_url, username="practorFlowClient")
         self._agent_client = AgentClient(base_url=api_url, username="practorFlowClient")
+        self._session_client = SessionClient(base_url=api_url, username="practorFlowClient")
         self._session_id = None
         self._agent_mode = False
         self._stream_worker = None
@@ -83,7 +86,7 @@ class ChatWindow(QMainWindow):
         main_layout.setSpacing(4)
         
         # History panel (collapsible)
-        self._history_panel = HistoryPanel(self._client)
+        self._history_panel = HistoryPanel(self._session_client)
         main_layout.addWidget(self._history_panel)
         
         # Chat area container
@@ -138,7 +141,7 @@ class ChatWindow(QMainWindow):
         chat_layout.addLayout(header_layout)
         
         # Documents panel (foldable, below header)
-        self._documents_panel = DocumentsPanel(self._client)
+        self._documents_panel = DocumentsPanel(self._session_client)
         chat_layout.addWidget(self._documents_panel)
         
         # Create a vertical splitter so the user can resize widgets vertically
