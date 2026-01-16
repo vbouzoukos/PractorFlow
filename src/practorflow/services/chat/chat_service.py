@@ -24,7 +24,6 @@ from practorflow.llm.pyai import LocalLLMModel
 from practorflow.llm.tools.base_web_search import DuckDuckGoSearchTool
 from practorflow.services.dto.chat_file import ChatFile
 from practorflow.logger.logger import get_logger
-from practorflow.services.history.truncator import truncate_messages
 from practorflow.services.history.session_summary import update_session_title
 from practorflow.settings.app_settings import appConfiguration
 
@@ -341,46 +340,6 @@ class ChatService:
 
         logger.debug(f"[ChatService] Completed response for session: {session_id}")
 
-    async def delete_chat(self, session_id: str) -> bool:
-        """
-        Delete a chat session and its associated documents.
-
-        Removes the session from storage and deletes all documents
-        that were uploaded during this session from the knowledge store.
-
-        Args:
-            session_id: Session ID to delete.
-
-        Returns:
-            True if session was deleted, False if not found.
-        """
-        if not self._session_store.exists(session_id):
-            logger.warning(
-                f"[ChatService] Session not found for deletion: {session_id}"
-            )
-            return False
-
-        session = self._session_store.get(session_id)
-
-        # Delete all session documents from knowledge store
-        for doc in session.documents:
-            doc_id = doc.get("id")
-            if doc_id:
-                try:
-                    self._knowledge_store.delete_document(doc_id)
-                    logger.debug(f"[ChatService] Deleted document: {doc_id}")
-                except Exception as e:
-                    logger.warning(
-                        f"[ChatService] Failed to delete document {doc_id}: {e}"
-                    )
-
-        # Delete session
-        self._session_store.delete(session_id)
-
-        logger.info(f"[ChatService] Deleted chat session: {session_id}")
-
-        return True
-
     def get_session(self, session_id: str) -> Optional[Session]:
         """
         Get a session by ID.
@@ -522,54 +481,3 @@ class ChatService:
                 logger.error(f"[ChatService] Web search error: {e}")
                 return ""
 
-    async def delete_session_document(
-        self, session_id: str, document_id: str
-    ) -> Optional[bool]:
-        """
-        Delete a single document from a session.
-
-        Removes the document from both the session and the knowledge store.
-
-        Args:
-            session_id: Session ID containing the document.
-            document_id: Document ID to delete.
-
-        Returns:
-            True if document was deleted successfully.
-            False if document was not found in session.
-            None if session was not found.
-        """
-        if not self._session_store.exists(session_id):
-            logger.warning(f"[ChatService] Session not found: {session_id}")
-            return None
-
-        session = self._session_store.get(session_id)
-
-        # Remove document from session
-        removed = session.remove_document(document_id)
-
-        if not removed:
-            logger.warning(
-                f"[ChatService] Document not found in session: {document_id}"
-            )
-            return False
-
-        # Delete from knowledge store
-        try:
-            self._knowledge_store.delete_document(document_id)
-            logger.debug(
-                f"[ChatService] Deleted document from knowledge store: {document_id}"
-            )
-        except Exception as e:
-            logger.warning(
-                f"[ChatService] Failed to delete document from knowledge store {document_id}: {e}"
-            )
-
-        # Save updated session
-        self._session_store.save(session)
-
-        logger.info(
-            f"[ChatService] Deleted document {document_id} from session {session_id}"
-        )
-
-        return True

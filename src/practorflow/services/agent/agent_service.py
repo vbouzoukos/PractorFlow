@@ -129,7 +129,6 @@ class AgentService:
             session_id=session_id,
             instructions="Multi-agent task execution",
             user=user,
-            metadata={"type": "agent"},
         )
         logger.info(f"[AgentService] Created new session: {session_id}")
         return session

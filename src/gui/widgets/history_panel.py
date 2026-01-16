@@ -389,7 +389,7 @@ class HistoryPanel(QFrame):
     def _on_history_error(self, error: str):
         """Handle error loading history."""
         try:
-            self._status_label.setText("Error loading")
+            self._status_label.setText(f"Error loading {error}")
         except Exception:
             pass  # pragma: no cover
     

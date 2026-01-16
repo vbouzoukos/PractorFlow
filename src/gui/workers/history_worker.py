@@ -28,20 +28,15 @@ class ListSessionsWorker(QThread):
         self,
         client: SessionClient,
         user: Optional[str] = None,
-        session_type: Optional[str] = None,
         parent=None,
     ):
         super().__init__(parent)
         self._client = client
         self._user = user
-        self._session_type = session_type
     
     def run(self):
         try:
-            sessions = self._client.list_sessions(
-                user=self._user,
-                session_type=self._session_type,
-            )
+            sessions = self._client.list_sessions()
             self.sessions_loaded.emit(sessions)
         except Exception as e:
             self.error_occurred.emit(str(e))

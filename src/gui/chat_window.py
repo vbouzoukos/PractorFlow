@@ -401,6 +401,7 @@ class ChatWindow(QMainWindow):
             
             self._status_bar.showMessage(f"Loaded session with {len(history.messages)} messages", 3000)
         except Exception as e:
+            print(e)
             self._status_bar.showMessage(f"Error loading session: {e}", 5000)
     
     @Slot(str)

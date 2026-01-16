@@ -17,6 +17,9 @@ from gui.api.client_data import (
     DocumentInfo,
     AuthStatus,
 )
+from gui.logger import get_logger
+
+logger = get_logger("practorflow-client", level="INFO", log_file ="logs/practorflow-client.log")
 
 
 class SessionClient:
@@ -78,17 +81,21 @@ class SessionClient:
         """
         url = f"{self._base_url}/auth/status"
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url)
-            response.raise_for_status()
-            
-            data = response.json()
-            self._auth_status = AuthStatus(
-                provider=data.get("provider", "unknown"),
-                requires_credentials=data.get("requires_credentials", False),
-                is_open_mode=data.get("is_open_mode", True),
-            )
-            return self._auth_status
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                
+                data = response.json()
+                self._auth_status = AuthStatus(
+                    provider=data.get("provider", "unknown"),
+                    requires_credentials=data.get("requires_credentials", False),
+                    is_open_mode=data.get("is_open_mode", True),
+                )
+                return self._auth_status
+        except httpx.HTTPError as e:
+            logger.error(f"SessionClient.get_auth_status failed: {e}")
+            raise
     
     def authenticate(self, app_secret: Optional[str] = None) -> str:
         """
@@ -113,13 +120,17 @@ class SessionClient:
         if self._username:
             payload["username"] = self._username
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.post(url, json=payload)
-            response.raise_for_status()
-            
-            data = response.json()
-            self._access_token = data["access_token"]
-            return self._access_token
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.post(url, json=payload)
+                response.raise_for_status()
+                
+                data = response.json()
+                self._access_token = data["access_token"]
+                return self._access_token
+        except httpx.HTTPError as e:
+            logger.error(f"SessionClient.authenticate failed: {e}")
+            raise
     
     def ensure_authenticated(self) -> None:
         """
@@ -145,15 +156,9 @@ class SessionClient:
     
     def list_sessions(
         self,
-        user: Optional[str] = None,
-        session_type: Optional[str] = None,
     ) -> List[SessionSummary]:
         """
         List all sessions.
-        
-        Args:
-            user: Optional user identifier to filter sessions.
-            session_type: Optional session type to filter (e.g., 'agent').
         
         Returns:
             List of SessionSummary objects sorted by updated_at descending.
@@ -165,32 +170,32 @@ class SessionClient:
         
         url = f"{self._base_url}/sessions"
         params = {}
-        if user is not None:
-            params["user"] = user
-        if session_type is not None:
-            params["session_type"] = session_type
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(
-                url,
-                params=params,
-                headers=self._get_auth_headers(),
-            )
-            response.raise_for_status()
-            
-            data = response.json()
-            return [
-                SessionSummary(
-                    session_id=item.get("session_id", ""),
-                    user=item.get("user"),
-                    message_count=item.get("message_count", 0),
-                    document_count=item.get("document_count", 0),
-                    created_at=item.get("created_at", ""),
-                    updated_at=item.get("updated_at", ""),
-                    title=item.get("title"),
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.get(
+                    url,
+                    params=params,
+                    headers=self._get_auth_headers(),
                 )
-                for item in data
-            ]
+                response.raise_for_status()
+                
+                data = response.json()
+                return [
+                    SessionSummary(
+                        session_id=item.get("session_id", ""),
+                        user=item.get("user"),
+                        message_count=item.get("message_count", 0),
+                        document_count=item.get("document_count", 0),
+                        created_at=item.get("created_at", ""),
+                        updated_at=item.get("updated_at", ""),
+                        title=item.get("title"),
+                    )
+                    for item in data
+                ]
+        except httpx.HTTPError as e:
+            logger.error(f"SessionClient.list_sessions failed: {e}")
+            raise
     
     def get_history(self, session_id: str) -> Optional[SessionHistory]:
         """
@@ -210,34 +215,38 @@ class SessionClient:
         
         url = f"{self._base_url}/sessions/{session_id}/history"
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url, headers=self._get_auth_headers())
-            
-            if response.status_code == 404:
-                return None
-            
-            response.raise_for_status()
-            
-            data = response.json()
-            messages = [
-                MessageInfo(
-                    id=msg.get("id", ""),
-                    role=msg.get("role", ""),
-                    content=msg.get("content", ""),
-                    timestamp=msg.get("timestamp", ""),
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.get(url, headers=self._get_auth_headers())
+                
+                if response.status_code == 404:
+                    return None
+                
+                response.raise_for_status()
+                
+                data = response.json()
+                messages = [
+                    MessageInfo(
+                        id=msg.get("id", ""),
+                        role=msg.get("role", ""),
+                        content=msg.get("content", ""),
+                        timestamp=msg.get("timestamp", ""),
+                    )
+                    for msg in data.get("messages", [])
+                ]
+                
+                return SessionHistory(
+                    session_id=data.get("session_id", ""),
+                    user=data.get("user"),
+                    instructions=data.get("instructions"),
+                    messages=messages,
+                    document_count=data.get("document_count", 0),
+                    created_at=data.get("created_at", ""),
+                    updated_at=data.get("updated_at", ""),
                 )
-                for msg in data.get("messages", [])
-            ]
-            
-            return SessionHistory(
-                session_id=data.get("session_id", ""),
-                user=data.get("user"),
-                instructions=data.get("instructions"),
-                messages=messages,
-                document_count=data.get("document_count", 0),
-                created_at=data.get("created_at", ""),
-                updated_at=data.get("updated_at", ""),
-            )
+        except httpx.HTTPError as e:
+            logger.error(f"SessionClient.get_history failed for session_id={session_id}: {e}")
+            raise
     
     def delete_session(self, session_id: str) -> bool:
         """
@@ -256,12 +265,16 @@ class SessionClient:
         
         url = f"{self._base_url}/sessions/{session_id}"
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.delete(url, headers=self._get_auth_headers())
-            response.raise_for_status()
-            
-            data = response.json()
-            return data.get("deleted", False)
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.delete(url, headers=self._get_auth_headers())
+                response.raise_for_status()
+                
+                data = response.json()
+                return data.get("deleted", False)
+        except httpx.HTTPError as e:
+            logger.error(f"SessionClient.delete_session failed for session_id={session_id}: {e}")
+            raise
     
     def truncate_messages(self, session_id: str, from_index: int) -> Optional[dict]:
         """
@@ -282,23 +295,27 @@ class SessionClient:
         
         url = f"{self._base_url}/sessions/{session_id}/truncate"
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.put(
-                url,
-                json={"from_index": from_index},
-                headers=self._get_auth_headers(),
-            )
-            
-            if response.status_code == 404:
-                return None
-            
-            response.raise_for_status()
-            
-            data = response.json()
-            return {
-                "truncated_count": data.get("truncated_count", 0),
-                "remaining_count": data.get("remaining_count", 0),
-            }
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.put(
+                    url,
+                    json={"from_index": from_index},
+                    headers=self._get_auth_headers(),
+                )
+                
+                if response.status_code == 404:
+                    return None
+                
+                response.raise_for_status()
+                
+                data = response.json()
+                return {
+                    "truncated_count": data.get("truncated_count", 0),
+                    "remaining_count": data.get("remaining_count", 0),
+                }
+        except httpx.HTTPError as e:
+            logger.error(f"SessionClient.truncate_messages failed for session_id={session_id}, from_index={from_index}: {e}")
+            raise
     
     def list_session_documents(self, session_id: str) -> Optional[List[DocumentInfo]]:
         """
@@ -317,23 +334,27 @@ class SessionClient:
         
         url = f"{self._base_url}/sessions/{session_id}/documents"
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url, headers=self._get_auth_headers())
-            
-            if response.status_code == 404:
-                return None
-            
-            response.raise_for_status()
-            
-            data = response.json()
-            return [
-                DocumentInfo(
-                    id=doc.get("id", ""),
-                    filename=doc.get("filename", ""),
-                    file_type=doc.get("file_type", "unknown"),
-                )
-                for doc in data.get("documents", [])
-            ]
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.get(url, headers=self._get_auth_headers())
+                
+                if response.status_code == 404:
+                    return None
+                
+                response.raise_for_status()
+                
+                data = response.json()
+                return [
+                    DocumentInfo(
+                        id=doc.get("id", ""),
+                        filename=doc.get("filename", ""),
+                        file_type=doc.get("file_type", "unknown"),
+                    )
+                    for doc in data.get("documents", [])
+                ]
+        except httpx.HTTPError as e:
+            logger.error(f"SessionClient.list_session_documents failed for session_id={session_id}: {e}")
+            raise
     
     def delete_session_document(
         self,
@@ -358,13 +379,17 @@ class SessionClient:
         
         url = f"{self._base_url}/sessions/{session_id}/documents/{document_id}"
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.delete(url, headers=self._get_auth_headers())
-            
-            if response.status_code == 404:
-                return None
-            
-            response.raise_for_status()
-            
-            data = response.json()
-            return data.get("deleted", False)
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.delete(url, headers=self._get_auth_headers())
+                
+                if response.status_code == 404:
+                    return None
+                
+                response.raise_for_status()
+                
+                data = response.json()
+                return data.get("deleted", False)
+        except httpx.HTTPError as e:
+            logger.error(f"SessionClient.delete_session_document failed for session_id={session_id}, document_id={document_id}: {e}")
+            raise

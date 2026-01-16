@@ -14,8 +14,10 @@ Sets up the FastAPI application with:
 import os
 
 # Load configuration FIRST, before any other practorflow imports
+from practorflow.services.history.truncator import DeleteSessionService
 from practorflow.settings.app_settings import load_configuration
 from api.config import load_api_configuration
+
 # Set config path first
 os.environ.setdefault("_PRACTORFLOW_CONFIG_PATH", "./config")
 
@@ -55,12 +57,16 @@ from practorflow.services.chat import ChatService
 from practorflow.services.agent.agent_service import AgentService
 from practorflow.settings.app_settings import appConfiguration
 from practorflow.logger.logger import get_logger
-from practorflow.session_store.factory import create_session_history, create_session_store
+from practorflow.session_store.factory import (
+    create_session_history,
+    create_session_store,
+)
 
 logger = get_logger("agent-api", level="INFO")
 
 # Module-level scheduler reference for cleanup on shutdown
 _cleanup_scheduler = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -70,17 +76,19 @@ async def lifespan(app: FastAPI):
     Initializes services on startup and cleans up on shutdown.
     """
     global _cleanup_scheduler
-    
+
     logger.info("[API] Starting application...")
 
     # Get configuration (already loaded at module level)
     api_config = get_api_configuration()
-    
+
     # Log authentication mode
     if api_config.auth.is_open_mode:
         logger.info("[API] Authentication: Open mode (no credentials required)")
     elif api_config.auth.is_oidc_mode:
-        logger.info(f"[API] Authentication: OIDC mode (issuer: {api_config.auth.oidc.issuer_url})")
+        logger.info(
+            f"[API] Authentication: OIDC mode (issuer: {api_config.auth.oidc.issuer_url})"
+        )
     else:
         logger.info("[API] Authentication: Local mode (app secret required)")
 
@@ -130,10 +138,15 @@ async def lifespan(app: FastAPI):
         knowledge_store=knowledge_store,
         session_store=session_store,
     )
-
+    # Initialize delete session service
+    delete_session_service = DeleteSessionService(
+        knowledge_store=knowledge_store,
+        session_store=session_store,
+    )
     # Set services in container for dependency injection
     container.chat_service = chat_service
     container.agent_service = agent_service
+    container.delete_session_service = delete_session_service
     # Set session history in container
     container.session_history = session_history
 
@@ -204,13 +217,13 @@ async def health_check():
 
 def _run(reload: bool = False):
     import uvicorn
-    
+
     # Set config path for module-level loading
     os.environ["_PRACTORFLOW_CONFIG_PATH"] = "./config"
-    
+
     host = os.environ.get("PRACTORFLOW_API_HOST", "localhost")
     port = int(os.environ.get("PRACTORFLOW_API_PORT", "8000"))
-    
+
     uvicorn.run(
         "api.main:app",
         host=host,

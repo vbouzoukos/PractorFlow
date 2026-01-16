@@ -14,6 +14,9 @@ import httpx
 from httpx_sse import connect_sse
 
 from gui.api.client_data import AuthStatus
+from gui.logger import get_logger
+
+logger = get_logger("practorflow-client", level="INFO")
 
 
 @dataclass
@@ -83,17 +86,21 @@ class ChatClient:
         """
         url = f"{self._base_url}/auth/status"
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url)
-            response.raise_for_status()
-            
-            data = response.json()
-            self._auth_status = AuthStatus(
-                provider=data.get("provider", "unknown"),
-                requires_credentials=data.get("requires_credentials", False),
-                is_open_mode=data.get("is_open_mode", True),
-            )
-            return self._auth_status
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                
+                data = response.json()
+                self._auth_status = AuthStatus(
+                    provider=data.get("provider", "unknown"),
+                    requires_credentials=data.get("requires_credentials", False),
+                    is_open_mode=data.get("is_open_mode", True),
+                )
+                return self._auth_status
+        except httpx.HTTPError as e:
+            logger.error(f"ChatClient.get_auth_status failed: {e}")
+            raise
     
     def authenticate(self, app_secret: Optional[str] = None) -> str:
         """
@@ -118,13 +125,17 @@ class ChatClient:
         if self._username:
             payload["username"] = self._username
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.post(url, json=payload)
-            response.raise_for_status()
-            
-            data = response.json()
-            self._access_token = data["access_token"]
-            return self._access_token
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.post(url, json=payload)
+                response.raise_for_status()
+                
+                data = response.json()
+                self._access_token = data["access_token"]
+                return self._access_token
+        except httpx.HTTPError as e:
+            logger.error(f"ChatClient.authenticate failed: {e}")
+            raise
     
     def ensure_authenticated(self) -> None:
         """
@@ -162,12 +173,16 @@ class ChatClient:
         
         url = f"{self._base_url}/chat"
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url, headers=self._get_auth_headers())
-            response.raise_for_status()
-            
-            data = response.json()
-            return data["session_id"]
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.get(url, headers=self._get_auth_headers())
+                response.raise_for_status()
+                
+                data = response.json()
+                return data["session_id"]
+        except httpx.HTTPError as e:
+            logger.error(f"ChatClient.start_session failed: {e}")
+            raise
     
     def send_message_stream(
         self,
@@ -231,6 +246,9 @@ class ChatClient:
                             )
                         except json.JSONDecodeError:
                             continue
+        except httpx.HTTPError as e:
+            logger.error(f"ChatClient.send_message_stream failed for session_id={session_id}: {e}")
+            raise
         finally:
             for _, f in files:
                 f.close()

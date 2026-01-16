@@ -49,7 +49,7 @@ class SessionHistory(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def sessions_by_title(self, title: str) -> List[Session]:
+    def sessions_by_title(self, title: str, user: Optional[str] = None) -> List[Session]:
         """
         Get session where their titles are like title argument.
         

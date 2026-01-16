@@ -117,7 +117,6 @@ def make_session(
         instructions="test",
         user=user,
         title="test",
-        metadata={"type": "agent"},
     )
     session.created_at = datetime.now()
     session.updated_at = session.created_at
@@ -132,7 +131,6 @@ def make_session_no_title(
         instructions="test",
         user=user,
         title=None,
-        metadata={"type": "agent"},
     )
     session.created_at = datetime.now()
     session.updated_at = session.created_at

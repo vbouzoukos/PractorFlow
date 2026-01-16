@@ -6,6 +6,7 @@ from typing import Optional
 
 from practorflow.services.chat import ChatService
 from practorflow.services.agent import AgentService
+from practorflow.services.history.truncator import DeleteSessionService
 from practorflow.session_store.session_history import SessionHistory
 from api.auth.service import AuthService
 
@@ -21,6 +22,7 @@ class ServiceContainer:
     agent_service: Optional[AgentService] = None
     session_history: Optional[SessionHistory] = None
     auth_service: Optional[AuthService] = None
+    delete_session_service: Optional[DeleteSessionService] = None
 
 
 # Global service container instance
@@ -85,3 +87,17 @@ def get_auth_service() -> AuthService:
     if container.auth_service is None:
         raise RuntimeError("AuthService not initialized. Application not started properly.")
     return container.auth_service
+
+def get_delete_session_service() -> DeleteSessionService:
+    """
+    Dependency to get DeleteSessionService instance.
+    
+    Returns:
+        DeleteSessionService instance.
+    
+    Raises:
+        RuntimeError: If DeleteSessionService is not initialized.
+    """
+    if container.delete_session_service is None:
+        raise RuntimeError("DeleteSessionService not initialized. Application not started properly.")
+    return container.delete_session_service

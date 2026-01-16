@@ -8,11 +8,11 @@ Provides unified endpoints for session management:
 - Truncating session messages
 """
 
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from api.dependencies import get_chat_service, get_session_history
+from api.dependencies import get_delete_session_service, get_session_history
 from api.auth import get_current_user, UserContext
 from api.schemas import (
     DeleteResponse,
@@ -25,8 +25,7 @@ from api.schemas import (
     TruncateRequest,
     TruncateResponse,
 )
-from practorflow.services.chat import ChatService
-from practorflow.services.history.truncator import truncate_messages
+from practorflow.services.history.truncator import DeleteSessionService
 from practorflow.session_store.session_history import SessionHistory
 from practorflow.logger.logger import get_logger
 
@@ -42,8 +41,6 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
     description="Returns a list of all sessions, optionally filtered by user and type.",
 )
 async def list_sessions(
-    user: Optional[str] = Query(default=None, description="Filter sessions by user"),
-    session_type: Optional[str] = Query(default=None, description="Filter sessions by type (e.g., 'agent')"),
     current_user: UserContext = Depends(get_current_user),
     session_history: SessionHistory = Depends(get_session_history),
 ) -> List[SessionSummary]:
@@ -51,28 +48,62 @@ async def list_sessions(
     List all sessions.
 
     Args:
-        user: Optional user identifier to filter sessions.
-        session_type: Optional session type to filter (e.g., 'agent').
         current_user: Authenticated user context.
         session_history: Session history instance.
 
     Returns:
         List of SessionSummary objects sorted by updated_at descending.
     """
-    filter_user = user if user is not None else current_user.user_id
+    logger.info(f"[Session API] Listing sessions for user: {current_user.user_id} ")
 
-    logger.info(
-        f"[Session API] Listing sessions for user: {filter_user} "
-        f"(type: {session_type}, requested by: {current_user.user_id})"
-    )
-
-    sessions = session_history.list_sessions(user=filter_user)
+    sessions = session_history.list_sessions(user=current_user.user_id)
 
     summaries = []
     for session in sessions:
-        if session_type is not None and session.metadata.get("type") != session_type:
-            continue
+        summaries.append(
+            SessionSummary(
+                session_id=session.session_id,
+                user=session.user,
+                title=session.title,
+                message_count=len(session.messages),
+                document_count=len(session.documents),
+                created_at=session.created_at.isoformat(),
+                updated_at=session.updated_at.isoformat(),
+            )
+        )
 
+    logger.info(f"[Session API] Found {len(summaries)} sessions")
+
+    return summaries
+
+
+@router.get(
+    "/search",
+    response_model=List[SessionSummary],
+    summary="Search in sessions",
+    description="Returns a list of sessions matching the search term, optionally filtered by user and type.",
+)
+async def search(
+    term: str = Query(default=None, description="Search term"),
+    current_user: UserContext = Depends(get_current_user),
+    session_history: SessionHistory = Depends(get_session_history),
+) -> List[SessionSummary]:
+    """
+    List all sessions.
+
+    Args:
+        current_user: Authenticated user context.
+        session_history: Session history instance.
+
+    Returns:
+        List of SessionSummary objects sorted by relevence and updated_at descending.
+    """
+    logger.info(f"[Session API] Listing sessions for user: {current_user.user_id} ")
+
+    sessions = session_history.sessions_by_title(title=term, user=current_user.user_id)
+
+    summaries = []
+    for session in sessions:
         summaries.append(
             SessionSummary(
                 session_id=session.session_id,
@@ -125,7 +156,8 @@ async def get_history(
     if session is None:
         logger.warning(f"[Session API] Session not found: {session_id}")
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
-
+    if session.user != current_user.user_id:
+        raise HTTPException(status_code=403, detail=f"Forbidden")
     messages = [
         MessageResponse(
             id=msg.id,
@@ -160,7 +192,7 @@ async def get_history(
 async def delete_session(
     session_id: str,
     current_user: UserContext = Depends(get_current_user),
-    chat_service: ChatService = Depends(get_chat_service),
+    delete_session_service: DeleteSessionService = Depends(get_delete_session_service),
 ) -> DeleteResponse:
     """
     Delete a session.
@@ -168,7 +200,7 @@ async def delete_session(
     Args:
         session_id: Session identifier to delete.
         current_user: Authenticated user context.
-        chat_service: Chat service instance (used for session and document cleanup).
+        delete_session_service: Delete Session Service instance
 
     Returns:
         DeleteResponse with deletion status.
@@ -180,7 +212,7 @@ async def delete_session(
         f"[Session API] Deleting session: {session_id} by user: {current_user.user_id}"
     )
 
-    deleted = await chat_service.delete_chat(session_id)
+    deleted = await delete_session_service.delete_chat(session_id, current_user.user_id)
 
     if not deleted:
         logger.warning(f"[Session API] Session not found for deletion: {session_id}")
@@ -205,7 +237,7 @@ async def truncate_session_messages(
     session_id: str,
     request: TruncateRequest,
     current_user: UserContext = Depends(get_current_user),
-    chat_service: ChatService = Depends(get_chat_service),
+    delete_session_service: DeleteSessionService = Depends(get_delete_session_service),
 ) -> TruncateResponse:
     """
     Truncate messages from a given index onwards.
@@ -218,7 +250,7 @@ async def truncate_session_messages(
         session_id: Session identifier.
         request: TruncateRequest with from_index.
         current_user: Authenticated user context.
-        chat_service: Chat service instance.
+        delete_session_service: Delete Session Service instance
 
     Returns:
         TruncateResponse with truncation results.
@@ -232,8 +264,8 @@ async def truncate_session_messages(
     )
 
     try:
-        truncated_count = await truncate_messages(
-            session_id, request.from_index, chat_service._session_store
+        truncated_count = await delete_session_service.truncate_messages(
+            session_id, request.from_index, current_user.user_id
         )
     except ValueError as e:
         logger.warning(f"[Session API] Invalid truncate request: {e}")
@@ -243,18 +275,13 @@ async def truncate_session_messages(
         logger.warning(f"[Session API] Session not found: {session_id}")
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
 
-    session = chat_service.get_session(session_id)
-    remaining_count = len(session.messages) if session else 0
-
     logger.info(
         f"[Session API] Truncated {truncated_count} messages from session: {session_id}, "
-        f"{remaining_count} remaining"
     )
 
     return TruncateResponse(
         session_id=session_id,
         truncated_count=truncated_count,
-        remaining_count=remaining_count,
         message="Messages truncated successfully",
     )
 
@@ -325,7 +352,7 @@ async def delete_session_document(
     session_id: str,
     document_id: str,
     current_user: UserContext = Depends(get_current_user),
-    chat_service: ChatService = Depends(get_chat_service),
+    delete_session_service: DeleteSessionService = Depends(get_delete_session_service),
 ) -> DocumentDeleteResponse:
     """
     Delete a document from a session.
@@ -336,7 +363,7 @@ async def delete_session_document(
         session_id: Session identifier.
         document_id: Document identifier to delete.
         current_user: Authenticated user context.
-        chat_service: Chat service instance (used for document cleanup).
+        delete_session_service: Delete Session Service instance
 
     Returns:
         DocumentDeleteResponse with deletion status.
@@ -349,7 +376,11 @@ async def delete_session_document(
         f"by user: {current_user.user_id}"
     )
 
-    deleted = await chat_service.delete_session_document(session_id, document_id)
+    deleted = await delete_session_service.delete_session_document(
+        session_id,
+        document_id,
+        request_user=current_user.user_id,
+    )
 
     if deleted is None:
         logger.warning(f"[Session API] Session not found: {session_id}")
@@ -357,7 +388,9 @@ async def delete_session_document(
 
     if not deleted:
         logger.warning(f"[Session API] Document not found: {document_id}")
-        raise HTTPException(status_code=404, detail=f"Document not found: {document_id}")
+        raise HTTPException(
+            status_code=404, detail=f"Document not found: {document_id}"
+        )
 
     logger.info(
         f"[Session API] Document deleted: {document_id} from session: {session_id}"

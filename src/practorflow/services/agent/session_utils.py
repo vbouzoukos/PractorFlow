@@ -102,8 +102,6 @@ async def persist_to_session(
         model_pool: Pool for acquiring LLM handles (for title generation).
         model_config: Configuration for the LLM model (for title generation).
     """
-    session.metadata["type"] = "agent"
-
     if plan:
         session.metadata["plan"] = plan.model_dump()
 

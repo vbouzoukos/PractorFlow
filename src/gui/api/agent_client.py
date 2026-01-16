@@ -12,6 +12,9 @@ from dataclasses import dataclass
 import httpx
 
 from gui.api.client_data import AuthStatus
+from gui.logger import get_logger
+
+logger = get_logger("practorflow-client", level="INFO")
 
 
 @dataclass
@@ -88,17 +91,21 @@ class AgentClient:
         """
         url = f"{self._base_url}/auth/status"
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url)
-            response.raise_for_status()
-            
-            data = response.json()
-            self._auth_status = AuthStatus(
-                provider=data.get("provider", "unknown"),
-                requires_credentials=data.get("requires_credentials", False),
-                is_open_mode=data.get("is_open_mode", True),
-            )
-            return self._auth_status
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                
+                data = response.json()
+                self._auth_status = AuthStatus(
+                    provider=data.get("provider", "unknown"),
+                    requires_credentials=data.get("requires_credentials", False),
+                    is_open_mode=data.get("is_open_mode", True),
+                )
+                return self._auth_status
+        except httpx.HTTPError as e:
+            logger.error(f"AgentClient.get_auth_status failed: {e}")
+            raise
     
     def authenticate(self, app_secret: Optional[str] = None) -> str:
         """
@@ -123,13 +130,17 @@ class AgentClient:
         if self._username:
             payload["username"] = self._username
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.post(url, json=payload)
-            response.raise_for_status()
-            
-            data = response.json()
-            self._access_token = data["access_token"]
-            return self._access_token
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.post(url, json=payload)
+                response.raise_for_status()
+                
+                data = response.json()
+                self._access_token = data["access_token"]
+                return self._access_token
+        except httpx.HTTPError as e:
+            logger.error(f"AgentClient.authenticate failed: {e}")
+            raise
     
     def ensure_authenticated(self) -> None:
         """
@@ -167,12 +178,16 @@ class AgentClient:
         
         url = f"{self._base_url}/agent"
         
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url, headers=self._get_auth_headers())
-            response.raise_for_status()
-            
-            data = response.json()
-            return data["session_id"]
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.get(url, headers=self._get_auth_headers())
+                response.raise_for_status()
+                
+                data = response.json()
+                return data["session_id"]
+        except httpx.HTTPError as e:
+            logger.error(f"AgentClient.start_session failed: {e}")
+            raise
     
     def execute_task(
         self,
@@ -213,6 +228,9 @@ class AgentClient:
                 )
                 response.raise_for_status()
                 return response.json()["job_id"]
+        except httpx.HTTPError as e:
+            logger.error(f"AgentClient.execute_task failed for session_id={session_id}: {e}")
+            raise
         finally:
             for _, f in files:
                 f.close()
@@ -234,14 +252,18 @@ class AgentClient:
 
         url = f"{self._base_url}/agent/jobs/{job_id}"
 
-        with httpx.Client(timeout=self._timeout) as client:
-            response = client.get(url, headers=self._get_auth_headers())
-            response.raise_for_status()
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.get(url, headers=self._get_auth_headers())
+                response.raise_for_status()
 
-            data = response.json()
-            return AgentJobStatus(
-                job_id=data.get("job_id"),
-                status=data.get("status"),
-                result=data.get("result"),
-                error=data.get("error"),
-            )
+                data = response.json()
+                return AgentJobStatus(
+                    job_id=data.get("job_id"),
+                    status=data.get("status"),
+                    result=data.get("result"),
+                    error=data.get("error"),
+                )
+        except httpx.HTTPError as e:
+            logger.error(f"AgentClient.get_job failed for job_id={job_id}: {e}")
+            raise
