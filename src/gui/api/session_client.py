@@ -393,3 +393,48 @@ class SessionClient:
         except httpx.HTTPError as e:
             logger.error(f"SessionClient.delete_session_document failed for session_id={session_id}, document_id={document_id}: {e}")
             raise
+
+    def search_sessions(self, term: str) -> List[SessionSummary]:
+        """
+        Search sessions by title.
+        
+        Args:
+            term: Search term to match against session titles.
+        
+        Returns:
+            List of SessionSummary objects matching the search term,
+            sorted by relevance then updated_at descending.
+        
+        Raises:
+            httpx.HTTPError: If the request fails.
+        """
+        self.ensure_authenticated()
+        
+        url = f"{self._base_url}/sessions/search"
+        params = {"term": term}
+        
+        try:
+            with httpx.Client(timeout=self._timeout) as client:
+                response = client.get(
+                    url,
+                    params=params,
+                    headers=self._get_auth_headers(),
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                return [
+                    SessionSummary(
+                        session_id=item.get("session_id", ""),
+                        user=item.get("user"),
+                        message_count=item.get("message_count", 0),
+                        document_count=item.get("document_count", 0),
+                        created_at=item.get("created_at", ""),
+                        updated_at=item.get("updated_at", ""),
+                        title=item.get("title"),
+                    )
+                    for item in data
+                ]
+        except httpx.HTTPError as e:
+            logger.error(f"SessionClient.search_sessions failed: {e}")
+            raise

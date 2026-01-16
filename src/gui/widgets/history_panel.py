@@ -5,7 +5,7 @@ Provides a sidebar panel with:
 - List of past sessions
 - Click to load/switch session
 - Delete session from history
-- Search/filter (placeholder for future LLM-generated titles)
+- Search/filter by title
 """
 
 from datetime import datetime
@@ -148,6 +148,7 @@ class HistoryPanel(QFrame):
         self._session_widgets = {}  # Map session_id -> SessionItemWidget
         self._current_session_id = None
         self._is_collapsed = False
+        self._current_search_term = None
         
         # Workers
         self._list_worker = None
@@ -190,12 +191,33 @@ class HistoryPanel(QFrame):
         
         layout.addLayout(header_layout)
         
-        # Search box (disabled for now - placeholder for future title search)
+        # Search box with search button
+        search_layout = QHBoxLayout()
+        search_layout.setSpacing(2)
+        
         self._search_box = QLineEdit()
         self._search_box.setPlaceholderText("Search...")
-        self._search_box.setEnabled(False)
+        self._search_box.setEnabled(True)
         self._search_box.setToolTip("Search by title")
-        layout.addWidget(self._search_box)
+        self._search_box.setClearButtonEnabled(True)
+        search_layout.addWidget(self._search_box, stretch=1)
+        
+        self._search_btn = QPushButton()
+        self._search_btn.setFixedSize(24, 24)
+        self._search_btn.setToolTip("Search sessions")
+        
+        # Try to use search icon, fallback to text
+        search_icon = QIcon.fromTheme("edit-find")
+        if search_icon.isNull():
+            search_icon = QIcon.fromTheme("search")
+        if search_icon.isNull():
+            self._search_btn.setText("🔍")
+        else:
+            self._search_btn.setIcon(search_icon)
+            self._search_btn.setIconSize(QSize(16, 16))
+        
+        search_layout.addWidget(self._search_btn)
+        layout.addLayout(search_layout)
         
         # Session list
         self._session_list = QListWidget()
@@ -217,11 +239,11 @@ class HistoryPanel(QFrame):
         content_layout.setSpacing(4)
         
         # Move widgets to content widget for collapsing
-        layout.removeWidget(self._search_box)
+        layout.removeItem(search_layout)
         layout.removeWidget(self._session_list)
         layout.removeWidget(self._status_label)
         
-        content_layout.addWidget(self._search_box)
+        content_layout.addLayout(search_layout)
         content_layout.addWidget(self._session_list, stretch=1)
         content_layout.addWidget(self._status_label)
         
@@ -230,9 +252,45 @@ class HistoryPanel(QFrame):
     def _connect_signals(self):
         """Connect widget signals."""
         self._collapse_btn.clicked.connect(self._toggle_collapse)
-        self._refresh_btn.clicked.connect(self.refresh_sessions)
+        self._refresh_btn.clicked.connect(self._on_refresh_clicked)
         self._session_list.itemDoubleClicked.connect(self._on_item_double_clicked)
         self._session_list.customContextMenuRequested.connect(self._show_context_menu)
+        self._search_btn.clicked.connect(self._on_search_clicked)
+        self._search_box.returnPressed.connect(self._on_search_clicked)
+    
+    def _on_search_clicked(self):
+        """Handle search button click or Enter key in search box."""
+        term = self._search_box.text().strip()
+        if term:
+            self._current_search_term = term
+            self._search_sessions(term)
+        else:
+            self._current_search_term = None
+            self.refresh_sessions()
+    
+    def _on_refresh_clicked(self):
+        """Handle refresh button click - clears search and refreshes."""
+        self._search_box.clear()
+        self._current_search_term = None
+        self.refresh_sessions()
+    
+    def _search_sessions(self, term: str):
+        """Search sessions by term."""
+        try:
+            if self._list_worker and self._list_worker.isRunning():
+                return
+            
+            self._status_label.setText("Searching...")
+            self._session_list.setEnabled(False)
+            
+            self._list_worker = ListSessionsWorker(self._client, search_term=term, parent=self)
+            self._list_worker.sessions_loaded.connect(self._on_sessions_loaded)
+            self._list_worker.error_occurred.connect(self._on_list_error)
+            self._list_worker.finished.connect(self._cleanup_list_worker)
+            self._list_worker.start()
+        except Exception:
+            self._status_label.setText("Error")
+            self._session_list.setEnabled(True)
     
     def _toggle_collapse(self):
         """Toggle panel collapsed state."""
@@ -310,7 +368,12 @@ class HistoryPanel(QFrame):
                 self._session_widgets[session.session_id] = item_widget
             
             self._session_list.setEnabled(True)
-            self._status_label.setText(f"{len(sessions)} session(s)")
+            
+            # Update status label based on search state
+            if self._current_search_term:
+                self._status_label.setText(f"{len(sessions)} result(s)")
+            else:
+                self._status_label.setText(f"{len(sessions)} session(s)")
             
             # Highlight current session if set
             self._highlight_current_session()
@@ -389,7 +452,7 @@ class HistoryPanel(QFrame):
     def _on_history_error(self, error: str):
         """Handle error loading history."""
         try:
-            self._status_label.setText(f"Error loading {error}")
+            self._status_label.setText("Error loading")
         except Exception:
             pass  # pragma: no cover
     
@@ -524,6 +587,11 @@ class HistoryPanel(QFrame):
     
     def shutdown(self):
         """Shutdown all workers - call before destroying."""
+        try:
+            self._search_timer.stop()
+        except Exception:
+            pass  # pragma: no cover
+        
         try:
             if self._list_worker:
                 if self._list_worker.isRunning():

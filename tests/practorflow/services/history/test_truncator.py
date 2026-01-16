@@ -1,15 +1,16 @@
 import pytest
 from unittest.mock import MagicMock
 
-from practorflow.services.history.truncator import truncate_messages
+from practorflow.services.history.truncator import DeleteSessionService
 
 
 @pytest.mark.asyncio
 async def test_truncate_messages_session_not_found_returns_none():
     session_store = MagicMock()
+    knowledge_store = MagicMock()
     session_store.exists.return_value = False
-
-    result = await truncate_messages(
+    service = DeleteSessionService(knowledge_store, session_store)
+    result = await service.truncate_messages(
         session_id="missing",
         from_index=1,
         session_store=session_store,
@@ -23,13 +24,15 @@ async def test_truncate_messages_session_not_found_returns_none():
 @pytest.mark.asyncio
 async def test_truncate_messages_successful_truncation():
     session = MagicMock()
+
     session.truncate_messages.return_value = 3
 
     session_store = MagicMock()
+    knowledge_store = MagicMock()
     session_store.exists.return_value = True
     session_store.get.return_value = session
-
-    result = await truncate_messages(
+    service = DeleteSessionService(knowledge_store, session_store)
+    result = await service.truncate_messages(
         session_id="session_1",
         from_index=2,
         session_store=session_store,
@@ -46,11 +49,13 @@ async def test_truncate_messages_propagates_value_error():
     session.truncate_messages.side_effect = ValueError("negative index")
 
     session_store = MagicMock()
+    knowledge_store = MagicMock()
     session_store.exists.return_value = True
     session_store.get.return_value = session
 
     with pytest.raises(ValueError):
-        await truncate_messages(
+        service = DeleteSessionService(knowledge_store, session_store)
+        await service.truncate_messages(
             session_id="session_1",
             from_index=-1,
             session_store=session_store,

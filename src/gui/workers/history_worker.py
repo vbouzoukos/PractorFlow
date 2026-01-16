@@ -16,6 +16,8 @@ class ListSessionsWorker(QThread):
     """
     Worker thread for listing sessions.
     
+    Supports both listing all sessions and searching by term.
+    
     Signals:
         sessions_loaded: Emitted with list of SessionSummary on success.
         error_occurred: Emitted with error message on failure.
@@ -28,15 +30,20 @@ class ListSessionsWorker(QThread):
         self,
         client: SessionClient,
         user: Optional[str] = None,
+        search_term: Optional[str] = None,
         parent=None,
     ):
         super().__init__(parent)
         self._client = client
         self._user = user
+        self._search_term = search_term
     
     def run(self):
         try:
-            sessions = self._client.list_sessions()
+            if self._search_term:
+                sessions = self._client.search_sessions(self._search_term)
+            else:
+                sessions = self._client.list_sessions()
             self.sessions_loaded.emit(sessions)
         except Exception as e:
             self.error_occurred.emit(str(e))
@@ -104,8 +111,12 @@ class DeleteSessionWorker(QThread):
     
     def run(self):
         try:
-            self._client.delete_session(self._session_id)
-            self.session_deleted.emit(self._session_id)
+            success = self._client.delete_session(self._session_id)
+            
+            if success:
+                self.session_deleted.emit(self._session_id)
+            else:
+                self.error_occurred.emit("Failed to delete session")
         except Exception as e:
             self.error_occurred.emit(str(e))
     
