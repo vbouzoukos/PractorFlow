@@ -24,16 +24,27 @@ def _msg(role: str, text: str) -> Message:
 # helpers
 # -------------------------
 
+
 def test_has_sufficient_messages_variants():
     assert _has_sufficient_messages([_msg("user", "hi")]) is False
-    assert _has_sufficient_messages([
-        _msg("user", "hi"),
-        _msg("user", "again"),
-    ]) is False
-    assert _has_sufficient_messages([
-        _msg("user", "hi"),
-        _msg("assistant", "hello"),
-    ]) is True
+    assert (
+        _has_sufficient_messages(
+            [
+                _msg("user", "hi"),
+                _msg("user", "again"),
+            ]
+        )
+        is False
+    )
+    assert (
+        _has_sufficient_messages(
+            [
+                _msg("user", "hi"),
+                _msg("assistant", "hello"),
+            ]
+        )
+        is True
+    )
     assert MIN_MESSAGES_FOR_TITLE == 2
 
 
@@ -66,13 +77,15 @@ async def test_update_session_title_generated(mock_llm_config):
     ]
 
     mock_runner = MagicMock()
-    mock_runner.generate = AsyncMock(return_value="New Title")
+    mock_runner.generate = AsyncMock(return_value={"reply": "New Title"})
 
     mock_handle = MagicMock()
     mock_handle.backend = "llama_cpp"
 
     mock_pool = MagicMock()
-    mock_pool.acquire_context.return_value.__aenter__ = AsyncMock(return_value=mock_handle)
+    mock_pool.acquire_context.return_value.__aenter__ = AsyncMock(
+        return_value=mock_handle
+    )
     mock_pool.acquire_context.return_value.__aexit__ = AsyncMock(return_value=None)
 
     with patch(
@@ -88,8 +101,11 @@ async def test_update_session_title_generated(mock_llm_config):
     assert result is True
     assert session.title == "New Title"
 
+
 @pytest.mark.asyncio
-async def test_update_session_title_not_generated_due_to_insufficient_messages(mock_llm_config):
+async def test_update_session_title_not_generated_due_to_insufficient_messages(
+    mock_llm_config,
+):
     session = MagicMock(spec=Session)
     session.title = None
     session.session_id = "s1"
@@ -102,6 +118,7 @@ async def test_update_session_title_not_generated_due_to_insufficient_messages(m
     )
 
     assert result is False
+
 
 @pytest.mark.asyncio
 async def test_update_session_title_generation_exception(mock_llm_config):
@@ -124,6 +141,7 @@ async def test_update_session_title_generation_exception(mock_llm_config):
 
     assert result is False
 
+
 @pytest.mark.asyncio
 async def test_update_session_title_no_title_generated(mock_llm_config):
     session = MagicMock(spec=Session)
@@ -136,14 +154,16 @@ async def test_update_session_title_no_title_generated(mock_llm_config):
 
     mock_runner = MagicMock()
     # Empty / whitespace-only title → generate_session_title returns None
-    mock_runner.generate = AsyncMock(return_value="   ")
+    mock_runner.generate = AsyncMock(return_value={"reply": "   "})
 
     mock_handle = MagicMock()
     mock_handle.backend = "llama_cpp"
     mock_handle.config = mock_llm_config
 
     mock_pool = MagicMock()
-    mock_pool.acquire_context.return_value.__aenter__ = AsyncMock(return_value=mock_handle)
+    mock_pool.acquire_context.return_value.__aenter__ = AsyncMock(
+        return_value=mock_handle
+    )
     mock_pool.acquire_context.return_value.__aexit__ = AsyncMock(return_value=None)
 
     with patch(

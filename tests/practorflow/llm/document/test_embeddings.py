@@ -369,3 +369,38 @@ def test_llm_embedding_llama_cpp_nested_embedding_list_handling():
 
     assert embedding.shape == (3,)
     assert np.allclose(embedding, expected)
+
+def test_sentence_transformer_embedding_model_uses_local_files_only_when_model_cached(
+    monkeypatch, tmp_path
+):
+    from practorflow.llm.document import embeddings
+
+    # Arrange: fake cached model directory
+    model_name = "fake-model"
+    cache_dir = tmp_path
+    model_path = cache_dir / model_name
+    model_path.mkdir()
+
+    fake_model = MagicMock()
+    fake_model.get_sentence_embedding_dimension.return_value = 123
+
+    captured_kwargs = {}
+
+    def fake_sentence_transformer(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return fake_model
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "sentence_transformers",
+        MagicMock(SentenceTransformer=fake_sentence_transformer),
+    )
+
+    model = embeddings.SentenceTransformerEmbeddingModel(
+        model_name=model_name,
+        device="cpu",
+        cache_dir=str(cache_dir),
+    )
+
+    assert captured_kwargs["local_files_only"] is True
+    assert model.embedding_dimension == 123

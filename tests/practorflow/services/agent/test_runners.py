@@ -346,7 +346,37 @@ async def test_run_synthesizer_success():
 
     assert output == "final"
 
+@pytest.mark.asyncio
+async def test_run_synthesizer_with_instructions_success():
+    ctx = MagicMock()
+    ctx.has_history = True
+    ctx.message_history = [MagicMock()]
 
+    plan = MagicMock(plan_id="p1", task="t")
+    execution = MagicMock(step_results=[])
+
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=MagicMock(output="I am helpful"))
+
+    with (
+        patch(
+            "practorflow.services.agent.runners._prepare_history",
+            AsyncMock(return_value=[MagicMock()]),
+        ),
+        patch("practorflow.services.agent.runners.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.create_runner"),
+    ):
+        output = await run_synthesizer(
+            plan=plan,
+            execution_result=execution,
+            ctx=ctx,
+            model_pool=MagicMock(),
+            model_config=MagicMock(n_ctx=100),
+            knowledge_store=MagicMock(),
+            user_instructions="You are a helpful assistant"
+        )
+
+    assert output == "I am helpful"
 # ------------------------
 # run_verifier
 # ------------------------

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -134,3 +134,58 @@ def test_repr_includes_session_count(mock_tinydb):
 
     assert "PersistSessionHistory" in text
     assert "3" in text
+
+
+def test_sessions_by_title_relevance_and_user_filtering(mock_tinydb):
+    db, table = mock_tinydb
+
+    now = datetime.now()
+
+    # Starts with search term (more relevant, older)
+    s1 = {
+        "session_id": "s1",
+        "title": "Chat with assistant",
+        "user": "alice",
+        "messages": [],
+        "instructions": None,
+        "documents": [],
+        "metadata": {},
+        "created_at": now.isoformat(),
+        "updated_at": (now - timedelta(minutes=5)).isoformat(),
+    }
+
+    # Contains search term (less relevant, newer)
+    s2 = {
+        "session_id": "s2",
+        "title": "Previous chat history",
+        "user": "alice",
+        "messages": [],
+        "instructions": None,
+        "documents": [],
+        "metadata": {},
+        "created_at": now.isoformat(),
+        "updated_at": now.isoformat(),
+    }
+
+    # Different user (would be filtered out by TinyDB query)
+    s3 = {
+        "session_id": "s3",
+        "title": "Chat about testing",
+        "user": "bob",
+        "messages": [],
+        "instructions": None,
+        "documents": [],
+        "metadata": {},
+        "created_at": now.isoformat(),
+        "updated_at": now.isoformat(),
+    }
+
+    # TinyDB would only return rows matching the query (including user filter)
+    table.search.return_value = [s1, s2]
+
+    history = PersistSessionHistory(db=db)
+
+    result = history.sessions_by_title("chat", user="alice")
+
+    assert [s.session_id for s in result] == ["s1", "s2"]
+

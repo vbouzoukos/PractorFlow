@@ -90,7 +90,7 @@ async def test_start_task_generates_agent_session_id(
 
     session_id = await service.start_task()
 
-    assert session_id.startswith("agent_")
+    assert session_id.startswith("session_")
 
 
 def test_get_session_returns_none_when_not_exists(

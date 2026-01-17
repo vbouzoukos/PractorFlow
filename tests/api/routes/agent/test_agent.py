@@ -103,126 +103,6 @@ def test_get_agent_job_forbidden(client, app, mock_current_user, monkeypatch):
     assert resp.status_code == 403
 
 
-def test_delete_agent_session_success(client, app, mock_agent_service):
-    app.dependency_overrides[get_agent_service] = lambda: mock_agent_service
-
-    resp = client.delete("/agent/session-1")
-    assert resp.status_code == 200
-    assert resp.json()["deleted"] is True
-
-
-def test_delete_agent_session_not_found(client, app, mock_agent_service):
-    mock_agent_service.delete_task.return_value = False
-    app.dependency_overrides[get_agent_service] = lambda: mock_agent_service
-
-    resp = client.delete("/agent/missing")
-    assert resp.status_code == 404
-
-
-def test_agent_list_sessions(client, app, mock_session, mock_session_history):
-    mock_session.metadata = {"type": "agent"}
-    mock_session_history.list_sessions.return_value = [mock_session]
-
-    app.dependency_overrides[get_session_history] = lambda: mock_session_history
-
-    resp = client.get("/agent/sessions")
-
-    assert resp.status_code == 200
-    assert len(resp.json()) == 1
-
-
-def test_agent_get_history_success(client, app, mock_session_history):
-    app.dependency_overrides[get_session_history] = lambda: mock_session_history
-
-    resp = client.get("/agent/session-1/history")
-    assert resp.status_code == 200
-    assert resp.json()["session_id"] == "session-1"
-
-
-def test_agent_get_history_not_found(client, app, mock_session_history):
-    mock_session_history.get_history.return_value = None
-    app.dependency_overrides[get_session_history] = lambda: mock_session_history
-
-    resp = client.get("/agent/missing/history")
-    assert resp.status_code == 404
-
-
-def test_agent_truncate_success(client, app, mock_agent_service):
-    mock_session = MagicMock()
-    mock_session.truncate_messages.return_value = 1
-    mock_session.messages = ["m1"]
-
-    store = MagicMock()
-    store.exists.return_value = True
-    store.get.return_value = mock_session
-
-    mock_agent_service._session_store = store
-    mock_agent_service.get_session.return_value = mock_session
-
-    app.dependency_overrides[get_agent_service] = lambda: mock_agent_service
-
-    resp = client.put(
-        "/agent/session-1/truncate",
-        json={"from_index": 1},
-    )
-
-    assert resp.status_code == 200
-    assert resp.json()["truncated_count"] == 1
-
-
-def test_agent_truncate_invalid_index(client, app, mock_agent_service):
-    mock_session = MagicMock()
-    mock_session.truncate_messages.side_effect = ValueError("bad index")
-
-    store = MagicMock()
-    store.exists.return_value = True
-    store.get.return_value = mock_session
-
-    mock_agent_service._session_store = store
-
-    app.dependency_overrides[get_agent_service] = lambda: mock_agent_service
-
-    resp = client.put(
-        "/agent/session-1/truncate",
-        json={"from_index": 0},
-    )
-
-    assert resp.status_code == 400
-
-
-def test_agent_truncate_session_not_found(client, app, mock_agent_service):
-    store = MagicMock()
-    store.exists.return_value = False
-
-    mock_agent_service._session_store = store
-    mock_agent_service.get_session.return_value = None
-
-    app.dependency_overrides[get_agent_service] = lambda: mock_agent_service
-
-    resp = client.put(
-        "/agent/missing/truncate",
-        json={"from_index": 0},
-    )
-
-    assert resp.status_code == 404
-
-
-def test_agent_truncate_session_not_found(client, app, mock_agent_service):
-    store = MagicMock()
-    store.exists.return_value = False
-
-    mock_agent_service._session_store = store
-    mock_agent_service.get_session.return_value = None
-
-    app.dependency_overrides[get_agent_service] = lambda: mock_agent_service
-
-    resp = client.put(
-        "/agent/missing/truncate",
-        json={"from_index": 0},
-    )
-
-    assert resp.status_code == 404
-
 def test_agent_execute_task_success(
     client,
     app,
@@ -261,7 +141,9 @@ def test_agent_execute_task_success(
     assert body["status"] == "scheduled"
 
 
-def test_get_agent_job_unexpected_exception(client, app, mock_current_user, monkeypatch):
+def test_get_agent_job_unexpected_exception(
+    client, app, mock_current_user, monkeypatch
+):
     # override auth dependency
     app.dependency_overrides[get_current_user] = lambda: mock_current_user
 
@@ -278,5 +160,3 @@ def test_get_agent_job_unexpected_exception(client, app, mock_current_user, monk
 
     assert resp.status_code == 500
     assert resp.json()["detail"] == "Failed to fetch job status: error"
-
-

@@ -83,3 +83,41 @@ def test_repr_includes_session_count():
 
     assert "InMemorySessionHistory" in text
     assert "2" in text
+
+def test_sessions_by_title_relevance_and_user_filtering():
+
+    now = datetime.now()
+
+    # Session where title STARTS with search term (most relevant)
+    s1 = Session(session_id="s1", user="alice")
+    s1.title = "Chat with assistant"
+    s1.updated_at = now - timedelta(minutes=5)
+
+    # Session where title CONTAINS search term (less relevant, newer)
+    s2 = Session(session_id="s2", user="alice")
+    s2.title = "My previous chat history"
+    s2.updated_at = now
+
+    # Different user (should be filtered out)
+    s3 = Session(session_id="s3", user="bob")
+    s3.title = "Chat about testing"
+    s3.updated_at = now
+
+    # No title (should be ignored)
+    s4 = Session(session_id="s4", user="alice")
+    s4.title = None
+    s4.updated_at = now
+
+    history = InMemorySessionHistory(
+        sessions={
+            "s1": s1,
+            "s2": s2,
+            "s3": s3,
+            "s4": s4,
+        }
+    )
+
+    result = history.sessions_by_title("chat", user="alice")
+
+    # s1 comes before s2 because it starts with "chat"
+    assert result == [s1, s2]
