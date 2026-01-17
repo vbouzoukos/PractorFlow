@@ -10,7 +10,7 @@ Contains the individual agent runners for each pipeline phase:
 Uses shared history library for context window management.
 """
 
-from typing import List
+from typing import List, Optional
 
 from pydantic import ValidationError
 from pydantic_ai import Agent
@@ -44,7 +44,10 @@ from practorflow.services.agent.prompts import (
 from practorflow.services.agent.context import ExecutionContext
 from practorflow.services.agent.deps import AgentDeps
 from practorflow.services.agent.tools import register_executor_tools
-from practorflow.services.agent.parser import parse_json_from_response, parse_executor_results
+from practorflow.services.agent.parser import (
+    parse_json_from_response,
+    parse_executor_results,
+)
 from practorflow.services.agent.json_helpers import repair_plan_json
 from practorflow.services.agent.verification import heuristic_verification
 from practorflow.services.agent.session_utils import build_execution_log
@@ -52,7 +55,9 @@ from practorflow.services.agent.session_utils import build_execution_log
 from practorflow.services.history.types import HistoryConfig
 from practorflow.services.history.preparer import prepare_history
 
-logger = get_logger("agent_runners", level=appConfiguration.LoggerConfiguration.AgentLevel)
+logger = get_logger(
+    "agent_runners", level=appConfiguration.LoggerConfiguration.AgentLevel
+)
 
 
 async def _prepare_history(
@@ -132,7 +137,8 @@ async def run_planner(
 
     if not ctx.has_documents:
         tools_metadata = [
-            t for t in tools_metadata
+            t
+            for t in tools_metadata
             if t.get("function", {}).get("name") != "knowledge_search"
         ]
         logger.debug("[Planner] No documents - excluded knowledge_search from tools")
@@ -154,7 +160,7 @@ async def run_planner(
 
     async with model_pool.acquire_context(model_config) as handle:
         runner = create_runner(handle, knowledge_store=knowledge_store)
-        model = LocalLLMModel(runner, system_prompt=PLANNER_SYSTEM_PROMPT)
+        model = LocalLLMModel(runner)
 
         agent = Agent(
             model=model,
@@ -163,7 +169,9 @@ async def run_planner(
         )
 
         result = await agent.run(prompt, message_history=prepared_history)
-        response_text = result.output if isinstance(result.output, str) else str(result.output)
+        response_text = (
+            result.output if isinstance(result.output, str) else str(result.output)
+        )
 
     parsed = parse_json_from_response(response_text)
     if not parsed:
@@ -171,7 +179,9 @@ async def run_planner(
         parsed = repair_plan_json(response_text)
 
     if not parsed:
-        logger.error(f"[Planner] Failed to parse planner response: {response_text[:500]}")
+        logger.error(
+            f"[Planner] Failed to parse planner response: {response_text[:500]}"
+        )
         raise ValueError("Planner did not return valid JSON")
 
     try:
@@ -233,7 +243,7 @@ async def run_executor(
 
     async with model_pool.acquire_context(model_config) as handle:
         runner = create_runner(handle, knowledge_store=knowledge_store)
-        model = LocalLLMModel(runner, system_prompt=EXECUTOR_SYSTEM_PROMPT)
+        model = LocalLLMModel(runner)
 
         agent = Agent(
             model=model,
@@ -285,6 +295,7 @@ async def run_synthesizer(
     model_pool: ModelPool,
     model_config: LLMConfig,
     knowledge_store: KnowledgeStore,
+    user_instructions: Optional[str] = None,
 ) -> str:
     """
     Run the Synthesizer agent to create final answer from tool outputs.
@@ -296,16 +307,22 @@ async def run_synthesizer(
         model_pool: Pool for acquiring LLM handles.
         model_config: Configuration for the LLM model.
         knowledge_store: Store for document search.
+        user_instructions: Optional user instructions for response synthesis.
 
     Returns:
         Synthesized final answer string.
     """
     prompt = build_synthesis_prompt(plan.task, execution_result)
 
+    if user_instructions:
+        system_prompt = f"{SYNTHESIZER_SYSTEM_PROMPT}\n\n<user_instructions>\n{user_instructions}\n</user_instructions>"
+    else:
+        system_prompt = SYNTHESIZER_SYSTEM_PROMPT
+
     prepared_history = await _prepare_history(
         task=plan.task,
         ctx=ctx,
-        system_prompt=SYNTHESIZER_SYSTEM_PROMPT,
+        system_prompt=system_prompt,
         task_prompt=prompt,
         model_pool=model_pool,
         model_config=model_config,
@@ -317,16 +334,18 @@ async def run_synthesizer(
 
     async with model_pool.acquire_context(model_config) as handle:
         runner = create_runner(handle, knowledge_store=knowledge_store)
-        model = LocalLLMModel(runner, system_prompt=SYNTHESIZER_SYSTEM_PROMPT)
+        model = LocalLLMModel(runner)
 
         agent = Agent(
             model=model,
             deps_type=AgentDeps,
-            system_prompt=SYNTHESIZER_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
         )
 
         result = await agent.run(prompt, message_history=prepared_history)
-        synthesized = result.output if isinstance(result.output, str) else str(result.output)
+        synthesized = (
+            result.output if isinstance(result.output, str) else str(result.output)
+        )
 
     logger.info(f"[Synthesizer] Synthesis complete: {len(synthesized)} chars")
     return synthesized
@@ -358,7 +377,7 @@ async def run_verifier(
 
     async with model_pool.acquire_context(model_config) as handle:
         runner = create_runner(handle, knowledge_store=knowledge_store)
-        model = LocalLLMModel(runner, system_prompt=VERIFIER_SYSTEM_PROMPT)
+        model = LocalLLMModel(runner)
 
         agent = Agent(
             model=model,
@@ -367,7 +386,9 @@ async def run_verifier(
         )
 
         result = await agent.run(prompt)
-        response_text = result.output if isinstance(result.output, str) else str(result.output)
+        response_text = (
+            result.output if isinstance(result.output, str) else str(result.output)
+        )
 
     parsed = parse_json_from_response(response_text)
     if not parsed:
@@ -377,7 +398,9 @@ async def run_verifier(
     try:
         verification = VerificationResult.model_validate(parsed)
     except ValidationError as e:
-        logger.warning(f"[Verifier] Invalid verification structure: {e}, using heuristic")
+        logger.warning(
+            f"[Verifier] Invalid verification structure: {e}, using heuristic"
+        )
         return heuristic_verification(plan, execution_result)
 
     logger.info(f"[Verifier] Verification complete: {verification.verification_status}")

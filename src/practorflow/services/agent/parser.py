@@ -239,8 +239,6 @@ def parse_executor_results(
     tool_steps: Set[str] = set()  # Track which steps used tools
 
     for step in plan.steps:
-        step_mentioned = step.step_id in response_text or step.description.lower() in response_text.lower()
-
         # Check if step has a valid tool (not None, not "null" string)
         has_tool = step.tool and step.tool != "null"
         

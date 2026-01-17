@@ -47,7 +47,9 @@ from practorflow.services.agent.runners import (
     run_verifier,
 )
 
-logger = get_logger("agent_service", level=appConfiguration.LoggerConfiguration.AgentLevel)
+logger = get_logger(
+    "agent_service", level=appConfiguration.LoggerConfiguration.AgentLevel
+)
 
 
 class AgentService:
@@ -69,6 +71,7 @@ class AgentService:
         knowledge_store: KnowledgeStore,
         session_store: SessionStore,
         tool_registry: Optional[ToolRegistry] = None,
+        user_instructions: Optional[str] = None,
     ):
         """
         Initialize agent service.
@@ -79,12 +82,14 @@ class AgentService:
             knowledge_store: Store for document search.
             session_store: Store for session persistence.
             tool_registry: Optional pre-configured tool registry.
+            user_instructions: Optional user instructions for response synthesis.
         """
         self._model_pool = model_pool
         self._model_config = model_config
         self._knowledge_store = knowledge_store
         self._session_store = session_store
         self._tool_registry = tool_registry or ToolRegistry()
+        self._user_instructions = user_instructions
 
         register_default_tools(self._tool_registry, self._knowledge_store)
 
@@ -179,7 +184,9 @@ class AgentService:
 
         ctx = build_execution_context(session, document_ids)
         if ctx.has_history:
-            logger.debug(f"[AgentService] Context built with {ctx.history_length} history messages")
+            logger.debug(
+                f"[AgentService] Context built with {ctx.history_length} history messages"
+            )
 
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         plan: Optional[Plan] = None
@@ -228,6 +235,7 @@ class AgentService:
                 model_pool=self._model_pool,
                 model_config=self._model_config,
                 knowledge_store=self._knowledge_store,
+                user_instructions=self._user_instructions,
             )
             execution_result.synthesized_output = synthesized_output
 
@@ -250,7 +258,9 @@ class AgentService:
 
             if verification_result.retry_recommended and retries < max_retries:
                 retries += 1
-                logger.info(f"[AgentService] Retrying execution (attempt {retries}/{max_retries})")
+                logger.info(
+                    f"[AgentService] Retrying execution (attempt {retries}/{max_retries})"
+                )
                 continue
 
             logger.info(
@@ -309,33 +319,3 @@ class AgentService:
         if not self._session_store.exists(session_id):
             return None
         return self._session_store.get(session_id)
-
-    async def delete_task(self, session_id: str) -> bool:
-        """
-        Delete a task session and associated documents.
-
-        Args:
-            session_id: Session identifier.
-
-        Returns:
-            True if deleted, False if not found.
-        """
-        if not self._session_store.exists(session_id):
-            logger.warning(f"[AgentService] Session not found: {session_id}")
-            return False
-
-        session = self._session_store.get(session_id)
-
-        for doc in session.documents:
-            doc_id = doc.get("id")
-            if doc_id:
-                try:
-                    self._knowledge_store.delete_document(doc_id)
-                    logger.debug(f"[AgentService] Deleted document: {doc_id}")
-                except Exception as e:
-                    logger.warning(f"[AgentService] Failed to delete document {doc_id}: {e}")
-
-        self._session_store.delete(session_id)
-        logger.info(f"[AgentService] Deleted session: {session_id}")
-
-        return True
