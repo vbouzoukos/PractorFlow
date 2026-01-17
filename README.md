@@ -92,6 +92,7 @@ For development with additional tools (pytest, black, mypy, etc.):
 ```bash
 pip install -e ".[dev]" ./src/api
 ```
+
 ### Enabling Qwen3 and Mistral3 Support
 
 PractorFlow supports the latest Qwen3VL and Mistral3 models, which require a specialized build of llama-cpp-python.
@@ -128,7 +129,9 @@ llama-cpp-python @ https://github.com/JamePeng/llama-cpp-python/releases/downloa
 
 **Option 2: Prebuilt Wheels with pyproject.toml**
 
-The standard `pip install .` installs llama-cpp-python from PyPI, which does **NOT** support Qwen3VL and Mistral3. You need to remove llama-cpp-python from pyproject.toml and install it separately:
+The standard `pip install .` installs llama-cpp-python from PyPI, which does **NOT** support Qwen3VL and Mistral3.
+
+You need to remove llama-cpp-python from pyproject.toml and install it separately:
 
 ```bash
 # Step 1: Clone the repository
@@ -306,8 +309,6 @@ pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-c
 pip install .
 ```
 
-
-
 #### Additional Resources
 
 - [llama.cpp GitHub](https://github.com/ggerganov/llama.cpp)
@@ -318,10 +319,9 @@ pip install .
 
 **Note:** The custom llama-cpp-python builds are community-maintained until official support is merged. Always verify the source and use official releases when available for production deployments.
 
-
 ## ⚙️ Configuration
 
-PractorFlow uses environment variables for configuration, managed by `app_settings.py`. Configuration is loaded from three `.env` files in the `config/` directory.
+PractorFlow uses environment variables for configuration, managed by `app_settings.py`. Configuration is loaded from three `.env` files in the `config/llm/options/` directory.
 
 ### Loading Configuration
 
@@ -330,7 +330,7 @@ Configuration is automatically loaded when you import the module. You can also s
 ```python
 from practorflow.settings.app_settings import load_configuration, appConfiguration
 
-# Load from default path (config/)
+# Load from default path (config/llm/options/)
 load_configuration()
 
 # Or load from custom path
@@ -573,7 +573,7 @@ cd src
 
 ```env
 STORE_SESSION=LOCAL
-STORE_SESSION_DB_PATH=..data/session/session.json
+STORE_SESSION_DB_PATH=../data/session/session.json
 ```
 
 #### 5. Path Notes:
@@ -584,7 +584,50 @@ Note the following parameters should be relative to execution path
 LLM_MODELS_DIR
 KB_CHROMA_PERSIST_DIRECTORY
 KB_CHROMA_EMBEDDING_MODEL_DIR
+STORE_SESSION_DB_PATH
 ```
+
+---
+
+### Path Configuration for Different Execution Modes
+
+The configuration examples above assume execution from the `src/` directory, which is why paths use the `../` prefix. Depending on how you install and run PractorFlow, you'll need different path configurations:
+
+#### Running from `src/` Directory (Development Mode)
+
+When running examples or scripts from the `src/` directory:
+
+```bash
+cd src
+python examples/chat.py
+```
+
+**Configuration paths** (with `../` to reach project root):
+```bash
+LLM_MODELS_DIR=../models
+KB_CHROMA_PERSIST_DIRECTORY=../chroma_db
+KB_CHROMA_EMBEDDING_MODEL_DIR=../models
+STORE_SESSION_DB_PATH=../data/session/session.json
+```
+
+#### Installed via pyproject.toml (Production Mode)
+
+When you install PractorFlow using `pip install .` and run from project root or any directory:
+
+```bash
+# From project root
+python your_script.py
+```
+
+**Configuration paths** (relative to project root, no `../`):
+```bash
+LLM_MODELS_DIR=models
+KB_CHROMA_PERSIST_DIRECTORY=chroma_db
+KB_CHROMA_EMBEDDING_MODEL_DIR=models
+STORE_SESSION_DB_PATH=data/session/session.json
+```
+
+**Best Practice:** Maintain separate configuration files for development and production, or use absolute paths to avoid confusion between execution contexts.
 
 ---
 
@@ -605,7 +648,7 @@ Sample configurations for various models are provided in `config/llm/samples/mod
 
 ```bash
 # Copy a sample configuration to use
-cp config/samples/models/model-Qwen2.5-7B-Instruct-GGUF.env config/model.env
+cp config/llm/samples/models/model-Qwen2.5-7B-Instruct-GGUF.env config/llm/options/model.env
 ```
 
 ## 🎯 Quick Start
@@ -727,10 +770,11 @@ result = await agent.run(
 
 ## 📚 Examples
 
-Comprehensive examples are provided in the `src/` directory:
+Comprehensive examples are provided in the `src/examples/` directory:
 
-- `src/sample.py` - Basic usage, streaming, RAG workflows
-- `src/pyai-examples.py` - Pydantic AI integration patterns
+- `src/examples/llm.py` - Basic usage, streaming, RAG workflows
+- `src/examples/pyai.py` - Pydantic AI integration patterns
+- `src/examples/chat.py` - Chat interface examples
 
 Run examples:
 
@@ -738,74 +782,144 @@ Run examples:
 cd src
 
 # Basic examples
-python sample.py
+python examples/llm.py
 
 # With document
-python sample.py path/to/document.pdf
+python examples/llm.py path/to/document.pdf
 
 # Pydantic AI examples
-python pyai-examples.py
+python examples/pyai.py
+
+# Chat examples
+python examples/chat.py
 ```
 
 ## 🗃️ Architecture
 
-### Project Structure
+PractorFlow is built with a modular, production-ready architecture designed for secure, private AI deployments.
 
+### Core Components
+
+#### 1. LLM Runners
+**Abstract base with multiple backend implementations:**
+- `LlamaCppRunner` - GGUF models with llama.cpp (optimized for inference)
+- `TransformersRunner` - HuggingFace models with transformers library
+- Both support streaming, native function calling detection, and thinking trace extraction
+- Unified interface: `generate()`, `generate_stream()`, `search()`
+
+#### 2. Model Pool
+**Production-ready async model management:**
+- LRU eviction with reference counting for safe concurrent access
+- Configuration-based caching (same config = reused model)
+- Async context managers for automatic acquire/release
+- Preload support for warm starts
+- Thread-pool execution to avoid blocking event loop
+- Supports multiple concurrent models with configurable limits
+
+#### 3. Knowledge Store (RAG)
+**Small-to-Big chunking strategy with ChromaDB:**
+- **Retrieval chunks** (128 chars): Small, embedded chunks for precise similarity search
+- **Context chunks** (1024 chars): Large parent chunks returned to LLM for rich context
+- **Document metadata**: Full document tracking with IDs
+- **Three collections**: `retrieval`, `context`, `documents`
+- **Document scoping**: Isolate searches to specific documents per session/user
+- Batch processing, persistent storage, and SentenceTransformer embeddings
+
+#### 4. Session Management
+**Dual-mode session persistence:**
+- `InMemorySessionStore` - Fast, ephemeral (development/testing)
+- `TinyDBSessionStore` - JSON file persistence (production)
+- Session history with message tracking and document references
+- Factory pattern for easy switching via configuration
+- Search by title, user filtering, and sorted retrieval
+
+#### 5. Services Layer
+
+**Chat Service:**
+- Session-based conversations with history management
+- Context window management with intelligent truncation
+- Document upload and scoping per session
+- Streaming support with async generators
+
+**Agent Service:**
+- Multi-agent pipeline: Plan → Execute → Synthesize → Verify
+- Tool integration with registry and OpenAI-format function definitions
+- Session persistence with execution logs
+- Retry logic and heuristic verification
+
+**History Service:**
+- Token estimation and context window management
+- Message truncation with summarization
+- Session title generation
+- Memory-efficient history preparation
+
+#### 6. Tool System
+**Extensible tool registry with built-in tools:**
+- `Calculator` - Math expressions with safe evaluation
+- `KnowledgeSearchTool` - RAG queries with document scoping
+- `DuckDuckGoSearchTool` - Free web search (no API key)
+- `SerpAPISearchTool` - Premium web search with structured results
+- `WebFetchTool` - URL content retrieval
+- `TextSummarizerTool` - Extractive summarization
+- `JSONTransformTool` - JSON manipulation
+- OpenAI-compatible tool definitions for native function calling
+
+#### 7. Pydantic AI Integration
+**Drop-in model implementation:**
+- `LocalLLMModel` - Implements Pydantic AI's `Model` protocol
+- `LocalStreamedResponse` - Streaming with tool call extraction
+- Message conversion between Pydantic AI and internal formats
+- Tool call parsing from LLM responses (JSON extraction)
+- Seamless integration with Pydantic AI agents
+
+### Architecture Patterns
+
+**Async-First Design:**
+- All I/O operations are async (model loading, generation, document processing)
+- Thread pool execution for CPU-bound operations (inference, embeddings)
+- Async context managers for resource management
+- Non-blocking streaming with async generators
+
+**Configuration Management:**
+- Environment-based configuration with `.env` files
+- Singleton pattern with lazy initialization
+- Validation and type safety with dataclasses
+- Support for custom configuration paths (Docker/container deployments)
+
+**Dependency Injection:**
+- Service container for FastAPI dependency injection
+- Factory pattern for session stores and runners
+- Clean separation between business logic and infrastructure
+
+**Privacy by Design:**
+- All processing happens locally - no external API calls (except optional web search)
+- Document scoping prevents cross-contamination between sessions
+- Session isolation with user-based filtering
+- Local model execution with full data control
+
+### Data Flow
+
+**Simple Generation:**
 ```
-PractorFlow/
-├── config/
-│   ├── knowledge.env              # Knowledge store configuration
-│   ├── logger.env                 # Logging configuration
-│   ├── model.env                  # Model configuration
-│   └── samples/
-│       └── models/                # Sample model configurations
-├── src/
-│   ├── sample.py                  # Basic usage examples
-│   ├── pyai-examples.py           # Pydantic AI examples
-│   └── practorflow/
-│       ├── __init__.py            # Package exports
-│       ├── pyproject.toml         # Package definition
-│       ├── converters/            # Type converters
-│       │   └── torch_dtype_convertor.py
-│       ├── llm/                   # Core LLM module
-│       │   ├── base/              # Abstract base classes
-│       │   │   ├── llm_runner.py  # Base runner interface
-│       │   │   ├── session.py     # Session management
-│       │   │   └── session_store.py
-│       │   ├── pool/              # Model pooling
-│       │   │   ├── model_pool.py  # Async pool with LRU
-│       │   │   └── model_handle.py
-│       │   ├── knowledge/         # RAG components
-│       │   │   ├── knowledge_store.py
-│       │   │   ├── chroma_knowledge_store.py
-│       │   │   └── chroma_knowledge_config.py
-│       │   ├── document/          # Document processing
-│       │   │   ├── document_loader.py
-│       │   │   └── embeddings.py
-│       │   ├── tools/             # Tool system
-│       │   │   ├── base.py
-│       │   │   ├── tool_registry.py
-│       │   │   ├── knowledge_search.py
-│       │   │   ├── base_web_search.py
-│       │   │   └── serpapi_web_search.py
-│       │   ├── pyai/              # Pydantic AI integration
-│       │   │   ├── model.py
-│       │   │   ├── stream_response.py
-│       │   │   ├── message_converter.py
-│       │   │   └── tools.py
-│       │   ├── session/           # Session stores
-│       │   │   └── memory_session_store.py
-│       │   ├── llama_cpp_runner.py
-│       │   ├── transformers_runner.py
-│       │   ├── factory.py
-│       │   └── llm_config.py
-│       ├── logger/                # Logging utilities
-│       │   └── logger.py
-│       └── settings/              # Configuration management
-│           └── app_settings.py
-├── requirements.txt
-├── LICENSE.txt
-└── CONTRIBUTING.md
+User → Runner → Model Pool (acquire) → Backend (llama.cpp/transformers) → Response
+```
+
+**RAG-Enhanced Generation:**
+```
+User → Runner.search() → Knowledge Store → ChromaDB (similarity search)
+     → Runner.generate() → Context injection → Model → Response
+```
+
+**Agent Workflow:**
+```
+User Task → Planner (decompose) → Executor (tools + LLM reasoning)
+         → Synthesizer (combine outputs) → Verifier (validate) → Final Answer
+```
+
+**Session-Based Chat:**
+```
+User → Chat Service → Session Store (load history) → History Manager (truncate)
+    → Runner.generate() → Session Store (save) → Response Stream
 ```
 
 ### Small-to-Big Chunking Strategy
@@ -928,14 +1042,55 @@ load_configuration(config_path="/app/config")
 cd src
 
 # Run basic examples
-python sample.py
+python examples/llm.py
 
 # Run Pydantic AI examples
-python pyai-examples.py
+python examples/pyai.py
 
 # Test with document
-python sample.py path/to/test.pdf
+python examples/llm.py path/to/test.pdf
 ```
+
+## Additional Components
+
+### API Server
+
+PractorFlow API is a production-ready FastAPI server that exposes the core library's capabilities through RESTful endpoints, enabling web-based access to LLM inference with authentication, session management, and agent workflows.
+
+**Key Features:**
+- RESTful API with chat, agent, and session endpoints
+- Three authentication modes: Open (no credentials), Local (app secret), OIDC (enterprise SSO)
+- Server-Sent Events (SSE) streaming for real-time responses
+- JWT-based authentication with configurable providers
+- Multi-file upload with automatic knowledge base integration
+- Background cleanup scheduler for maintenance tasks
+- OpenAPI documentation with Swagger UI
+
+**Use Cases:**
+Ideal for integrating LLM capabilities into web applications, mobile apps, or microservices without direct Python integration. Enables multiple clients to share model resources efficiently while maintaining session isolation and security.
+
+For detailed documentation including endpoint specifications, authentication setup, deployment guides, and configuration options, see **[API Server Documentation](src/api/README.md)**.
+
+---
+
+### GUI Client
+
+PractorFlow GUI is a desktop application built with PySide6 that provides a user-friendly chat interface for interacting with the LLM service through a native desktop experience.
+
+**Key Features:**
+- Modern chat interface with markdown rendering and syntax highlighting
+- Dual-mode operation: Chat mode and Agent mode (task execution with verification)
+- Document upload via drag-and-drop (PDF, DOCX, images, etc.)
+- Session history panel with search and resume functionality
+- Real-time streaming with live token updates
+- Message editing and resend capability
+- Automatic dark/light theme support
+- Background worker threads for responsive UI
+
+**User Experience:**
+Native desktop application with collapsible history sidebar, foldable documents panel, and seamless switching between chat and agent modes. All API communication handled in background threads to maintain UI responsiveness.
+
+For detailed documentation including installation instructions, usage guide, keyboard shortcuts, and troubleshooting, see **[GUI Client Documentation](src/gui/README.md)**.
 
 ## 📊 Performance Tips
 
@@ -954,7 +1109,7 @@ python sample.py path/to/test.pdf
 - **Government Agencies**: Public sector with security clearance needs
 - **Research Organizations**: Academic institutions with sensitive research data
 
-## 🤝 Contributing
+## � Contributing
 
 Contributions are welcome! We appreciate your help in building a better private AI service for organizations.
 
@@ -992,218 +1147,10 @@ With the requirement to:
 
 Built on modern open-source models including Qwen, Mistral, and others.
 
-## 📧 Support
+## 🔧 Support
 
 For questions, issues, or feature requests, please [open an issue](https://github.com/vbouzoukos/PractorFlow/issues) on GitHub.
 
 ---
 
 **Privacy by Design**: PractorFlow is built for organizations where AI must run where the data already lives. All inference, document processing, and reasoning happens entirely within your infrastructure. No data ever leaves your environment.
-
-## 🌐 API Server
-
-PractorFlow includes a standalone FastAPI server that exposes the library's capabilities via HTTP endpoints. The API provides session-based chat with streaming responses, file uploads for RAG, and JWT-based authentication.
-
-### Running the API Server
-
-```bash
-cd src
-
-# Start the server
-uvicorn api.main:app --host 0.0.0.0 --port 8000
-
-# Or with auto-reload for development
-uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-The API will be available at `http://localhost:8000`. Interactive documentation is available at `http://localhost:8000/docs` (Swagger UI) and `http://localhost:8000/redoc` (ReDoc).
-
-### Authentication
-
-The API supports three authentication modes, configured via environment variables in `config/api/`:
-
-| Mode | Configuration | Description |
-|------|---------------|-------------|
-| **Open** | `APP_SECRET` empty, `OIDC_ISSUER_URL` empty | No credentials required. Tokens issued freely. Suitable for development or trusted networks. |
-| **Local** | `APP_SECRET` set, `OIDC_ISSUER_URL` empty | Requires app secret to obtain tokens. Simple shared-secret authentication. |
-| **OIDC** | `OIDC_ISSUER_URL` set | External identity provider authentication. Enterprise SSO integration. |
-
-#### Configuration Files
-
-Create configuration files in `config/api/`:
-
-**`config/api/options/config.env`** - Non-sensitive settings:
-```bash
-JWT_ALGORITHM=HS256
-JWT_TOKEN_EXPIRY_MINUTES=60
-```
-
-**`config/api/secrets/config.env`** - Sensitive settings:
-```bash
-# Local mode authentication
-JWT_SECRET_KEY=your-secret-key-for-signing-tokens
-APP_SECRET=your-app-secret-for-authentication
-
-# OIDC mode (optional - leave empty for local mode)
-OIDC_ISSUER_URL=
-OIDC_AUDIENCE=
-OIDC_CLIENT_ID=
-OIDC_CLIENT_SECRET=
-```
-
-### API Endpoints
-
-#### Health Check
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | Returns server health status |
-
-```bash
-curl http://localhost:8000/health
-# Response: {"status": "healthy"}
-```
-
-#### Authentication (`/auth`)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/auth/token` | Obtain JWT access token |
-| `GET` | `/auth/me` | Get current authenticated user |
-| `GET` | `/auth/status` | Get authentication configuration status |
-
-**Obtain Token (Open Mode):**
-```bash
-curl -X POST http://localhost:8000/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
-
-**Obtain Token (Local Mode with Secret):**
-```bash
-curl -X POST http://localhost:8000/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"app_secret": "your-app-secret"}'
-```
-
-**Response:**
-```json
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "bearer",
-  "expires_in": 3600
-}
-```
-
-#### Chat (`/chat`)
-
-All chat endpoints require authentication. Include the token in the `Authorization` header:
-```bash
--H "Authorization: Bearer <access_token>"
-```
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/chat` | Start a new chat session |
-| `POST` | `/chat/{session_id}` | Send message with optional files (SSE streaming response) |
-| `DELETE` | `/chat/{session_id}` | Delete a chat session |
-| `GET` | `/chat/sessions` | List all chat sessions |
-| `GET` | `/chat/{session_id}/history` | Get full session message history |
-
-**Start a New Session:**
-```bash
-curl -X GET http://localhost:8000/chat \
-  -H "Authorization: Bearer <access_token>"
-```
-
-**Response:**
-```json
-{
-  "session_id": "abc123-def456-...",
-  "message": "Session created successfully"
-}
-```
-
-**Send a Message (Streaming):**
-```bash
-curl -X POST "http://localhost:8000/chat/{session_id}" \
-  -H "Authorization: Bearer <access_token>" \
-  -F "message=What is Python?"
-```
-
-The response is a Server-Sent Events (SSE) stream:
-```
-data: {"text": "Python", "finished": false}
-data: {"text": " is", "finished": false}
-data: {"text": " a", "finished": false}
-...
-data: {"text": "", "finished": true, "finish_reason": "stop", "usage": {"prompt_tokens": 10, "completion_tokens": 150}}
-data: [DONE]
-```
-
-**Send a Message with File Upload:**
-```bash
-curl -X POST "http://localhost:8000/chat/{session_id}" \
-  -H "Authorization: Bearer <access_token>" \
-  -F "message=Summarize this document" \
-  -F "files=@document.pdf"
-```
-
-Uploaded files are indexed into the knowledge store and scoped to the session for RAG queries.
-
-**List Sessions:**
-```bash
-curl -X GET "http://localhost:8000/chat/sessions" \
-  -H "Authorization: Bearer <access_token>"
-```
-
-**Response:**
-```json
-[
-  {
-    "session_id": "abc123-...",
-    "user": "anonymous",
-    "message_count": 5,
-    "document_count": 2,
-    "created_at": "2025-01-01T10:00:00Z",
-    "updated_at": "2025-01-01T10:30:00Z"
-  }
-]
-```
-
-**Get Session History:**
-```bash
-curl -X GET "http://localhost:8000/chat/{session_id}/history" \
-  -H "Authorization: Bearer <access_token>"
-```
-
-**Response:**
-```json
-{
-  "session_id": "abc123-...",
-  "user": "anonymous",
-  "instructions": null,
-  "messages": [
-    {"id": "msg1", "role": "user", "content": "Hello", "timestamp": "2025-01-01T10:00:00Z"},
-    {"id": "msg2", "role": "assistant", "content": "Hi! How can I help?", "timestamp": "2025-01-01T10:00:01Z"}
-  ],
-  "document_count": 0,
-  "created_at": "2025-01-01T10:00:00Z",
-  "updated_at": "2025-01-01T10:00:01Z"
-}
-```
-
-**Delete a Session:**
-```bash
-curl -X DELETE "http://localhost:8000/chat/{session_id}" \
-  -H "Authorization: Bearer <access_token>"
-```
-
-**Response:**
-```json
-{
-  "session_id": "abc123-...",
-  "deleted": true,
-  "message": "Session deleted successfully"
-}
-```
