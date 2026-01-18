@@ -30,11 +30,9 @@ def test_build_planner_prompt_with_docs_and_tools():
         document_context="docs here",
     )
 
-    assert "TASK TO PLAN" in prompt
-    assert "AVAILABLE DOCUMENTS" in prompt
-    assert "AVAILABLE TOOLS" in prompt
-    assert "tool1" in prompt
-    assert "Create the execution plan now" in prompt
+    assert "<task>\ndo x\n</task>" in prompt
+    assert "<documents>\ndocs here\n</documents>" in prompt
+    assert "<available_tools>\nUse these in the \'tool\' and \'tool_args\' fields of your steps:\n\nTool: tool1\n  Description: desc\n  Parameters:\n    - a: string (required) - \n\n</available_tools>" in prompt
 
 
 def test_build_planner_prompt_no_tools_no_docs():
@@ -44,7 +42,7 @@ def test_build_planner_prompt_no_tools_no_docs():
         document_context=None,
     )
 
-    assert "AVAILABLE TOOLS: None" in prompt
+    assert "<available_tools>None - use null for tool field in all steps</available_tools>" in prompt
 
 
 def test_build_executor_prompt_with_tool_step():

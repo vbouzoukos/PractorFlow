@@ -148,10 +148,10 @@ def build_planner_prompt(
 
     # Tools that can be used in steps
     if tools_metadata:
-        tool_names = [t.get("function", {}).get("name", "unknown") for t in tools_metadata]
-        parts.append(f"\n<available_tools>\nTools you can reference in step.tool field: {', '.join(tool_names)}\n</available_tools>")
+        tools_desc = _format_tools_for_prompt(tools_metadata)
+        parts.append(f"\n<available_tools>\nUse these in the 'tool' and 'tool_args' fields of your steps:\n\n{tools_desc}\n</available_tools>")
     else:
-        parts.append("\n<available_tools>None - use null for all steps</available_tools>")
+        parts.append("\n<available_tools>None - use null for tool field in all steps</available_tools>")
 
     # Explicit output format with example
     parts.append("""
