@@ -3,3 +3,5 @@ PySide6
 httpx
 httpx-sse
 python-dotenv
+platformdirs
+pyqtdarktheme

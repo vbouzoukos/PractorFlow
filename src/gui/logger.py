@@ -4,6 +4,15 @@ import os
 import sys
 from typing import Optional
 
+from platformdirs import user_log_dir
+
+# App identifiers for platformdirs
+APP_NAME = "PractorFlow"
+APP_AUTHOR = "PractorFlow"
+
+# Base log directory from platformdirs
+LOG_BASE_DIR = user_log_dir(APP_NAME, APP_AUTHOR)
+
 # Cache for reusable loggers
 _logger_cache = {}
 
@@ -47,11 +56,11 @@ def get_logger(
     Create or retrieve a cached logger.
 
     Stdout logging is enabled by default (cloud-friendly).
-    File logging is optional and disabled unless log_file is provided.
+    File logging uses platformdirs user log directory as base path.
 
     Args:
-        logger_name (str): Unique name for the logger (e.g., "mylogger").
-        log_file (Optional[str]): Path to the log file or None to disable file logging.
+        logger_name (str): Unique name for the logger.
+        log_file (Optional[str]): Relative path to the log file (will be placed under platformdirs log dir).
         level (str): Log level ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL").
         max_bytes (int): Max log file size before rotation (default 2 MB).
         backup_count (int): Number of rotated logs to keep (default 2).
@@ -86,15 +95,16 @@ def get_logger(
 
     # File handler
     if log_file:
-        os.makedirs(os.path.dirname(log_file) or ".", exist_ok=True)
+        full_log_path = os.path.join(LOG_BASE_DIR, log_file)
+        os.makedirs(os.path.dirname(full_log_path) or ".", exist_ok=True)
 
         has_file_handler = any(
-            isinstance(h, RotatingFileHandler) and h.baseFilename == os.path.abspath(log_file)
+            isinstance(h, RotatingFileHandler) and h.baseFilename == os.path.abspath(full_log_path)
             for h in logger.handlers
         )
         if not has_file_handler:
             file_handler = RotatingFileHandler(
-                log_file,
+                full_log_path,
                 mode="w",
                 maxBytes=max_bytes,
                 backupCount=backup_count,

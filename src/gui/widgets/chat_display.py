@@ -203,19 +203,6 @@ class ChatDisplay(QScrollArea):
             return self._messages[index]
         return None
     
-    def set_editing_enabled(self, enabled: bool):
-        """
-        Enable or disable editing on all messages.
-        
-        Args:
-            enabled: Whether editing should be enabled.
-        """
-        try:
-            for widget in self._messages:
-                widget.set_editing_enabled(enabled)
-        except Exception:
-            pass  # pragma: no cover
-    
     def _scroll_to_bottom(self):
         """Scroll to the bottom of the display."""
         try:

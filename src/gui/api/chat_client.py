@@ -16,7 +16,7 @@ from httpx_sse import connect_sse
 from gui.api.client_data import AuthStatus
 from gui.logger import get_logger
 
-logger = get_logger("practorflow-client", level="INFO")
+logger = get_logger("practorflow-client", level="INFO", log_file="logs/practorflow-client.log")
 
 
 @dataclass

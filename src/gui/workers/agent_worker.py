@@ -11,6 +11,7 @@ from typing import Optional
 from PySide6.QtCore import QThread, Signal
 
 from gui.api.agent_client import AgentClient, AgentTaskResult
+from gui.api.session_client import SessionClient
 
 
 class AgentTaskWorker(QThread):
@@ -65,14 +66,11 @@ class AgentTaskWorker(QThread):
                 job = self._client.get_job(job_id)
 
                 if job.status == "completed":
-                    # job.result is a dict containing the full AgentTaskResult from backend
-                    # Extract the relevant fields
-                    result_data = job.result or {}
                     self.task_completed.emit(
                         AgentTaskResult(
-                            success=result_data.get("success", False),
-                            output=result_data.get("output"),
-                            error=result_data.get("error"),
+                            success=True,
+                            output=job.result,
+                            error=None,
                         )
                     )
                     return
@@ -160,7 +158,7 @@ class AgentEditResumeWorker(QThread):
 
     This is ADDITIVE functionality:
     - Does NOT modify AgentTaskWorker
-    - Reuses AgentClient.truncate_messages
+    - Reuses SessionClient.truncate_messages
     - Reuses AgentTaskWorker for execution
     """
 
@@ -170,6 +168,7 @@ class AgentEditResumeWorker(QThread):
     def __init__(
         self,
         client: AgentClient,
+        session_client: SessionClient,
         session_id: str,
         from_index: int,
         updated_task: str,
@@ -179,6 +178,7 @@ class AgentEditResumeWorker(QThread):
         super().__init__(parent)
 
         self._client = client
+        self._session_client = session_client
         self._session_id = session_id
         self._from_index = from_index
         self._updated_task = updated_task
@@ -189,7 +189,7 @@ class AgentEditResumeWorker(QThread):
     def run(self):
         try:
             # 1. Truncate backend history
-            result = self._client.truncate_messages(
+            result = self._session_client.truncate_messages(
                 self._session_id,
                 self._from_index,
             )

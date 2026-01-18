@@ -28,6 +28,8 @@ dependencies = [
     "httpx",
     "httpx-sse",
     "python-dotenv",
+    "platformdirs",
+    "pyqtdarktheme"
 ]
 
 [project.optional-dependencies]

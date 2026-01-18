@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QFont, QPalette, QColor
 
+import gui.widgets.ui_state as ui_state
+
 
 class MessageWidget(QFrame):
     """
@@ -92,7 +94,7 @@ class MessageWidget(QFrame):
         header_layout.addWidget(self._edit_btn)
         
         # Confirm/Cancel buttons for edit mode
-        self._confirm_btn = QPushButton("✓")
+        self._confirm_btn = QPushButton("✔")
         self._confirm_btn.setFixedSize(24, 24)
         self._confirm_btn.setToolTip("Confirm edit (will remove messages after this)")
         self._confirm_btn.setCursor(Qt.PointingHandCursor)
@@ -264,7 +266,7 @@ class MessageWidget(QFrame):
     
     def is_editable(self) -> bool:
         """Check if this message can be edited."""
-        return self._role == self.ROLE_USER and not self._is_streaming
+        return self._role == self.ROLE_USER and not ui_state.generating
     
     @Slot()
     def _on_edit_clicked(self):

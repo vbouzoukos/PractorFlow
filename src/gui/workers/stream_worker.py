@@ -10,6 +10,7 @@ from typing import Optional
 from PySide6.QtCore import QThread, Signal
 
 from gui.api.chat_client import ChatClient
+from gui.api.session_client import SessionClient
 
 
 class StreamWorker(QThread):
@@ -95,13 +96,14 @@ class StreamWorker(QThread):
             self.wait(2000)
         self.deleteLater()
 
+
 class ChatEditResumeWorker(QThread):
     """
     Worker for chat edit → truncate → resume flow.
 
     This is ADDITIVE functionality:
     - Does NOT modify StreamWorker
-    - Reuses ChatClient.truncate_messages
+    - Reuses SessionClient.truncate_messages
     - Reuses StreamWorker for streaming execution
     """
 
@@ -112,6 +114,7 @@ class ChatEditResumeWorker(QThread):
     def __init__(
         self,
         client: ChatClient,
+        session_client: SessionClient,
         session_id: str,
         from_index: int,
         updated_message: str,
@@ -121,6 +124,7 @@ class ChatEditResumeWorker(QThread):
         super().__init__(parent)
 
         self._client = client
+        self._session_client = session_client
         self._session_id = session_id
         self._from_index = from_index
         self._updated_message = updated_message
@@ -131,7 +135,7 @@ class ChatEditResumeWorker(QThread):
     def run(self):
         try:
             # 1. Truncate backend history
-            result = self._client.truncate_messages(
+            result = self._session_client.truncate_messages(
                 self._session_id,
                 self._from_index,
             )

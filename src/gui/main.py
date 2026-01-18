@@ -1,35 +1,32 @@
 """
-PractorFlow GUI Chat Client - Application Entry Point.
+PractorFlow GUI Client - Application Entry Point.
 
 Usage:
     python main.py
-
-Environment Variables:
-    PRACTORFLOW_API_URL - API base URL (default: http://localhost:8000)
 """
 
 import sys
-import os
+from importlib.metadata import version
 
-# Enable dark mode (must be before QApplication)
-sys.argv += ['-platform', 'windows:darkmode=2']
-
-from dotenv import load_dotenv
 from PySide6.QtWidgets import QApplication, QMessageBox
+
+from gui.logger import get_logger
+
+logger = get_logger("practorflow-client", level="INFO", log_file="logs/practorflow-client.log")
+
+from gui.theme import apply_theme
+from gui.settings.settings import load_settings
 
 
 def excepthook(exc_type, exc_value, exc_tb):
     """Global exception handler to prevent silent crashes."""
     import traceback
     
-    # Format the exception
     tb_lines = traceback.format_exception(exc_type, exc_value, exc_tb)
     tb_text = ''.join(tb_lines)
     
-    # Print to stderr
-    print(f"Unhandled exception:\n{tb_text}", file=sys.stderr)
+    logger.critical(f"Unhandled exception:\n{tb_text}")
     
-    # Show error dialog if QApplication exists
     try:
         app = QApplication.instance()
         if app:
@@ -39,41 +36,37 @@ def excepthook(exc_type, exc_value, exc_tb):
                 f"An unexpected error occurred:\n\n{exc_value}\n\nThe application may be unstable."
             )
     except Exception:
-        pass  # pragma: no cover
+        pass
 
 
 def main():
     """Application entry point."""
-    # Install global exception handler
     sys.excepthook = excepthook
     
     try:
-        # Load environment variables
-        load_dotenv()
+        logger.info("Starting PractorFlow GUI")
         
-        # Get API URL from environment
-        api_url = os.getenv("PRACTORFLOW_API_URL", "http://localhost:8000")
-        
-        # Create application
         app = QApplication(sys.argv)
-        app.setApplicationName("PractorFlow Chat")
-        app.setApplicationVersion("0.0.1")
+        app.setApplicationName("PractorFlow")
+        app.setApplicationVersion(version("practorflow-gui"))
         app.setStyle("Fusion")
         
-        # Import here to ensure QApplication exists first
-        from gui.chat_window import ChatWindow
+        # Apply theme from settings
+        settings = load_settings()
+        apply_theme(app, settings.theme)
         
-        # Create and show main window
-        window = ChatWindow(api_url=api_url)
+        from gui.main_window import MainWindow
+        
+        window = MainWindow()
         window.show()
         
-        # Run event loop
+        logger.info("Application started")
+        
         sys.exit(app.exec())
         
     except Exception as e:
-        print(f"Failed to start application: {e}", file=sys.stderr)
+        logger.critical(f"Failed to start application: {e}")
         
-        # Try to show error dialog
         try:
             app = QApplication.instance()
             if app is None:
@@ -85,7 +78,7 @@ def main():
                 f"Failed to start application:\n\n{e}"
             )
         except Exception:
-            pass  # pragma: no cover
+            pass
         
         sys.exit(1)
 

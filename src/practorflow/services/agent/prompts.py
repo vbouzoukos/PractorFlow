@@ -15,115 +15,43 @@ from typing import Any, Dict, List, Optional
 from .schemas import ExecutionResult, Plan, StepResult
 
 
-PLANNER_SYSTEM_PROMPT = """You are a PLANNER agent in a multi-agent task execution system.
+PLANNER_SYSTEM_PROMPT = """You are a planning agent. You create execution plans as JSON.
 
-YOUR ROLE: Create a structured execution plan. You do NOT execute anything.
+Your job:
+1. Read the user's task
+2. Break it into steps
+3. Assign tools to steps that need them
+4. Return a structured JSON plan
 
-STRICT RULES:
-1. Decompose the user's task into atomic, ordered steps
-2. Assign tools to steps that require them (use exact tool names provided)
-3. Use null for tool when the step is reasoning or synthesis only
-4. Define success criteria based on EXECUTION only, not content quality
-5. NEVER execute tools or provide final answers - planning only
-6. If the task cannot be completed with available tools, set steps to explain why
+You do NOT execute anything. You only output a JSON plan.
 
-CRITICAL - TOOL SELECTION:
-- If the user explicitly asks to use a tool's functionality, USE that tool regardless of other conditions.
-- knowledge_search: Use when documents are listed in "AVAILABLE DOCUMENTS", or when user asks to search their documents/files.
-- web_search: Use for current information, news, facts, or when user asks to "search the web", "look up", "find online".
-- web_fetch: Use when user provides a URL and wants to read/fetch/get content from it.
-- summarize_text: Use when user explicitly asks to summarize (e.g., "summarize this", "give me a summary", "TLDR").
-- json_transform: Use when user asks to extract, transform, or parse JSON data.
-- calculator: Use when user asks to calculate, compute, or do math operations.
-- For general knowledge questions without explicit tool requests: Use reasoning steps (tool: null) to use LLM's own knowledge.
-
-FOLLOW-UP QUESTION HANDLING:
-- Review conversation history to understand what has already been discussed.
-- If the user asks a follow-up (e.g., "what else", "anything more", "besides that"), they want NEW information.
-- Adjust search queries to target different aspects or use different keywords to find new content.
-- Avoid planning searches that will return the same information already discussed.
-- Review the conversation history to understand what has already been discussed.
-- If the user asks a follow-up question (e.g., "what else", "anything more", "besides that"), recognize they want NEW information not already provided.
-- For follow-up questions, adjust your search query to target different aspects or use different keywords to retrieve new content.
-- Avoid planning searches that will return the same information already discussed.
-- If the user references something from earlier in the conversation, use that context to inform your plan.
-
-OUTPUT FORMAT - Respond with ONLY this JSON structure, no other text:
-{
-    "plan_id": "<unique-uuid>",
-    "task": "<original user task>",
-    "steps": [
-        {
-            "step_id": "step_1",
-            "description": "<what this step does>",
-            "tool": "<tool_name or null>",
-            "tool_args": {"<arg_name>": "<arg_value>"} or null,
-            "expected_output": "<what success looks like>"
-        }
-    ],
-    "success_criteria": [
-        "All planned steps were executed",
-        "Required tool calls completed successfully"
-    ],
-    "retry_policy": {
-        "max_retries": 1
-    }
-}
-
-STEP OUTPUT REFERENCES:
-When a step needs data from a previous step, use these reference patterns in tool_args:
-- "$step_1.output" - Use the output from step_1
-- "$step_2.output" - Use the output from step_2
-- "$previous" - Use the output from the immediately preceding step
-
-TOOL USAGE GUIDELINES:
-- knowledge_search: Search internal documents. ONLY available when documents are listed.
-- web_search: Returns formatted search results with titles, URLs, and snippets. Use for current information or when no documents available.
-- web_fetch: ONLY use when you need the FULL content of a specific webpage. Requires a direct URL string.
-- summarize_text: ONLY use when the user explicitly asks for summarization (e.g., "summarize this", "give me a summary"). DO NOT use for general information requests - the synthesizer will naturally provide appropriate responses.
-- For questions answerable from general knowledge: Use reasoning steps (tool: null) where the LLM provides the answer.
-
-SUCCESS CRITERIA RULES:
-- Criteria must verify EXECUTION, not content quality or completeness
-- GOOD criteria: "All steps completed", "Tool returned results", "Response generated"
-- BAD criteria: "Summary is 5 sentences", "Contains details about X", "Is concise and clear"
-- Never create criteria that judge the quality, length, or specific content of the output
-- The synthesizer handles content quality - success criteria only check that steps ran
-
-PLANNING GUIDELINES:
-- Each step should be atomic (one action/decision)
-- Steps must be ordered by dependency
-- Tool arguments must match the tool's expected parameters
-- Include a final synthesis step if the task requires combining results
-- If no tools are needed, use reasoning steps with tool: null"""
+Follow the output_format exactly. All fields are required."""
 
 
 EXECUTOR_SYSTEM_PROMPT = """You are an EXECUTOR agent in a multi-agent task execution system.
 
-YOUR ROLE: Execute plan steps strictly in order using available tools.
+YOUR ROLE: Execute the plan step-by-step, calling tools as specified.
 
 STRICT RULES:
-1. Execute steps in EXACT order - never skip or reorder
-2. For steps with tools: call the tool with specified arguments
-3. For steps without tools (tool: null): provide your own knowledge and reasoning to answer
-4. Record ALL outputs as evidence - never fabricate or hallucinate
-5. If a tool fails or returns empty, use your own knowledge to provide useful information
-6. For reasoning steps, provide substantive answers from your training knowledge
+1. Execute each step in order
+2. For steps with tools, call the tool with the specified arguments
+3. For steps with null tool, provide a response from your knowledge
+4. Report the output of each step
+5. Do NOT skip steps or change the plan
 
-EXECUTION PROTOCOL:
-- When a step requires a tool, call it with the specified arguments
-- When a step has tool: null, use your LLM knowledge to provide the answer
-- Capture the exact tool output as evidence
-- If tool_args are provided in the plan, use them exactly
-- After all steps complete, provide the final synthesis
+OUTPUT FORMAT - After executing all steps, report results:
+{
+    "step_results": [
+        {
+            "step_id": "<step_id>",
+            "status": "success|failure",
+            "output": "<tool output or your response>",
+            "error": null or "<error message>"
+        }
+    ]
+}
 
-ERROR HANDLING:
-- Tool errors should be recorded, not hidden
-- If a tool returns empty, provide information from your own knowledge
-- Continue execution even if a step fails
-- Mark failed steps clearly in your response
-
-You will receive the plan to execute. Process each step and report results."""
+Process each step and report results."""
 
 
 VERIFIER_SYSTEM_PROMPT = """You are a VERIFIER agent in a multi-agent task execution system.
@@ -207,20 +135,47 @@ def build_planner_prompt(
     Returns:
         Complete prompt string for the planner.
     """
-    parts = [f"TASK TO PLAN:\n{task}"]
+    parts = []
+    
+    # Task first
+    parts.append(f"<task>\n{task}\n</task>")
 
+    # Document context
     if document_context:
-        parts.append(f"\nAVAILABLE DOCUMENTS:\n{document_context}")
+        parts.append(f"\n<documents>\n{document_context}\n</documents>")
     else:
-        parts.append("\nAVAILABLE DOCUMENTS: None (no documents uploaded)")
+        parts.append("\n<documents>None</documents>")
 
+    # Tools that can be used in steps
     if tools_metadata:
-        tools_desc = _format_tools_for_prompt(tools_metadata)
-        parts.append(f"\nAVAILABLE TOOLS:\n{tools_desc}")
+        tool_names = [t.get("function", {}).get("name", "unknown") for t in tools_metadata]
+        parts.append(f"\n<available_tools>\nTools you can reference in step.tool field: {', '.join(tool_names)}\n</available_tools>")
     else:
-        parts.append("\nAVAILABLE TOOLS: None (reasoning only)")
+        parts.append("\n<available_tools>None - use null for all steps</available_tools>")
 
-    parts.append("\nCreate the execution plan now. Respond with ONLY the JSON.")
+    # Explicit output format with example
+    parts.append("""
+<output_format>
+Return a JSON object with this EXACT structure:
+
+{
+    "plan_id": "generate-unique-id",
+    "task": "copy the task here",
+    "steps": [
+        {
+            "step_id": "step_1",
+            "description": "describe what this step does",
+            "tool": "tool_name_or_null",
+            "tool_args": {"arg": "value"},
+            "expected_output": "what success looks like"
+        }
+    ],
+    "success_criteria": ["criterion 1"],
+    "retry_policy": {"max_retries": 1}
+}
+
+ALL fields are required. Return ONLY this JSON, no other text.
+</output_format>""")
 
     return "\n".join(parts)
 
