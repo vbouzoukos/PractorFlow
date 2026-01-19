@@ -232,6 +232,35 @@ curl http://localhost:8000/auth/me \
 curl http://localhost:8000/auth/status
 ```
 
+## Response Modes
+
+### Chat Mode - SSE Streaming
+
+The `/chat/{session_id}` endpoint uses **Server-Sent Events (SSE)** for real-time streaming responses. This provides:
+- Immediate feedback as tokens are generated
+- Progressive display of responses
+- Real-time user experience
+
+**Use Cases:**
+- Interactive conversations
+- Real-time chat interfaces
+- Progressive content generation
+
+### Agent Mode - Async Job Execution
+
+The `/agent/{session_id}/execute` endpoint uses **asynchronous job execution** with polling. This provides:
+- Background task processing
+- Job status tracking
+- Reliable completion handling for long-running tasks
+
+**Use Cases:**
+- Document analysis and processing
+- Multi-step task workflows
+- Complex data transformations
+- Tasks requiring verification or approval steps
+
+---
+
 ## API Endpoints
 
 ### Authentication (`/auth`)
@@ -294,6 +323,8 @@ Get authentication configuration details.
 
 ### Chat (`/chat`)
 
+The chat endpoint provides **streaming responses** using Server-Sent Events (SSE) for real-time interaction.
+
 #### `GET /chat`
 Start a new chat session.
 
@@ -333,6 +364,31 @@ data: {"text": " is...", "finished": true, "finish_reason": "stop", "usage": {"p
 data: [DONE]
 ```
 
+**Stream Format:**
+
+Each SSE event contains JSON data:
+```json
+{
+  "text": "chunk of text",
+  "finished": false,
+  "finish_reason": null,
+  "usage": null
+}
+```
+
+**Fields:**
+- `text`: Text chunk from the LLM
+- `finished`: Boolean indicating if generation is complete
+- `finish_reason`: Reason for completion (`"stop"`, `"length"`, etc.) when `finished=true`
+- `usage`: Token usage statistics (only in final chunk)
+
+**Final Event:**
+
+The stream ends with:
+```
+data: [DONE]
+```
+
 **Errors:**
 - `404` - Session not found
 - `500` - Internal server error
@@ -340,6 +396,8 @@ data: [DONE]
 ---
 
 ### Agent (`/agent`)
+
+The agent endpoint provides **asynchronous task execution** with job status polling. Unlike chat, agent tasks do **not use streaming**.
 
 #### `GET /agent`
 Start a new agent task session.
@@ -576,416 +634,4 @@ Health check endpoint.
 {
   "status": "healthy"
 }
-```
-
----
-
-## SSE Streaming
-
-The chat endpoint uses Server-Sent Events (SSE) for real-time streaming responses.
-
-### Stream Format
-
-Each SSE event contains JSON data:
-
-```json
-{
-  "text": "chunk of text",
-  "finished": false,
-  "finish_reason": null,
-  "usage": null
-}
-```
-
-**Fields:**
-- `text`: Text chunk from the LLM
-- `finished`: Boolean indicating if generation is complete
-- `finish_reason`: Reason for completion (`"stop"`, `"length"`, etc.) when `finished=true`
-- `usage`: Token usage statistics (only in final chunk)
-
-### Final Event
-
-The stream ends with:
-```
-data: [DONE]
-```
-
-### JavaScript Client Example
-
-```javascript
-const eventSource = new EventSource(
-  `http://localhost:8000/chat/${sessionId}?message=${encodeURIComponent(message)}`,
-  {
-    headers: {
-      'Authorization': `Bearer ${token}`
-    }
-  }
-);
-
-eventSource.onmessage = (event) => {
-  if (event.data === '[DONE]') {
-    eventSource.close();
-    return;
-  }
-  
-  const chunk = JSON.parse(event.data);
-  console.log(chunk.text);
-  
-  if (chunk.finished) {
-    console.log('Finish reason:', chunk.finish_reason);
-    console.log('Usage:', chunk.usage);
-  }
-};
-
-eventSource.onerror = (error) => {
-  console.error('SSE Error:', error);
-  eventSource.close();
-};
-```
-
-### Python Client Example
-
-```python
-import requests
-import json
-
-url = f"http://localhost:8000/chat/{session_id}"
-headers = {"Authorization": f"Bearer {token}"}
-data = {"message": "What is Python?"}
-
-response = requests.post(url, headers=headers, data=data, stream=True)
-
-for line in response.iter_lines():
-    if line:
-        line_str = line.decode('utf-8')
-        if line_str.startswith('data: '):
-            data = line_str[6:]  # Remove 'data: ' prefix
-            if data == '[DONE]':
-                break
-            chunk = json.loads(data)
-            print(chunk['text'], end='', flush=True)
-```
-
----
-
-## Deployment
-
-### Production Configuration
-
-**Environment Variables:**
-```env
-# API Configuration
-AUTH_MODE=oidc
-JWT_SECRET_KEY=<generate-strong-random-key>
-JWT_EXPIRATION_MINUTES=1440
-
-# OIDC
-OIDC_ISSUER_URL=https://your-sso.company.com/realms/production
-OIDC_CLIENT_ID=practorflow-production
-OIDC_CLIENT_SECRET=<from-your-idp>
-OIDC_AUDIENCE=practorflow-api
-
-# Cleanup
-CLEANUP_INTERVAL_MINUTES=60
-
-# Logging
-LOG_LEVEL=INFO
-```
-
-### Running with Uvicorn
-
-```bash
-# Basic
-uvicorn api.main:app --host 0.0.0.0 --port 8000
-
-# Production with workers
-uvicorn api.main:app \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --workers 4 \
-  --log-level info \
-  --access-log
-```
-
-### Systemd Service
-
-Create `/etc/systemd/system/practorflow-api.service`:
-
-```ini
-[Unit]
-Description=PractorFlow API Service
-After=network.target
-
-[Service]
-Type=simple
-User=practorflow
-WorkingDirectory=/opt/practorflow
-Environment="PATH=/opt/practorflow/venv/bin"
-ExecStart=/opt/practorflow/venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 4
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-```bash
-sudo systemctl enable practorflow-api
-sudo systemctl start practorflow-api
-sudo systemctl status practorflow-api
-```
-
-### Docker Deployment
-
-**Dockerfile:**
-```dockerfile
-FROM python:3.10-slim
-
-WORKDIR /app
-
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application
-COPY . .
-RUN pip install -e . && pip install -e ./src/api
-
-# Expose port
-EXPOSE 8000
-
-# Run server
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-**docker-compose.yml:**
-```yaml
-version: '3.8'
-
-services:
-  practorflow-api:
-    build: .
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./config:/app/config
-      - ./data:/app/data
-      - ./models:/app/models
-    environment:
-      - AUTH_MODE=local
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - APP_SECRET=${APP_SECRET}
-    restart: unless-stopped
-```
-
-### Reverse Proxy (Nginx)
-
-```nginx
-server {
-    listen 80;
-    server_name api.example.com;
-
-    location / {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # SSE specific
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 86400s;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-    }
-}
-```
-
----
-
-## Development
-
-### Local Setup
-
-```bash
-# Clone repository
-git clone https://github.com/vbouzoukos/PractorFlow.git
-cd PractorFlow
-
-# Install in development mode
-pip install -e .
-pip install -e "./src/api[dev]"
-
-# Run with auto-reload
-practorflow-api-debug
-```
-
-### Running Tests
-
-```bash
-cd src/api
-
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=api --cov-report=html
-
-# Run specific test file
-pytest tests/test_auth.py -v
-```
-
-### Code Quality
-
-```bash
-# Format code
-black api/
-
-# Sort imports
-isort api/
-
-# Type checking
-mypy api/
-```
-
-### API Documentation
-
-Access interactive documentation:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-- **OpenAPI JSON**: http://localhost:8000/openapi.json
-
----
-
-## Troubleshooting
-
-### Authentication Issues
-
-**Problem:** `401 Unauthorized` errors
-
-**Solutions:**
-- Verify `AUTH_MODE` matches your configuration
-- Check token hasn't expired (`JWT_EXPIRATION_MINUTES`)
-- Ensure `Authorization: Bearer <token>` header is set
-- For OIDC, verify `identity_token` is valid and not expired
-
----
-
-### Token Generation Failed
-
-**Problem:** Cannot obtain JWT token
-
-**Solutions:**
-- **Local Mode**: Verify `APP_SECRET` in request matches config
-- **OIDC Mode**: Check `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`
-- Verify `JWT_SECRET_KEY` is set
-- Check logs for detailed error messages
-
----
-
-### SSE Stream Hangs
-
-**Problem:** Chat streaming stops or times out
-
-**Solutions:**
-- Check model is loaded: Look for "Model preloaded successfully" in logs
-- Verify sufficient GPU/CPU memory for model
-- Increase proxy timeout if using Nginx/Apache
-- Check firewall isn't blocking long-lived connections
-
----
-
-### Session Not Found
-
-**Problem:** `404 Session not found` errors
-
-**Solutions:**
-- Verify session was created with `GET /chat` or `GET /agent`
-- Check session hasn't been deleted
-- Ensure you're using correct `session_id` from creation response
-- Session IDs are user-specific - can't access other users' sessions
-
----
-
-### File Upload Errors
-
-**Problem:** File upload fails or documents not indexed
-
-**Solutions:**
-- Check file size doesn't exceed server limits
-- Verify file format is supported (PDF, DOCX, TXT, images)
-- Ensure ChromaDB is properly configured
-- Check logs for document processing errors
-
----
-
-### Model Loading Issues
-
-**Problem:** API starts but model fails to load
-
-**Solutions:**
-- Verify model path in `config/llm/options/model.env`
-- Check model file exists and is accessible
-- Ensure sufficient VRAM/RAM for model
-- Review `LLM_GPU_LAYERS` setting
-- Check logs for GGUF compatibility issues
-
----
-
-### OIDC Integration Issues
-
-**Problem:** OIDC token validation fails
-
-**Solutions:**
-- Verify `OIDC_ISSUER_URL` matches provider's issuer exactly
-- Check `OIDC_AUDIENCE` matches expected audience claim
-- Ensure provider's JWKS endpoint is accessible
-- Verify client credentials (`OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`)
-- Check provider-specific requirements (Keycloak, Auth0, etc.)
-
----
-
-### Background Cleanup Not Running
-
-**Problem:** Orphaned sessions accumulating
-
-**Solutions:**
-- Verify `CLEANUP_INTERVAL_MINUTES > 0`
-- Check logs for "Cleanup scheduler started" message
-- Ensure no exceptions during cleanup execution
-- Manual cleanup: Restart API server
-
----
-
-### High Memory Usage
-
-**Problem:** API consuming excessive memory
-
-**Solutions:**
-- Reduce `max_models` in model pool (currently hardcoded to 1)
-- Lower `LLM_N_CTX` (context window size)
-- Use quantized models (4-bit or 8-bit)
-- Increase `CLEANUP_INTERVAL_MINUTES` frequency
-- Monitor session and document counts
-
----
-
-### CORS Errors
-
-**Problem:** Browser blocks requests from frontend
-
-**Current Behavior:** API allows all origins (`allow_origins=["*"]`)
-
-**Solutions for Production:**
-- Modify `api/main.py` to restrict origins:
-```python
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://your-frontend.com"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 ```
