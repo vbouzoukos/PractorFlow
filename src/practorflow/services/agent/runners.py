@@ -133,6 +133,7 @@ async def _extract_persona(
     message_history: List[ModelMessage],
     model: LocalLLMModel,
     knowledge_store: KnowledgeStore,
+    tool_registry: ToolRegistry,
 ) -> Optional[str]:
     """
     Extract persona from conversation history using the agent.
@@ -141,6 +142,7 @@ async def _extract_persona(
         message_history: Conversation history in pydantic_ai format.
         model: LocalLLMModel instance.
         knowledge_store: Knowledge store for AgentDeps.
+        tool_registry: Tool registry for AgentDeps.
 
     Returns:
         Extracted persona string or None if no persona detected.
@@ -157,7 +159,7 @@ async def _extract_persona(
     try:
         async with agent.iter(
             _PERSONA_EXTRACTION_PROMPT,
-            deps=AgentDeps(knowledge_store=knowledge_store),
+            deps=AgentDeps(knowledge_store=knowledge_store, tool_registry=tool_registry),
             message_history=message_history,
         ) as agent_run:
             async for node in agent_run:
@@ -387,6 +389,7 @@ async def run_synthesizer(
     model_pool: ModelPool,
     model_config: LLMConfig,
     knowledge_store: KnowledgeStore,
+    tool_registry: ToolRegistry,
     user_instructions: Optional[str] = None,
 ) -> str:
     """
@@ -403,6 +406,7 @@ async def run_synthesizer(
         model_pool: Pool for acquiring LLM handles.
         model_config: Configuration for the LLM model.
         knowledge_store: Store for document search.
+        tool_registry: Tool registry for agent dependencies.
         user_instructions: Optional user instructions for response synthesis.
 
     Returns:
@@ -433,7 +437,7 @@ async def run_synthesizer(
         model = LocalLLMModel(runner)
 
         # Step 1: Extract persona from history
-        persona = await _extract_persona(prepared_history, model, knowledge_store)
+        persona = await _extract_persona(prepared_history, model, knowledge_store, tool_registry)
 
         # Step 2: Enhance prompt with persona if detected
         if persona:
@@ -449,7 +453,7 @@ async def run_synthesizer(
 
         async with agent.iter(
             prompt,
-            deps=AgentDeps(knowledge_store=knowledge_store),
+            deps=AgentDeps(knowledge_store=knowledge_store, tool_registry=tool_registry),
             message_history=prepared_history,
         ) as agent_run:
             async for node in agent_run:

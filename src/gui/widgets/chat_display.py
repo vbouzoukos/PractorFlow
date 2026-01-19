@@ -7,17 +7,17 @@ Supports message editing and truncation.
 """
 
 from PySide6.QtWidgets import (
-    QScrollArea,
+    QAbstractScrollArea,
     QWidget,
     QVBoxLayout,
     QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal, Slot, QTimer
 
 from gui.widgets.message_widget import MessageWidget
 
 
-class ChatDisplay(QScrollArea):
+class ChatDisplay(QAbstractScrollArea):
     """
     Scrollable chat message display.
     
@@ -42,14 +42,12 @@ class ChatDisplay(QScrollArea):
     
     def _setup_ui(self):
         """Initialize the user interface."""
-        self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
-        # Container widget
-        self._container = QWidget()
-        self.setWidget(self._container)
+        # Container widget as child of viewport
+        self._container = QWidget(self.viewport())
         
         # Layout for messages
         self._layout = QVBoxLayout(self._container)
@@ -60,8 +58,46 @@ class ChatDisplay(QScrollArea):
         # Add stretch at bottom to push messages to top
         self._layout.addStretch()
         
+        # Connect scrollbar
+        self.verticalScrollBar().valueChanged.connect(self._on_scroll)
+        
         # Connect message_added to scroll
         self.message_added.connect(self._scroll_to_bottom)
+
+        # set up scroll
+        vbar = self.verticalScrollBar()
+        vbar.setSingleStep(12)      # wheel step (pixels)
+        vbar.setPageStep(200)       # scrollbar click / PageUp-Down
+
+    def _on_scroll(self, value: int):
+        """Handle scrollbar value change."""
+        self._container.move(0, -value)
+    
+    def resizeEvent(self, event):
+        """Handle resize events."""
+        super().resizeEvent(event)
+        self._update_container_geometry()
+    
+    def _update_container_geometry(self):
+        """Update container size and scrollbar range."""
+        viewport_width = self.viewport().width()
+        viewport_height = self.viewport().height()
+        
+        # Set container width to viewport width
+        self._container.setFixedWidth(viewport_width)
+        
+        # Let container calculate its preferred height
+        content_height = self._container.sizeHint().height()
+        self._container.setMinimumHeight(max(content_height, viewport_height))
+        
+        # Update scrollbar
+        vbar = self.verticalScrollBar()
+        max_scroll = max(0, content_height - viewport_height)
+        vbar.setRange(0, max_scroll)
+        vbar.setPageStep(viewport_height)
+        
+        # Reposition container
+        self._container.move(0, -vbar.value())
     
     def focusNextPrevChild(self, next: bool) -> bool:
         """Prevent auto-scroll on focus change."""
@@ -114,6 +150,9 @@ class ChatDisplay(QScrollArea):
             count = self._layout.count()
             self._layout.insertWidget(count - 1, widget)
             
+            # Defer geometry update to allow layout to settle
+            QTimer.singleShot(0, self._update_container_geometry)
+            
             # Emit signal after message added
             self.message_added.emit()
         except Exception:
@@ -144,6 +183,9 @@ class ChatDisplay(QScrollArea):
             # Truncate the list
             self._messages = self._messages[:from_index]
             
+            # Update geometry
+            QTimer.singleShot(0, self._update_container_geometry)
+            
             return removed_count
         except Exception:
             return 0
@@ -161,6 +203,10 @@ class ChatDisplay(QScrollArea):
             
             last_message = self._messages[-1]
             last_message.append_content(text)
+            
+            # Update geometry and scroll
+            self._update_container_geometry()
+            self._scroll_to_bottom()
         except Exception:
             pass  # pragma: no cover
     
@@ -176,6 +222,9 @@ class ChatDisplay(QScrollArea):
             
             last_message = self._messages[-1]
             last_message.finalize()
+            
+            # Update geometry after content change
+            QTimer.singleShot(0, self._update_container_geometry)
         except Exception:
             pass  # pragma: no cover
     
@@ -187,6 +236,9 @@ class ChatDisplay(QScrollArea):
                 widget.deleteLater()
             
             self._messages.clear()
+            
+            # Update geometry
+            QTimer.singleShot(0, self._update_container_geometry)
         except Exception:
             self._messages = []
     
@@ -212,7 +264,7 @@ class ChatDisplay(QScrollArea):
     def _scroll_to_bottom(self):
         """Scroll to the bottom of the display."""
         try:
-            if self._messages:
-                self.ensureWidgetVisible(self._messages[-1])
+            vbar = self.verticalScrollBar()
+            vbar.setValue(vbar.maximum())
         except Exception:
             pass  # pragma: no cover

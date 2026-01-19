@@ -235,6 +235,7 @@ class AgentService:
                 model_pool=self._model_pool,
                 model_config=self._model_config,
                 knowledge_store=self._knowledge_store,
+                tool_registry=self._tool_registry,
                 user_instructions=self._user_instructions,
             )
             execution_result.synthesized_output = synthesized_output
