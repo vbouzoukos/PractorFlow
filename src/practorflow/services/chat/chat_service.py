@@ -53,25 +53,52 @@ class ChatDeps:
 # Chunk size for streaming
 _CHUNK_SIZE = 256
 
-# Prompt for persona extraction from conversation history
-_PERSONA_EXTRACTION_PROMPT = """Analyze the conversation history and identify if the user has requested a specific persona, character, tone, or role for the assistant to adopt.
+# Prompt for persona and instructions extraction from conversation history
+_CONTEXT_EXTRACTION_PROMPT = """Analyze the conversation history and extract TWO things:
 
-Look for patterns like:
-- "act as...", "be a...", "pretend you are...", "respond like..."
-- "you are a...", "play the role of..."
-- Requests for specific tones: formal, casual, humorous, serious, etc.
-- Character requests: pirate, teacher, expert, conspiracist, etc.
+1. PERSONA: Any requested persona, character, tone, or role for the assistant.
+   Look for patterns like:
+   - "act as...", "be a...", "pretend you are...", "respond like..."
+   - "you are a...", "play the role of..."
+   - Character requests: pirate, teacher, expert, conspiracist, etc.
 
-If a persona was requested, respond with ONLY the persona description in a single line.
-If NO persona was requested, respond with exactly: NONE
+2. INSTRUCTIONS: Any custom instructions the user has explicitly given.
+   Extract the EXACT user instructions as they were written - do not summarize or paraphrase.
+   Look for messages where the user gives explicit directives about how to respond.
+
+Respond in EXACTLY this format:
+PERSONA: <persona description or NONE>
+INSTRUCTIONS_START
+<exact user instructions copied verbatim, or NONE if no instructions found>
+INSTRUCTIONS_END
 
 Examples:
-- User said "act as a pirate" -> "pirate"
-- User said "be a conspiracy theorist" -> "conspiracy theorist"
-- User said "respond formally" -> "formal tone"
-- No persona requested -> "NONE"
 
-Respond with the persona or NONE, nothing else."""
+Example 1 - User said "act as a pirate":
+PERSONA: pirate
+INSTRUCTIONS_START
+NONE
+INSTRUCTIONS_END
+
+Example 2 - User said "You are a formal assistant. Always respond in bullet points and include references.":
+PERSONA: formal assistant
+INSTRUCTIONS_START
+Always respond in bullet points and include references.
+INSTRUCTIONS_END
+
+Example 3 - User said "Remember these rules: 1. Be concise 2. Use examples 3. Avoid jargon":
+PERSONA: NONE
+INSTRUCTIONS_START
+1. Be concise 2. Use examples 3. Avoid jargon
+INSTRUCTIONS_END
+
+Example 4 - No persona or instructions found:
+PERSONA: NONE
+INSTRUCTIONS_START
+NONE
+INSTRUCTIONS_END
+
+Extract and respond now."""
 
 # Base system instructions (always applied, not overridable by user)
 _SYSTEM_INSTRUCTIONS = """<system_rules>
@@ -173,20 +200,31 @@ If the user's question relates to these documents, call search_knowledge first.
 User message: {user_message}"""
 
 
-def _build_persona_enhanced_message(persona: str, user_message: str) -> str:
+def _build_persona_enhanced_message(persona: str, instructions: str, user_message: str) -> str:
     """
-    Build message with persona reminder injected.
+    Build message with persona and instructions reminder injected.
 
     Args:
-        persona: Extracted persona description.
+        persona: Extracted persona description (or None).
+        instructions: Extracted instructions (or None).
         user_message: Original or enhanced user message.
 
     Returns:
-        Message with persona reminder prepended.
+        Message with persona/instructions reminder prepended.
     """
-    return f"""[PERSONA ACTIVE: You are acting as "{persona}". Stay fully in character for your entire response. Do not break character with disclaimers or objective commentary.]
-
-{user_message}"""
+    parts = []
+    
+    if persona:
+        parts.append(f'PERSONA ACTIVE: You are acting as "{persona}". Stay fully in character for your entire response. Do not break character with disclaimers or objective commentary.')
+    
+    if instructions:
+        parts.append(f'USER INSTRUCTIONS: {instructions}')
+    
+    if parts:
+        context = "[" + " | ".join(parts) + "]"
+        return f"{context}\n\n{user_message}"
+    
+    return user_message
 
 
 class ChatService:
@@ -251,39 +289,39 @@ class ChatService:
 
         return session_id
 
-    async def _extract_persona(
+    async def _extract_context(
         self,
         message_history: List,
         model: LocalLLMModel,
-    ) -> Optional[str]:
+    ) -> tuple[Optional[str], Optional[str]]:
         """
-        Extract persona from conversation history using the agent.
+        Extract persona and instructions from conversation history using the agent.
 
         Args:
             message_history: Conversation history in pydantic_ai format.
             model: LocalLLMModel instance.
 
         Returns:
-            Extracted persona string or None if no persona detected.
+            Tuple of (persona, instructions) - either can be None if not detected.
         """
         if not message_history:
-            return None
+            return None, None
 
         agent = Agent(
             model=model,
             deps_type=ChatDeps,
-            system_prompt="You are a persona extraction assistant. Analyze conversation history and extract any requested persona.",
+            system_prompt="You are a context extraction assistant. Analyze conversation history and extract any requested persona and instructions.",
         )
 
         try:
             async with agent.iter(
-                _PERSONA_EXTRACTION_PROMPT,
+                _CONTEXT_EXTRACTION_PROMPT,
                 deps=ChatDeps(knowledge_store=self._knowledge_store),
                 message_history=message_history,
             ) as agent_run:
                 async for node in agent_run:
                     logger.debug(
-                        "[ChatService][PersonaExtract] node=%s",
+                        "[ChatService][ContextExtract] node=%s",
                         getattr(node, "name", type(node).__name__),
                     )
 
@@ -291,18 +329,39 @@ class ChatService:
                     result = agent_run.result.output or ""
                     result = result.strip()
 
-                    if result.upper() == "NONE" or not result:
-                        logger.debug("[ChatService] No persona detected in history")
-                        return None
+                    persona = None
+                    instructions = None
 
-                    logger.info(f"[ChatService] Extracted persona: {result}")
-                    return result
+                    # Parse persona
+                    for line in result.split("\n"):
+                        line = line.strip()
+                        if line.upper().startswith("PERSONA:"):
+                            value = line[8:].strip()
+                            if value.upper() != "NONE" and value:
+                                persona = value
+                            break
+
+                    # Parse instructions between markers
+                    if "INSTRUCTIONS_START" in result and "INSTRUCTIONS_END" in result:
+                        start_idx = result.find("INSTRUCTIONS_START") + len("INSTRUCTIONS_START")
+                        end_idx = result.find("INSTRUCTIONS_END")
+                        if start_idx < end_idx:
+                            instructions_text = result[start_idx:end_idx].strip()
+                            if instructions_text.upper() != "NONE" and instructions_text:
+                                instructions = instructions_text
+
+                    if persona:
+                        logger.info(f"[ChatService] Extracted persona: {persona}")
+                    if instructions:
+                        logger.info(f"[ChatService] Extracted instructions: {instructions[:100]}...")
+
+                    return persona, instructions
 
         except Exception as e:
-            logger.warning(f"[ChatService] Persona extraction failed: {e}")
-            return None
+            logger.warning(f"[ChatService] Context extraction failed: {e}")
+            return None, None
 
-        return None
+        return None, None
 
     async def chat_stream(
         self,
@@ -381,15 +440,15 @@ class ChatService:
 
             message_history = build_message_history(session)
 
-            # Step 1: Extract persona from history
-            persona = await self._extract_persona(message_history, model)
+            # Step 1: Extract persona and instructions from history
+            persona, instructions = await self._extract_context(message_history, model)
 
-            # Step 2: Enhance message with persona if detected
-            if persona:
+            # Step 2: Enhance message with persona/instructions if detected
+            if persona or instructions:
                 enhanced_message = _build_persona_enhanced_message(
-                    persona, enhanced_message
+                    persona, instructions, enhanced_message
                 )
-                logger.debug(f"[ChatService] Applied persona: {persona}")
+                logger.debug(f"[ChatService] Applied context - persona: {persona}, instructions: {instructions}")
 
             # Step 3: Generate response with full context
             agent = Agent(

@@ -60,25 +60,52 @@ logger = get_logger(
 )
 
 
-# Prompt for persona extraction from conversation history
-_PERSONA_EXTRACTION_PROMPT = """Analyze the conversation history and identify if the user has requested a specific persona, character, tone, or role for the assistant to adopt.
+# Prompt for persona and instructions extraction from conversation history
+_CONTEXT_EXTRACTION_PROMPT = """Analyze the conversation history and extract TWO things:
 
-Look for patterns like:
-- "act as...", "be a...", "pretend you are...", "respond like..."
-- "you are a...", "play the role of..."
-- Requests for specific tones: formal, casual, humorous, serious, etc.
-- Character requests: pirate, teacher, expert, conspiracist, etc.
+1. PERSONA: Any requested persona, character, tone, or role for the assistant.
+   Look for patterns like:
+   - "act as...", "be a...", "pretend you are...", "respond like..."
+   - "you are a...", "play the role of..."
+   - Character requests: pirate, teacher, expert, conspiracist, etc.
 
-If a persona was requested, respond with ONLY the persona description in a single line.
-If NO persona was requested, respond with exactly: NONE
+2. INSTRUCTIONS: Any custom instructions the user has explicitly given.
+   Extract the EXACT user instructions as they were written - do not summarize or paraphrase.
+   Look for messages where the user gives explicit directives about how to respond.
+
+Respond in EXACTLY this format:
+PERSONA: <persona description or NONE>
+INSTRUCTIONS_START
+<exact user instructions copied verbatim, or NONE if no instructions found>
+INSTRUCTIONS_END
 
 Examples:
-- User said "act as a pirate" -> "pirate"
-- User said "be a conspiracy theorist" -> "conspiracy theorist"
-- User said "respond formally" -> "formal tone"
-- No persona requested -> "NONE"
 
-Respond with the persona or NONE, nothing else."""
+Example 1 - User said "act as a pirate":
+PERSONA: pirate
+INSTRUCTIONS_START
+NONE
+INSTRUCTIONS_END
+
+Example 2 - User said "You are a formal assistant. Always respond in bullet points and include references.":
+PERSONA: formal assistant
+INSTRUCTIONS_START
+Always respond in bullet points and include references.
+INSTRUCTIONS_END
+
+Example 3 - User said "Remember these rules: 1. Be concise 2. Use examples 3. Avoid jargon":
+PERSONA: NONE
+INSTRUCTIONS_START
+1. Be concise 2. Use examples 3. Avoid jargon
+INSTRUCTIONS_END
+
+Example 4 - No persona or instructions found:
+PERSONA: NONE
+INSTRUCTIONS_START
+NONE
+INSTRUCTIONS_END
+
+Extract and respond now."""
 
 
 async def _prepare_history(
@@ -129,14 +156,14 @@ async def _prepare_history(
     return prepared.messages
 
 
-async def _extract_persona(
+async def _extract_context(
     message_history: List[ModelMessage],
     model: LocalLLMModel,
     knowledge_store: KnowledgeStore,
     tool_registry: ToolRegistry,
-) -> Optional[str]:
+) -> tuple[Optional[str], Optional[str]]:
     """
-    Extract persona from conversation history using the agent.
+    Extract persona and instructions from conversation history using the agent.
 
     Args:
         message_history: Conversation history in pydantic_ai format.
@@ -145,26 +172,26 @@ async def _extract_persona(
         tool_registry: Tool registry for AgentDeps.
 
     Returns:
-        Extracted persona string or None if no persona detected.
+        Tuple of (persona, instructions) - either can be None if not detected.
     """
     if not message_history:
-        return None
+        return None, None
 
     agent = Agent(
         model=model,
         deps_type=AgentDeps,
-        system_prompt="You are a persona extraction assistant. Analyze conversation history and extract any requested persona.",
+        system_prompt="You are a context extraction assistant. Analyze conversation history and extract any requested persona and instructions.",
     )
 
     try:
         async with agent.iter(
-            _PERSONA_EXTRACTION_PROMPT,
+            _CONTEXT_EXTRACTION_PROMPT,
             deps=AgentDeps(knowledge_store=knowledge_store, tool_registry=tool_registry),
             message_history=message_history,
         ) as agent_run:
             async for node in agent_run:
                 logger.debug(
-                    "[Synthesizer][PersonaExtract] node=%s",
+                    "[Synthesizer][ContextExtract] node=%s",
                     getattr(node, "name", type(node).__name__),
                 )
 
@@ -172,34 +199,66 @@ async def _extract_persona(
                 result = agent_run.result.output or ""
                 result = result.strip()
 
-                if result.upper() == "NONE" or not result:
-                    logger.debug("[Synthesizer] No persona detected in history")
-                    return None
+                persona = None
+                instructions = None
 
-                logger.info(f"[Synthesizer] Extracted persona: {result}")
-                return result
+                # Parse persona
+                for line in result.split("\n"):
+                    line = line.strip()
+                    if line.upper().startswith("PERSONA:"):
+                        value = line[8:].strip()
+                        if value.upper() != "NONE" and value:
+                            persona = value
+                        break
+
+                # Parse instructions between markers
+                if "INSTRUCTIONS_START" in result and "INSTRUCTIONS_END" in result:
+                    start_idx = result.find("INSTRUCTIONS_START") + len("INSTRUCTIONS_START")
+                    end_idx = result.find("INSTRUCTIONS_END")
+                    if start_idx < end_idx:
+                        instructions_text = result[start_idx:end_idx].strip()
+                        if instructions_text.upper() != "NONE" and instructions_text:
+                            instructions = instructions_text
+
+                if persona:
+                    logger.info(f"[Synthesizer] Extracted persona: {persona}")
+                if instructions:
+                    logger.info(f"[Synthesizer] Extracted instructions: {instructions[:100]}...")
+
+                return persona, instructions
 
     except Exception as e:
-        logger.warning(f"[Synthesizer] Persona extraction failed: {e}")
-        return None
+        logger.warning(f"[Synthesizer] Context extraction failed: {e}")
+        return None, None
 
-    return None
+    return None, None
 
 
-def _build_persona_enhanced_prompt(persona: str, prompt: str) -> str:
+def _build_context_enhanced_prompt(persona: Optional[str], instructions: Optional[str], prompt: str) -> str:
     """
-    Build synthesis prompt with persona reminder injected.
+    Build synthesis prompt with persona and instructions reminder injected.
 
     Args:
-        persona: Extracted persona description.
+        persona: Extracted persona description (or None).
+        instructions: Extracted instructions (or None).
         prompt: Original synthesis prompt.
 
     Returns:
-        Prompt with persona reminder prepended.
+        Prompt with persona/instructions reminder prepended.
     """
-    return f"""[PERSONA ACTIVE: You are acting as "{persona}". Stay fully in character for your entire response. Do not break character with disclaimers or objective commentary.]
-
-{prompt}"""
+    parts = []
+    
+    if persona:
+        parts.append(f'PERSONA ACTIVE: You are acting as "{persona}". Stay fully in character for your entire response. Do not break character with disclaimers or objective commentary.')
+    
+    if instructions:
+        parts.append(f'USER INSTRUCTIONS: {instructions}')
+    
+    if parts:
+        context = "[" + " | ".join(parts) + "]"
+        return f"{context}\n\n{prompt}"
+    
+    return prompt
 
 
 async def run_planner(
@@ -436,13 +495,13 @@ async def run_synthesizer(
         runner = create_runner(handle, knowledge_store=knowledge_store)
         model = LocalLLMModel(runner)
 
-        # Step 1: Extract persona from history
-        persona = await _extract_persona(prepared_history, model, knowledge_store, tool_registry)
+        # Step 1: Extract persona and instructions from history
+        persona, instructions = await _extract_context(prepared_history, model, knowledge_store, tool_registry)
 
-        # Step 2: Enhance prompt with persona if detected
-        if persona:
-            prompt = _build_persona_enhanced_prompt(persona, prompt)
-            logger.debug(f"[Synthesizer] Applied persona: {persona}")
+        # Step 2: Enhance prompt with persona/instructions if detected
+        if persona or instructions:
+            prompt = _build_context_enhanced_prompt(persona, instructions, prompt)
+            logger.debug(f"[Synthesizer] Applied context - persona: {persona}, instructions: {instructions}")
 
         # Step 3: Generate synthesized response with full context
         agent = Agent(
