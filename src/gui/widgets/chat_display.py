@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QSizePolicy,
-    QApplication,
 )
 from PySide6.QtCore import Qt, Signal, Slot
 
@@ -28,9 +27,11 @@ class ChatDisplay(QScrollArea):
     
     Signals:
         message_edit_requested: Emitted when user edits a message (index, new_content).
+        message_added: Emitted when a new message is added.
     """
     
     message_edit_requested = Signal(int, str)  # index, new_content
+    message_added = Signal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -58,6 +59,9 @@ class ChatDisplay(QScrollArea):
         
         # Add stretch at bottom to push messages to top
         self._layout.addStretch()
+        
+        # Connect message_added to scroll
+        self.message_added.connect(self._scroll_to_bottom)
     
     def add_user_message(self, content: str):
         """
@@ -106,8 +110,8 @@ class ChatDisplay(QScrollArea):
             count = self._layout.count()
             self._layout.insertWidget(count - 1, widget)
             
-            # Scroll to bottom
-            self._scroll_to_bottom()
+            # Emit signal after message added
+            self.message_added.emit()
         except Exception:
             pass  # pragma: no cover
     
@@ -153,9 +157,6 @@ class ChatDisplay(QScrollArea):
             
             last_message = self._messages[-1]
             last_message.append_content(text)
-            
-            # Scroll to bottom
-            self._scroll_to_bottom()
         except Exception:
             pass  # pragma: no cover
     
@@ -203,13 +204,11 @@ class ChatDisplay(QScrollArea):
             return self._messages[index]
         return None
     
+    @Slot()
     def _scroll_to_bottom(self):
         """Scroll to the bottom of the display."""
         try:
-            # Process events to ensure layout is updated
-            QApplication.processEvents()
-            
-            scrollbar = self.verticalScrollBar()
-            scrollbar.setValue(scrollbar.maximum())
+            if self._messages:
+                self.ensureWidgetVisible(self._messages[-1])
         except Exception:
             pass  # pragma: no cover

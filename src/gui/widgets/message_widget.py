@@ -118,16 +118,11 @@ class MessageWidget(QFrame):
         self._content_display = QTextEdit()
         self._content_display.setReadOnly(True)
         self._content_display.setFrameShape(QFrame.NoFrame)
-        self._content_display.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._content_display.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._content_display.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._content_display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self._content_display.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         layout.addWidget(self._content_display)
-        
-        # Connect to resize content properly
-        self._content_display.document().contentsChanged.connect(
-            self._adjust_height
-        )
     
     def _get_role_display(self) -> str:
         """Get display name for role."""
@@ -183,22 +178,6 @@ class MessageWidget(QFrame):
             f"MessageWidget {{ background-color: {bg_color.name()}; border-radius: 8px; }}"
         )
     
-    def _adjust_height(self):
-        """Adjust widget height to fit content."""
-        try:
-            doc = self._content_display.document()
-            doc.setTextWidth(self._content_display.viewport().width())
-            
-            # Calculate required height
-            height = doc.size().height() + 10
-            min_height = 30
-            max_height = 500
-            
-            height = max(min_height, min(height, max_height))
-            self._content_display.setFixedHeight(int(height))
-        except Exception:
-            pass
-    
     def set_content(self, content: str):
         """
         Set message content.
@@ -214,8 +193,6 @@ class MessageWidget(QFrame):
         else:
             # Plain text for user messages and streaming
             self._content_display.setPlainText(content)
-        
-        self._adjust_height()
     
     def append_content(self, text: str):
         """
@@ -229,7 +206,6 @@ class MessageWidget(QFrame):
         
         # During streaming, use plain text for performance
         self._content_display.setPlainText(self._content)
-        self._adjust_height()
     
     def finalize(self):
         """
@@ -241,7 +217,6 @@ class MessageWidget(QFrame):
         
         if self._role == self.ROLE_ASSISTANT:
             self._content_display.setMarkdown(self._content)
-            self._adjust_height()
     
     def get_content(self) -> str:
         """Get the message content."""
@@ -332,8 +307,3 @@ class MessageWidget(QFrame):
         if not self._edit_mode:
             self._edit_btn.hide()
         super().leaveEvent(event)
-    
-    def resizeEvent(self, event):
-        """Handle resize to adjust content height."""
-        super().resizeEvent(event)
-        self._adjust_height()

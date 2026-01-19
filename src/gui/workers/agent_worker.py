@@ -66,11 +66,14 @@ class AgentTaskWorker(QThread):
                 job = self._client.get_job(job_id)
 
                 if job.status == "completed":
+                    # job.result is a dict from the API containing the full AgentTaskResult
+                    # Extract the relevant fields
+                    result_data = job.result or {}
                     self.task_completed.emit(
                         AgentTaskResult(
-                            success=True,
-                            output=job.result,
-                            error=None,
+                            success=result_data.get("success", True),
+                            output=result_data.get("output"),
+                            error=result_data.get("error"),
                         )
                     )
                     return
