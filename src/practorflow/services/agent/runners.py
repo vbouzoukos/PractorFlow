@@ -4,7 +4,7 @@ Agent runner functions for multi-agent pipeline.
 Contains the individual agent runners for each pipeline phase:
 - Planner: Decomposes tasks into structured plans
 - Executor: Executes steps using tools with LLM reasoning
-- Synthesizer: Creates final answer from tool outputs
+- Synthesizer: Creates final answer from tool outputs (with persona extraction)
 - Verifier: Validates results against success criteria
 
 Uses shared history library for context window management.
@@ -60,6 +60,27 @@ logger = get_logger(
 )
 
 
+# Prompt for persona extraction from conversation history
+_PERSONA_EXTRACTION_PROMPT = """Analyze the conversation history and identify if the user has requested a specific persona, character, tone, or role for the assistant to adopt.
+
+Look for patterns like:
+- "act as...", "be a...", "pretend you are...", "respond like..."
+- "you are a...", "play the role of..."
+- Requests for specific tones: formal, casual, humorous, serious, etc.
+- Character requests: pirate, teacher, expert, conspiracist, etc.
+
+If a persona was requested, respond with ONLY the persona description in a single line.
+If NO persona was requested, respond with exactly: NONE
+
+Examples:
+- User said "act as a pirate" -> "pirate"
+- User said "be a conspiracy theorist" -> "conspiracy theorist"
+- User said "respond formally" -> "formal tone"
+- No persona requested -> "NONE"
+
+Respond with the persona or NONE, nothing else."""
+
+
 async def _prepare_history(
     task: str,
     ctx: ExecutionContext,
@@ -106,6 +127,77 @@ async def _prepare_history(
         )
 
     return prepared.messages
+
+
+async def _extract_persona(
+    message_history: List[ModelMessage],
+    model: LocalLLMModel,
+    knowledge_store: KnowledgeStore,
+) -> Optional[str]:
+    """
+    Extract persona from conversation history using the agent.
+
+    Args:
+        message_history: Conversation history in pydantic_ai format.
+        model: LocalLLMModel instance.
+        knowledge_store: Knowledge store for AgentDeps.
+
+    Returns:
+        Extracted persona string or None if no persona detected.
+    """
+    if not message_history:
+        return None
+
+    agent = Agent(
+        model=model,
+        deps_type=AgentDeps,
+        system_prompt="You are a persona extraction assistant. Analyze conversation history and extract any requested persona.",
+    )
+
+    try:
+        async with agent.iter(
+            _PERSONA_EXTRACTION_PROMPT,
+            deps=AgentDeps(knowledge_store=knowledge_store),
+            message_history=message_history,
+        ) as agent_run:
+            async for node in agent_run:
+                logger.debug(
+                    "[Synthesizer][PersonaExtract] node=%s",
+                    getattr(node, "name", type(node).__name__),
+                )
+
+            if agent_run.result:
+                result = agent_run.result.output or ""
+                result = result.strip()
+
+                if result.upper() == "NONE" or not result:
+                    logger.debug("[Synthesizer] No persona detected in history")
+                    return None
+
+                logger.info(f"[Synthesizer] Extracted persona: {result}")
+                return result
+
+    except Exception as e:
+        logger.warning(f"[Synthesizer] Persona extraction failed: {e}")
+        return None
+
+    return None
+
+
+def _build_persona_enhanced_prompt(persona: str, prompt: str) -> str:
+    """
+    Build synthesis prompt with persona reminder injected.
+
+    Args:
+        persona: Extracted persona description.
+        prompt: Original synthesis prompt.
+
+    Returns:
+        Prompt with persona reminder prepended.
+    """
+    return f"""[PERSONA ACTIVE: You are acting as "{persona}". Stay fully in character for your entire response. Do not break character with disclaimers or objective commentary.]
+
+{prompt}"""
 
 
 async def run_planner(
@@ -300,6 +392,10 @@ async def run_synthesizer(
     """
     Run the Synthesizer agent to create final answer from tool outputs.
 
+    Uses two-step agentic approach:
+    1. Extract persona from conversation history
+    2. Generate synthesized response with persona context
+
     Args:
         plan: The original plan with user's task.
         execution_result: Results from execution with tool outputs.
@@ -336,16 +432,38 @@ async def run_synthesizer(
         runner = create_runner(handle, knowledge_store=knowledge_store)
         model = LocalLLMModel(runner)
 
+        # Step 1: Extract persona from history
+        persona = await _extract_persona(prepared_history, model, knowledge_store)
+
+        # Step 2: Enhance prompt with persona if detected
+        if persona:
+            prompt = _build_persona_enhanced_prompt(persona, prompt)
+            logger.debug(f"[Synthesizer] Applied persona: {persona}")
+
+        # Step 3: Generate synthesized response with full context
         agent = Agent(
             model=model,
             deps_type=AgentDeps,
             system_prompt=system_prompt,
         )
 
-        result = await agent.run(prompt, message_history=prepared_history)
-        synthesized = (
-            result.output if isinstance(result.output, str) else str(result.output)
-        )
+        async with agent.iter(
+            prompt,
+            deps=AgentDeps(knowledge_store=knowledge_store),
+            message_history=prepared_history,
+        ) as agent_run:
+            async for node in agent_run:
+                logger.debug(
+                    f"[Synthesizer] node={getattr(node, 'name', type(node).__name__)}"
+                )
+
+            synthesized = ""
+            if agent_run.result:
+                synthesized = (
+                    agent_run.result.output
+                    if isinstance(agent_run.result.output, str)
+                    else str(agent_run.result.output)
+                )
 
     logger.info(f"[Synthesizer] Synthesis complete: {len(synthesized)} chars")
     return synthesized

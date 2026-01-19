@@ -63,6 +63,10 @@ class ChatDisplay(QScrollArea):
         # Connect message_added to scroll
         self.message_added.connect(self._scroll_to_bottom)
     
+    def focusNextPrevChild(self, next: bool) -> bool:
+        """Prevent auto-scroll on focus change."""
+        return False
+    
     def add_user_message(self, content: str):
         """
         Add a user message to the display.

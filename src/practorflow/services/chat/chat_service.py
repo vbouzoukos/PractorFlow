@@ -7,10 +7,11 @@ Provides a high-level service for chat workflows with:
 - Knowledge search with session document scope (priority)
 - Web search fallback
 - Streaming response generation via agentic loop
+- Persona extraction and persistence across conversation
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import AsyncIterator, List, Optional, Set
 
 from pydantic_ai import Agent, RunContext
@@ -39,29 +40,51 @@ class ChatDeps:
     """
     Dependencies for chat agent tools.
 
-    Contains knowledge store, document scope, and web search tool
-    for use by registered agent tools.
+    Contains knowledge store, document scope, web search tool,
+    and extracted persona for use by registered agent tools.
     """
 
     knowledge_store: KnowledgeStore
     document_scope: Optional[Set[str]] = None
     web_search_tool: Optional[DuckDuckGoSearchTool] = None
+    persona: Optional[str] = field(default=None)
 
 
 # Chunk size for streaming
 _CHUNK_SIZE = 256
+
+# Prompt for persona extraction from conversation history
+_PERSONA_EXTRACTION_PROMPT = """Analyze the conversation history and identify if the user has requested a specific persona, character, tone, or role for the assistant to adopt.
+
+Look for patterns like:
+- "act as...", "be a...", "pretend you are...", "respond like..."
+- "you are a...", "play the role of..."
+- Requests for specific tones: formal, casual, humorous, serious, etc.
+- Character requests: pirate, teacher, expert, conspiracist, etc.
+
+If a persona was requested, respond with ONLY the persona description in a single line.
+If NO persona was requested, respond with exactly: NONE
+
+Examples:
+- User said "act as a pirate" -> "pirate"
+- User said "be a conspiracy theorist" -> "conspiracy theorist"
+- User said "respond formally" -> "formal tone"
+- No persona requested -> "NONE"
+
+Respond with the persona or NONE, nothing else."""
 
 # Base system instructions (always applied, not overridable by user)
 _SYSTEM_INSTRUCTIONS = """<system_rules>
 You are a helpful AI assistant operating within a retrieval-augmented environment with access to tools.
 
 PERSONA AND STYLE ADAPTATION:
-- If the user requests a specific persona, tone, style, or character in their messages, you MUST adopt and fully commit to it throughout the conversation.
+- BEFORE responding, scan the conversation history for any user requests to adopt a specific persona, tone, style, or character (e.g., "act as...", "be a...", "pretend you are...", "respond like...").
+- If a persona was requested earlier in the conversation, you MUST maintain it for ALL subsequent responses until the user explicitly changes or cancels it.
 - User-defined persona preferences (e.g., "be formal", "act as a pirate", "respond like a teacher", "act as a conspiracist") take priority over default assistant behavior.
 - When adopting a persona, DO NOT break character with disclaimers, caveats, objective commentary, or "balanced perspectives" unless the user explicitly asks for them.
 - Stay fully in character. Do not add phrases like "It's important to note...", "From a scientific standpoint...", or "However, in reality..." when roleplaying a persona.
-- The persona applies to your entire response, not just the opening. Do not revert to default behavior mid-response.
-- If no persona is specified, default to being helpful, clear, and professional.
+- The persona applies to your ENTIRE response, not just the opening. Do not revert to default behavior mid-response.
+- If no persona is specified anywhere in the conversation history, default to being helpful, clear, and professional.
 
 CRITICAL TOOL USAGE RULES - YOU MUST FOLLOW THESE:
 1. You have access to two tools: search_knowledge and search_web.
@@ -150,6 +173,22 @@ If the user's question relates to these documents, call search_knowledge first.
 User message: {user_message}"""
 
 
+def _build_persona_enhanced_message(persona: str, user_message: str) -> str:
+    """
+    Build message with persona reminder injected.
+
+    Args:
+        persona: Extracted persona description.
+        user_message: Original or enhanced user message.
+
+    Returns:
+        Message with persona reminder prepended.
+    """
+    return f"""[PERSONA ACTIVE: You are acting as "{persona}". Stay fully in character for your entire response. Do not break character with disclaimers or objective commentary.]
+
+{user_message}"""
+
+
 class ChatService:
     """
     High-level chat service with RAG and tool support.
@@ -160,6 +199,7 @@ class ChatService:
     - Knowledge search scoped to session documents
     - Web search for current information
     - Streaming response generation via agentic loop
+    - Persona extraction and persistence
     """
 
     def __init__(
@@ -211,6 +251,59 @@ class ChatService:
 
         return session_id
 
+    async def _extract_persona(
+        self,
+        message_history: List,
+        model: LocalLLMModel,
+    ) -> Optional[str]:
+        """
+        Extract persona from conversation history using the agent.
+
+        Args:
+            message_history: Conversation history in pydantic_ai format.
+            model: LocalLLMModel instance.
+
+        Returns:
+            Extracted persona string or None if no persona detected.
+        """
+        if not message_history:
+            return None
+
+        agent = Agent(
+            model=model,
+            deps_type=ChatDeps,
+            system_prompt="You are a persona extraction assistant. Analyze conversation history and extract any requested persona.",
+        )
+
+        try:
+            async with agent.iter(
+                _PERSONA_EXTRACTION_PROMPT,
+                deps=ChatDeps(knowledge_store=self._knowledge_store),
+                message_history=message_history,
+            ) as agent_run:
+                async for node in agent_run:
+                    logger.debug(
+                        "[ChatService][PersonaExtract] node=%s",
+                        getattr(node, "name", type(node).__name__),
+                    )
+
+                if agent_run.result:
+                    result = agent_run.result.output or ""
+                    result = result.strip()
+
+                    if result.upper() == "NONE" or not result:
+                        logger.debug("[ChatService] No persona detected in history")
+                        return None
+
+                    logger.info(f"[ChatService] Extracted persona: {result}")
+                    return result
+
+        except Exception as e:
+            logger.warning(f"[ChatService] Persona extraction failed: {e}")
+            return None
+
+        return None
+
     async def chat_stream(
         self,
         session_id: str,
@@ -224,6 +317,10 @@ class ChatService:
         Processes the user message, optionally indexes uploaded files,
         and streams the assistant's response using the configured tools.
         Creates the session on first call if it doesn't exist.
+
+        Uses two-step agentic approach:
+        1. Extract persona from conversation history
+        2. Generate response with persona context
 
         Args:
             session_id: Session ID for the chat.
@@ -260,7 +357,7 @@ class ChatService:
 
         document_scope = self._get_document_scope(session)
 
-        # build message
+        # build base message
         if new_file_names:
             enhanced_message = _build_file_attachment_message(new_file_names, message)
         elif session.documents:
@@ -282,6 +379,19 @@ class ChatService:
             runner = create_runner(handle, knowledge_store=self._knowledge_store)
             model = LocalLLMModel(runner, system_prompt=session.instructions)
 
+            message_history = build_message_history(session)
+
+            # Step 1: Extract persona from history
+            persona = await self._extract_persona(message_history, model)
+
+            # Step 2: Enhance message with persona if detected
+            if persona:
+                enhanced_message = _build_persona_enhanced_message(
+                    persona, enhanced_message
+                )
+                logger.debug(f"[ChatService] Applied persona: {persona}")
+
+            # Step 3: Generate response with full context
             agent = Agent(
                 model=model,
                 deps_type=ChatDeps,
@@ -293,9 +403,8 @@ class ChatService:
                 knowledge_store=self._knowledge_store,
                 document_scope=document_scope,
                 web_search_tool=self._web_search_tool,
+                persona=persona,
             )
-
-            message_history = build_message_history(session)
 
             async with agent.iter(
                 enhanced_message,
@@ -314,7 +423,6 @@ class ChatService:
                     total_output_tokens = usage.output_tokens
                     final_text = agent_run.result.output or ""
 
-
         # stream final result
         if final_text:
             # generate session title if not already set
@@ -327,7 +435,7 @@ class ChatService:
                 )
 
             self._session_store.save(session)
-            
+
             for i in range(0, len(final_text), _CHUNK_SIZE):
                 yield StreamChunk(
                     text=final_text[i : i + _CHUNK_SIZE],
@@ -488,4 +596,3 @@ class ChatService:
             except Exception as e:
                 logger.error(f"[ChatService] Web search error: {e}")
                 return ""
-
