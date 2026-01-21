@@ -1,18 +1,34 @@
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Create module-level mocks before any imports
+_mock_db_instance = MagicMock()
+_mock_table_instance = MagicMock()
+_mock_db_instance.table.return_value = _mock_table_instance
+
+_tinydb_patcher = patch("practorflow.session_store.persist_session_history.TinyDB", return_value=_mock_db_instance)
+_tinydb_patcher.start()
+
+# Now safe to import after mocks are in place
 from practorflow.session_store.persist_session_history import PersistSessionHistory
 from practorflow.llm.base.session import Session, Message
 
 
+@pytest.fixture(autouse=True)
+def reset_mocks():
+    """Reset mocks between tests."""
+    _mock_db_instance.reset_mock()
+    _mock_table_instance.reset_mock()
+    _mock_db_instance.table.return_value = _mock_table_instance
+    yield
+
+
 @pytest.fixture
 def mock_tinydb():
-    db = MagicMock()
-    table = MagicMock()
-    db.table.return_value = table
-    return db, table
+    """Provide mock instances for tests."""
+    return _mock_db_instance, _mock_table_instance
 
 
 def _session_dict(session_id="s1", user=None, updated_at=None):
@@ -34,6 +50,7 @@ def _session_dict(session_id="s1", user=None, updated_at=None):
         "created_at": datetime.now().isoformat(),
         "updated_at": (updated_at or datetime.now()).isoformat(),
         "user": user,
+        "title": None,
     }
 
 
@@ -114,13 +131,12 @@ def test_deserialize_invalid_datetime_fallback(mock_tinydb):
     assert isinstance(session.messages[0], Message)
 
 
-def test_close_owned_db_closes_connection():
-    db = MagicMock()
-    history = PersistSessionHistory(db=db)
-
-    history._owns_db = True
+def test_close_owned_db_closes_connection(mock_tinydb):
+    db, _ = mock_tinydb
+    
+    history = PersistSessionHistory(db_path="test.json")
     history.close()
-
+    
     db.close.assert_called_once()
 
 
@@ -141,7 +157,6 @@ def test_sessions_by_title_relevance_and_user_filtering(mock_tinydb):
 
     now = datetime.now()
 
-    # Starts with search term (more relevant, older)
     s1 = {
         "session_id": "s1",
         "title": "Chat with assistant",
@@ -154,7 +169,6 @@ def test_sessions_by_title_relevance_and_user_filtering(mock_tinydb):
         "updated_at": (now - timedelta(minutes=5)).isoformat(),
     }
 
-    # Contains search term (less relevant, newer)
     s2 = {
         "session_id": "s2",
         "title": "Previous chat history",
@@ -167,20 +181,6 @@ def test_sessions_by_title_relevance_and_user_filtering(mock_tinydb):
         "updated_at": now.isoformat(),
     }
 
-    # Different user (would be filtered out by TinyDB query)
-    s3 = {
-        "session_id": "s3",
-        "title": "Chat about testing",
-        "user": "bob",
-        "messages": [],
-        "instructions": None,
-        "documents": [],
-        "metadata": {},
-        "created_at": now.isoformat(),
-        "updated_at": now.isoformat(),
-    }
-
-    # TinyDB would only return rows matching the query (including user filter)
     table.search.return_value = [s1, s2]
 
     history = PersistSessionHistory(db=db)
@@ -188,4 +188,3 @@ def test_sessions_by_title_relevance_and_user_filtering(mock_tinydb):
     result = history.sessions_by_title("chat", user="alice")
 
     assert [s.session_id for s in result] == ["s1", "s2"]
-

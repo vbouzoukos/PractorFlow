@@ -1,30 +1,40 @@
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Create module-level mocks before any imports
+_mock_db_instance = MagicMock()
+_mock_table_instance = MagicMock()
+_mock_query_instance = MagicMock()
+
+_mock_db_instance.table.return_value = _mock_table_instance
+
+_tinydb_patcher = patch("practorflow.session_store.persist_session_store.TinyDB", return_value=_mock_db_instance)
+_query_patcher = patch("practorflow.session_store.persist_session_store.Query", return_value=_mock_query_instance)
+
+_tinydb_patcher.start()
+_query_patcher.start()
+
+# Now safe to import after mocks are in place
 from practorflow.session_store.persist_session_store import TinyDBSessionStore
 from practorflow.llm.base.session import Session, Message
 
 
+@pytest.fixture(autouse=True)
+def reset_mocks():
+    """Reset mocks between tests."""
+    _mock_db_instance.reset_mock()
+    _mock_table_instance.reset_mock()
+    _mock_query_instance.reset_mock()
+    _mock_db_instance.table.return_value = _mock_table_instance
+    yield
+
+
 @pytest.fixture
-def mock_tinydb(monkeypatch):
-    db = MagicMock()
-    table = MagicMock()
-    query = MagicMock()
-
-    db.table.return_value = table
-
-    monkeypatch.setattr(
-        "practorflow.session_store.persist_session_store.TinyDB",
-        MagicMock(return_value=db),
-    )
-    monkeypatch.setattr(
-        "practorflow.session_store.persist_session_store.Query",
-        MagicMock(return_value=query),
-    )
-
-    return db, table, query
+def mock_tinydb():
+    """Provide mock instances for tests."""
+    return _mock_db_instance, _mock_table_instance, _mock_query_instance
 
 
 def _make_session(session_id="s1"):
@@ -66,6 +76,7 @@ def test_get_returns_existing_session(mock_tinydb):
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat(),
         "user": None,
+        "title": None,
     }
 
     store = TinyDBSessionStore()
