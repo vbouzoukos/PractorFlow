@@ -93,6 +93,24 @@ For development with additional tools (pytest, black, mypy, etc.):
 pip install -e ".[dev]" ./src/api
 ```
 
+### GUI Desktop Client (practorflow-gui)
+
+Install the GUI Desktop Clientr as a separate package:
+
+```bash
+pip install -e ./src/gui
+```
+
+This automatically installs the core `practorflow` library as a dependency.
+
+#### Development Installation
+
+For development with additional tools (pytest, black, mypy, etc.):
+
+```bash
+pip install -e ".[dev]" ./src/api
+```
+
 ### Enabling Qwen3 and Mistral3 Support
 
 PractorFlow supports the latest Qwen3VL and Mistral3 models, which require a specialized build of llama-cpp-python.

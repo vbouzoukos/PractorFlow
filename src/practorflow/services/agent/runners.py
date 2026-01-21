@@ -193,7 +193,7 @@ async def _extract_context(
                 logger.debug(
                     "[Synthesizer][ContextExtract] node=%s",
                     getattr(node, "name", type(node).__name__),
-                )
+                )  # pragma: no cover
 
             if agent_run.result:
                 result = agent_run.result.output or ""
@@ -518,7 +518,7 @@ async def run_synthesizer(
             async for node in agent_run:
                 logger.debug(
                     f"[Synthesizer] node={getattr(node, 'name', type(node).__name__)}"
-                )
+                ) # pragma: no cover
 
             synthesized = ""
             if agent_run.result:

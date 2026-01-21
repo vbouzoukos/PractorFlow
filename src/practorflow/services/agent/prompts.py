@@ -367,3 +367,4 @@ def _format_execution_results(step_results: List[StepResult]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+

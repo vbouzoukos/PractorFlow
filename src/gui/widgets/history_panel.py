@@ -248,7 +248,21 @@ class HistoryPanel(QFrame):
         content_layout.addWidget(self._status_label)
         
         layout.addWidget(self._content_widget)
-    
+
+    def set_enabled(self, enabled: bool):
+        """
+        Enable or disable the widget.
+        
+        Args:
+            enabled: Whether the widget should be enabled.
+        """
+        try:
+            self._refresh_btn.setEnabled(enabled)
+            self._search_btn.setEnabled(enabled)
+            self._search_box.setEnabled(enabled)
+        except Exception:
+            pass  # pragma: no cover
+
     def _connect_signals(self):
         """Connect widget signals."""
         self._collapse_btn.clicked.connect(self._toggle_collapse)

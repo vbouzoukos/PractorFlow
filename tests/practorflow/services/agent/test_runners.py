@@ -3,6 +3,8 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from practorflow.services.agent.runners import (
+    _build_context_enhanced_prompt,
+    _extract_context,
     _prepare_history,
     run_planner,
     run_executor,
@@ -324,8 +326,13 @@ async def test_run_synthesizer_success():
     plan = MagicMock(plan_id="p1", task="t")
     execution = MagicMock(step_results=[])
 
+    agent_run = MagicMock()
+    agent_run.__aiter__.return_value = []
+    agent_run.result = MagicMock(output="final")
+
     agent = MagicMock()
-    agent.run = AsyncMock(return_value=MagicMock(output="final"))
+    agent.iter.return_value.__aenter__.return_value = agent_run
+    agent.iter.return_value.__aexit__.return_value = False
 
     with (
         patch(
@@ -334,6 +341,10 @@ async def test_run_synthesizer_success():
         ),
         patch("practorflow.services.agent.runners.Agent", return_value=agent),
         patch("practorflow.services.agent.runners.create_runner"),
+        patch(
+            "practorflow.services.agent.runners._extract_context",
+            AsyncMock(return_value=(None, None)),
+        ),
     ):
         output = await run_synthesizer(
             plan=plan,
@@ -342,9 +353,11 @@ async def test_run_synthesizer_success():
             model_pool=MagicMock(),
             model_config=MagicMock(n_ctx=100),
             knowledge_store=MagicMock(),
+            tool_registry=MagicMock(),
         )
 
     assert output == "final"
+
 
 @pytest.mark.asyncio
 async def test_run_synthesizer_with_instructions_success():
@@ -355,8 +368,13 @@ async def test_run_synthesizer_with_instructions_success():
     plan = MagicMock(plan_id="p1", task="t")
     execution = MagicMock(step_results=[])
 
+    agent_run = MagicMock()
+    agent_run.__aiter__.return_value = []
+    agent_run.result = MagicMock(output="I am helpful")
+
     agent = MagicMock()
-    agent.run = AsyncMock(return_value=MagicMock(output="I am helpful"))
+    agent.iter.return_value.__aenter__.return_value = agent_run
+    agent.iter.return_value.__aexit__.return_value = False
 
     with (
         patch(
@@ -365,6 +383,10 @@ async def test_run_synthesizer_with_instructions_success():
         ),
         patch("practorflow.services.agent.runners.Agent", return_value=agent),
         patch("practorflow.services.agent.runners.create_runner"),
+        patch(
+            "practorflow.services.agent.runners._extract_context",
+            AsyncMock(return_value=(None, None)),
+        ),
     ):
         output = await run_synthesizer(
             plan=plan,
@@ -373,10 +395,13 @@ async def test_run_synthesizer_with_instructions_success():
             model_pool=MagicMock(),
             model_config=MagicMock(n_ctx=100),
             knowledge_store=MagicMock(),
-            user_instructions="You are a helpful assistant"
+            tool_registry=MagicMock(),
+            user_instructions="You are a helpful assistant",
         )
 
     assert output == "I am helpful"
+
+
 # ------------------------
 # run_verifier
 # ------------------------
@@ -408,6 +433,7 @@ async def test_run_verifier_heuristic_fallback():
         )
 
     hv.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_run_verifier_success_path():
@@ -442,12 +468,8 @@ async def test_run_verifier_success_path():
             "practorflow.services.agent.runners.parse_json_from_response",
             return_value=valid_verification,
         ),
-        patch(
-            "practorflow.services.agent.runners.logger.warning"
-        ) as warning_logger,
-        patch(
-            "practorflow.services.agent.runners.logger.info"
-        ) as info_logger,
+        patch("practorflow.services.agent.runners.logger.warning") as warning_logger,
+        patch("practorflow.services.agent.runners.logger.info") as info_logger,
     ):
         result = await run_verifier(
             plan=plan,
@@ -461,6 +483,7 @@ async def test_run_verifier_success_path():
     warning_logger.assert_not_called()
     info_logger.assert_called_once()
 
+
 @pytest.mark.asyncio
 async def test_run_verifier_invalid_structure_uses_heuristic():
     from practorflow.services.agent.runners import run_verifier
@@ -473,7 +496,7 @@ async def test_run_verifier_invalid_structure_uses_heuristic():
     agent = MagicMock()
     agent.run = AsyncMock(
         return_value=MagicMock(
-            output={"verification_status": "success"}  # ❌ missing required fields
+            output={"verification_status": "success"}  # missing required fields
         )
     )
 
@@ -500,9 +523,7 @@ async def test_run_verifier_invalid_structure_uses_heuristic():
             "practorflow.services.agent.runners.heuristic_verification",
             return_value="heuristic-result",
         ) as heuristic,
-        patch(
-            "practorflow.services.agent.runners.logger.warning"
-        ) as warning_logger,
+        patch("practorflow.services.agent.runners.logger.warning") as warning_logger,
     ):
         result = await run_verifier(
             plan=plan,
@@ -515,3 +536,284 @@ async def test_run_verifier_invalid_structure_uses_heuristic():
     assert result == "heuristic-result"
     warning_logger.assert_called_once()
     heuristic.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_extract_context_no_history():
+    persona, instructions = await _extract_context(
+        message_history=[],
+        model=MagicMock(),
+        knowledge_store=MagicMock(),
+        tool_registry=MagicMock(),
+    )
+
+    assert persona is None
+    assert instructions is None
+
+
+@pytest.mark.asyncio
+async def test_extract_context_persona_only():
+    agent_run = MagicMock()
+    agent_run.result = MagicMock(
+        output="PERSONA: pirate\nINSTRUCTIONS_START\nNONE\nINSTRUCTIONS_END"
+    )
+    agent_run.__aiter__.return_value = []
+
+    agent = MagicMock()
+    agent.iter.return_value.__aenter__.return_value = agent_run
+    agent.iter.return_value.__aexit__.return_value = False
+
+    with patch("practorflow.services.agent.runners.Agent", return_value=agent):
+        persona, instructions = await _extract_context(
+            message_history=[MagicMock()],
+            model=MagicMock(),
+            knowledge_store=MagicMock(),
+            tool_registry=MagicMock(),
+        )
+
+    assert persona == "pirate"
+    assert instructions is None
+
+
+@pytest.mark.asyncio
+async def test_extract_context_instructions_only():
+    agent_run = MagicMock()
+    agent_run.result = MagicMock(
+        output="""
+PERSONA: NONE
+INSTRUCTIONS_START
+Always respond in haiku.
+INSTRUCTIONS_END
+"""
+    )
+    agent_run.__aiter__.return_value = []
+
+    agent = MagicMock()
+    agent.iter.return_value.__aenter__.return_value = agent_run
+    agent.iter.return_value.__aexit__.return_value = False
+
+    with patch("practorflow.services.agent.runners.Agent", return_value=agent):
+        persona, instructions = await _extract_context(
+            message_history=[MagicMock()],
+            model=MagicMock(),
+            knowledge_store=MagicMock(),
+            tool_registry=MagicMock(),
+        )
+
+    assert persona is None
+    assert instructions == "Always respond in haiku."
+
+
+@pytest.mark.asyncio
+async def test_extract_context_persona_and_instructions():
+    agent_run = MagicMock()
+    agent_run.result = MagicMock(
+        output="""
+PERSONA: formal assistant
+INSTRUCTIONS_START
+Use bullet points.
+INSTRUCTIONS_END
+"""
+    )
+    agent_run.__aiter__.return_value = []
+
+    agent = MagicMock()
+    agent.iter.return_value.__aenter__.return_value = agent_run
+    agent.iter.return_value.__aexit__.return_value = False
+
+    with patch("practorflow.services.agent.runners.Agent", return_value=agent):
+        persona, instructions = await _extract_context(
+            message_history=[MagicMock()],
+            model=MagicMock(),
+            knowledge_store=MagicMock(),
+            tool_registry=MagicMock(),
+        )
+
+    assert persona == "formal assistant"
+    assert instructions == "Use bullet points."
+
+
+@pytest.mark.asyncio
+async def test_extract_context_none_detected():
+    agent_run = MagicMock()
+    agent_run.result = MagicMock(
+        output="""
+PERSONA: NONE
+INSTRUCTIONS_START
+NONE
+INSTRUCTIONS_END
+"""
+    )
+    agent_run.__aiter__.return_value = []
+
+    agent = MagicMock()
+    agent.iter.return_value.__aenter__.return_value = agent_run
+    agent.iter.return_value.__aexit__.return_value = False
+
+    with patch("practorflow.services.agent.runners.Agent", return_value=agent):
+        persona, instructions = await _extract_context(
+            message_history=[MagicMock()],
+            model=MagicMock(),
+            knowledge_store=MagicMock(),
+            tool_registry=MagicMock(),
+        )
+
+    assert persona is None
+    assert instructions is None
+
+
+@pytest.mark.asyncio
+async def test_extract_context_exception_returns_none():
+    agent = MagicMock()
+    agent.iter.side_effect = RuntimeError("boom")
+
+    with patch("practorflow.services.agent.runners.Agent", return_value=agent):
+        persona, instructions = await _extract_context(
+            message_history=[MagicMock()],
+            model=MagicMock(),
+            knowledge_store=MagicMock(),
+            tool_registry=MagicMock(),
+        )
+
+    assert persona is None
+    assert instructions is None
+
+@pytest.mark.asyncio
+async def test_extract_context_no_result_falls_through_final_return():
+    agent_run = MagicMock()
+    agent_run.result = None  # 👈 critical: skips inner return
+    agent_run.__aiter__.return_value = []
+
+    agent = MagicMock()
+    agent.iter.return_value.__aenter__.return_value = agent_run
+    agent.iter.return_value.__aexit__.return_value = False
+
+    with patch("practorflow.services.agent.runners.Agent", return_value=agent):
+        persona, instructions = await _extract_context(
+            message_history=[MagicMock()], 
+            model=MagicMock(),
+            knowledge_store=MagicMock(),
+            tool_registry=MagicMock(),
+        )
+
+    assert persona is None
+    assert instructions is None
+
+def test_build_context_enhanced_prompt_no_persona_no_instructions():
+    prompt = "ORIGINAL PROMPT"
+
+    result = _build_context_enhanced_prompt(
+        persona=None,
+        instructions=None,
+        prompt=prompt,
+    )
+
+    # hits final `return prompt`
+    assert result == prompt
+
+
+def test_build_context_enhanced_prompt_persona_only():
+    prompt = "ORIGINAL PROMPT"
+
+    result = _build_context_enhanced_prompt(
+        persona="pirate",
+        instructions=None,
+        prompt=prompt,
+    )
+
+    assert result.startswith(
+        '[PERSONA ACTIVE: You are acting as "pirate".'
+    )
+    assert result.endswith(prompt)
+    assert "\n\n" in result
+
+
+def test_build_context_enhanced_prompt_instructions_only():
+    prompt = "ORIGINAL PROMPT"
+
+    result = _build_context_enhanced_prompt(
+        persona=None,
+        instructions="Always respond in haiku.",
+        prompt=prompt,
+    )
+
+    assert result.startswith(
+        "[USER INSTRUCTIONS: Always respond in haiku.]"
+    )
+    assert result.endswith(prompt)
+
+
+def test_build_context_enhanced_prompt_persona_and_instructions():
+    prompt = "ORIGINAL PROMPT"
+
+    result = _build_context_enhanced_prompt(
+        persona="formal assistant",
+        instructions="Use bullet points.",
+        prompt=prompt,
+    )
+
+    assert (
+        '[PERSONA ACTIVE: You are acting as "formal assistant".'
+        in result
+    )
+    assert "USER INSTRUCTIONS: Use bullet points." in result
+    assert " | " in result  # join path
+    assert result.endswith(prompt)
+
+@pytest.mark.asyncio
+async def test_run_synthesizer_applies_persona_and_instructions():
+    ctx = MagicMock()
+    ctx.has_history = True
+    ctx.message_history = [MagicMock()]
+
+    plan = MagicMock(plan_id="p1", task="do something")
+    execution = MagicMock(step_results=[])
+
+    # agent for final synthesis
+    agent_run = MagicMock()
+    agent_run.__aiter__.return_value = []
+    agent_run.result = MagicMock(output="final answer")
+
+    agent = MagicMock()
+    agent.iter.return_value.__aenter__.return_value = agent_run
+    agent.iter.return_value.__aexit__.return_value = False
+
+    handle = MagicMock()
+    handle.__aenter__.return_value = handle
+    handle.__aexit__.return_value = False
+
+    model_pool = MagicMock()
+    model_pool.acquire_context.return_value = handle
+
+    with (
+        patch(
+            "practorflow.services.agent.runners._prepare_history",
+            AsyncMock(return_value=[MagicMock()]),  # ensures prepared_history truthy
+        ),
+        patch(
+            "practorflow.services.agent.runners._extract_context",
+            AsyncMock(return_value=("pirate", "Use short sentences")),
+        ),
+        patch(
+            "practorflow.services.agent.runners._build_context_enhanced_prompt",
+            side_effect=lambda p, i, pr: f"ENHANCED\n{pr}",
+        ) as build_ctx,
+        patch("practorflow.services.agent.runners.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.create_runner"),
+        patch("practorflow.services.agent.runners.logger.debug") as debug_logger,
+    ):
+        result = await run_synthesizer(
+            plan=plan,
+            execution_result=execution,
+            ctx=ctx,
+            model_pool=model_pool,
+            model_config=MagicMock(n_ctx=100),
+            knowledge_store=MagicMock(),
+            tool_registry=MagicMock(),
+        )
+
+    # verifies uncovered lines
+    build_ctx.assert_called_once()
+    debug_logger.assert_any_call(
+        "[Synthesizer] Applied context - persona: pirate, instructions: Use short sentences"
+    )
+    assert result == "final answer"

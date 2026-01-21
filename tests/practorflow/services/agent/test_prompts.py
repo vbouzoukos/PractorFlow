@@ -2,6 +2,7 @@ from practorflow.services.agent.prompts import (
     _format_tools_for_prompt,
     build_planner_prompt,
     build_executor_prompt,
+    build_synthesis_prompt,
     build_verifier_prompt,
 )
 
@@ -189,8 +190,35 @@ def test_build_synthesis_prompt_no_tool_outputs():
         ],
     )
 
-    from practorflow.services.agent.prompts import build_synthesis_prompt
-
     prompt = build_synthesis_prompt(plan.task, execution)
 
     assert "No tool outputs available." in prompt
+
+def test_build_synthesis_prompt_with_multiple_tool_outputs():
+    plan = make_plan()
+
+    execution = make_execution_result(
+        plan,
+        step_results=[
+            StepResult(
+                step_id="step_1",
+                status=StepStatus.SUCCESS,
+                output="output one",
+                evidence=["tool:a"],
+                error=None,
+            ),
+            StepResult(
+                step_id="step_2",
+                status=StepStatus.SUCCESS,
+                output="output two",
+                evidence=["tool:b"],
+                error=None,
+            ),
+        ],
+    )
+
+    prompt = build_synthesis_prompt(plan.task, execution)
+
+    assert "output one" in prompt
+    assert "output two" in prompt
+    assert "\n\n---\n\n" in prompt

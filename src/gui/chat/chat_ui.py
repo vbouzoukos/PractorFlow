@@ -94,7 +94,8 @@ class ChatUI:
             
             # Disable input until connected
             self.input_widget.set_enabled(False)
-            
+            self.history_panel.set_enabled(False)           
+            self.documents_btn.setEnabled(False) 
             logger.debug("ChatUI setup complete")
             
         except Exception as e:
@@ -168,7 +169,9 @@ class ChatUI:
         """Update UI for connected/disconnected state."""
         self.connect_btn.setVisible(not connected)
         self.input_widget.set_enabled(connected)
-    
+        self.history_panel.set_enabled(connected)           
+        self.documents_btn.setEnabled(connected) 
+
     def set_busy_state(self, busy: bool):
         """Update UI for busy/idle state."""
         ui_state.generating = busy

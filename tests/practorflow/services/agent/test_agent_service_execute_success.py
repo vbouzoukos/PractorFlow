@@ -73,18 +73,6 @@ async def test_execute_task_success_with_file_indexing(
         "filename": "a.txt",
     }
 
-    synth_agent = MagicMock()
-    synth_agent.run = AsyncMock(
-        return_value=MagicMock(output="final synthesized answer")
-    )
-
-    verify_agent = MagicMock()
-    verify_agent.run = AsyncMock(
-        return_value=MagicMock(
-            output=make_verification_result(VerificationStatus.PASSED).model_dump()
-        )
-    )
-
     ctx = MagicMock(spec=ExecutionContext)
     ctx.has_history = True
     ctx.history_length = 1
@@ -92,6 +80,7 @@ async def test_execute_task_success_with_file_indexing(
     ctx.document_scope = None
     ctx.document_context = None
     ctx.message_history = []
+
     with (
         patch(
             "practorflow.services.agent.agent_service.build_execution_context",
@@ -106,12 +95,16 @@ async def test_execute_task_success_with_file_indexing(
             AsyncMock(return_value=execution),
         ),
         patch(
-            "practorflow.services.agent.runners.Agent",
-            side_effect=[synth_agent, verify_agent],
+            "practorflow.services.agent.agent_service.run_synthesizer",
+            AsyncMock(return_value="final synthesized answer"),
         ),
         patch(
-            "practorflow.services.agent.runners.create_runner",
-            return_value=MagicMock(),
+            "practorflow.services.agent.agent_service.run_verifier",
+            AsyncMock(
+                return_value=make_verification_result(
+                    VerificationStatus.PASSED
+                )
+            ),
         ),
     ):
         result = await service.execute_task(
@@ -123,6 +116,7 @@ async def test_execute_task_success_with_file_indexing(
 
     assert result.success is True
     assert result.output == "final synthesized answer"
+
 
 
 @pytest.mark.asyncio
@@ -137,16 +131,6 @@ async def test_execute_task_uses_existing_session(
     plan = make_plan()
     execution = make_execution_result(plan)
 
-    synth_agent = MagicMock()
-    synth_agent.run = AsyncMock(return_value=MagicMock(output="synth output"))
-
-    verify_agent = MagicMock()
-    verify_agent.run = AsyncMock(
-        return_value=MagicMock(
-            output=make_verification_result(VerificationStatus.PASSED).model_dump()
-        )
-    )
-
     with (
         patch(
             "practorflow.services.agent.agent_service.run_planner",
@@ -157,12 +141,16 @@ async def test_execute_task_uses_existing_session(
             AsyncMock(return_value=execution),
         ),
         patch(
-            "practorflow.services.agent.runners.Agent",
-            side_effect=[synth_agent, verify_agent],
+            "practorflow.services.agent.agent_service.run_synthesizer",
+            AsyncMock(return_value="synth output"),
         ),
         patch(
-            "practorflow.services.agent.runners.create_runner",
-            return_value=MagicMock(),
+            "practorflow.services.agent.agent_service.run_verifier",
+            AsyncMock(
+                return_value=make_verification_result(
+                    VerificationStatus.PASSED
+                )
+            ),
         ),
     ):
         result = await service.execute_task(
@@ -173,6 +161,7 @@ async def test_execute_task_uses_existing_session(
 
     assert result.success is True
     assert result.output == "synth output"
+
 
 
 @pytest.mark.asyncio

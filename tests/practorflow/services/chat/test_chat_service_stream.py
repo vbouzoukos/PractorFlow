@@ -8,9 +8,11 @@ Tests:
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
+from pydantic_ai import ModelRequest, UserPromptPart
 import pytest
 
-from practorflow.llm.base.session import Session
+from practorflow.llm.base.session import Message, Session
+from practorflow.services.chat.chat_service import _build_persona_enhanced_message
 from practorflow.services.dto.chat_file import ChatFile
 
 from tests.practorflow.common.fixtures import mock_knowledge_store
@@ -263,7 +265,6 @@ async def test_chat_stream_finish_reason(
 @pytest.mark.asyncio
 async def test_chat_stream_golden_path(
     chat_service,
-    mock_model_pool,
     mock_session_store,
 ):
     session_id = "session_test"
@@ -271,38 +272,77 @@ async def test_chat_stream_golden_path(
     message = "hello"
     final_output = "This is the final answer."
 
-    # session does not exist yet
-    mock_session_store.exists.return_value = False
+    # Create session with existing message history (for persona/instructions extraction)
+    existing_session = Session(
+        session_id=session_id,
+        instructions="Default instructions",
+        user=user,
+    )
+    existing_session.messages.append(Message(role="user", content="Act as a pirate captain. Always use nautical terms."))
+    existing_session.messages.append(Message(role="assistant", content="Aye aye! I be Captain Claude!"))
+
+    mock_session_store.exists.return_value = True
+    mock_session_store.get.return_value = existing_session
 
     # ------------------------------------------------------------------
-    # mock agent_run (async iterable)
+    # mock context extraction agent_run (returns persona and instructions)
     # ------------------------------------------------------------------
-    mock_agent_run = MagicMock()
-    mock_agent_run.__aiter__.return_value = [
-        MagicMock(name="EndNode")
-    ]
-    mock_agent_run.result = MagicMock(output=final_output)
-    mock_agent_run.usage.return_value = MagicMock(
+    context_extraction_output = """PERSONA: pirate captain
+INSTRUCTIONS_START
+Always use nautical terms.
+INSTRUCTIONS_END"""
+
+    mock_context_agent_run = MagicMock()
+    mock_context_agent_run.__aiter__.return_value = [MagicMock(name="EndNode")]
+    mock_context_agent_run.result = MagicMock(output=context_extraction_output)
+
+    mock_context_iter_cm = MagicMock()
+    mock_context_iter_cm.__aenter__.return_value = mock_context_agent_run
+    mock_context_iter_cm.__aexit__.return_value = False
+
+    # ------------------------------------------------------------------
+    # mock main chat agent_run
+    # ------------------------------------------------------------------
+    mock_main_agent_run = MagicMock()
+    mock_main_agent_run.__aiter__.return_value = [MagicMock(name="EndNode")]
+    mock_main_agent_run.result = MagicMock(output=final_output)
+    mock_main_agent_run.usage.return_value = MagicMock(
         input_tokens=10,
         output_tokens=5,
     )
 
-    # Agent.iter async context manager
-    mock_iter_cm = MagicMock()
-    mock_iter_cm.__aenter__.return_value = mock_agent_run
-    mock_iter_cm.__aexit__.return_value = False
+    mock_main_iter_cm = MagicMock()
+    mock_main_iter_cm.__aenter__.return_value = mock_main_agent_run
+    mock_main_iter_cm.__aexit__.return_value = False
+
+    # Track iter calls and capture messages
+    iter_call_count = [0]
+    captured_messages = []
+
+    def capture_iter(*args, **kwargs):
+        if args:
+            captured_messages.append(args[0])
+        iter_call_count[0] += 1
+        if iter_call_count[0] == 1:
+            return mock_context_iter_cm
+        else:
+            return mock_main_iter_cm
 
     # ------------------------------------------------------------------
     # run chat_stream
-    # patch create_runner to avoid llama execution
     # ------------------------------------------------------------------
     with patch(
         "practorflow.services.chat.chat_service.create_runner",
         return_value=MagicMock(),
     ), patch(
-        "practorflow.services.chat.chat_service.Agent.iter",
-        return_value=mock_iter_cm,
-    ):
+        "practorflow.services.chat.chat_service.LocalLLMModel",
+    ), patch(
+        "practorflow.services.chat.chat_service.Agent",
+    ) as mock_agent_class:
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.iter.side_effect = capture_iter
+        mock_agent_class.return_value = mock_agent_instance
+
         chunks = []
         async for chunk in chat_service.chat_stream(
             session_id=session_id,
@@ -329,3 +369,129 @@ async def test_chat_stream_golden_path(
 
     assert saved_session.messages[-1].role == "assistant"
     assert saved_session.messages[-1].content == final_output
+
+    # Verify Agent was called twice (context extraction + main chat)
+    assert mock_agent_class.call_count == 2
+
+    # Verify persona and instructions were applied to enhanced message
+    assert len(captured_messages) == 2
+    main_chat_message = captured_messages[1]
+    assert 'PERSONA ACTIVE: You are acting as "pirate captain"' in main_chat_message
+    assert "USER INSTRUCTIONS: Always use nautical terms." in main_chat_message
+    assert message in main_chat_message
+
+@pytest.mark.asyncio
+async def test_chat_stream_context_extraction_exception(
+    chat_service,
+    mock_session_store,
+):
+    """Test chat_stream continues when context extraction raises exception."""
+    session_id = "session_exception"
+    user = "test-user"
+    message = "hello"
+    final_output = "Response without persona."
+
+    existing_session = Session(
+        session_id=session_id,
+        instructions="Default instructions",
+        user=user,
+    )
+    existing_session.messages.append(Message(role="user", content="Some previous message"))
+    existing_session.messages.append(Message(role="assistant", content="Some response"))
+
+    mock_session_store.exists.return_value = True
+    mock_session_store.get.return_value = existing_session
+
+    mock_context_iter_cm = MagicMock()
+    mock_context_iter_cm.__aenter__.side_effect = Exception("Context extraction failed")
+    mock_context_iter_cm.__aexit__.return_value = False
+
+    mock_main_agent_run = MagicMock()
+    mock_main_agent_run.__aiter__.return_value = [MagicMock(name="EndNode")]
+    mock_main_agent_run.result = MagicMock(output=final_output)
+    mock_main_agent_run.usage.return_value = MagicMock(
+        input_tokens=10,
+        output_tokens=5,
+    )
+
+    mock_main_iter_cm = MagicMock()
+    mock_main_iter_cm.__aenter__.return_value = mock_main_agent_run
+    mock_main_iter_cm.__aexit__.return_value = False
+
+    iter_call_count = [0]
+    captured_messages = []
+
+    def capture_iter(*args, **kwargs):
+        if args:
+            captured_messages.append(args[0])
+        iter_call_count[0] += 1
+        if iter_call_count[0] == 1:
+            return mock_context_iter_cm
+        else:
+            return mock_main_iter_cm
+
+    with patch(
+        "practorflow.services.chat.chat_service.create_runner",
+        return_value=MagicMock(),
+    ), patch(
+        "practorflow.services.chat.chat_service.LocalLLMModel",
+    ), patch(
+        "practorflow.services.chat.chat_service.Agent",
+    ) as mock_agent_class:
+        mock_agent_instance = MagicMock()
+        mock_agent_instance.iter.side_effect = capture_iter
+        mock_agent_class.return_value = mock_agent_instance
+
+        chunks = []
+        async for chunk in chat_service.chat_stream(
+            session_id=session_id,
+            message=message,
+            user=user,
+        ):
+            chunks.append(chunk)
+
+    streamed_text = "".join(c.text for c in chunks if c.text)
+    assert streamed_text == final_output
+
+    final_chunk = chunks[-1]
+    assert final_chunk.finished is True
+
+    main_chat_message = captured_messages[1]
+    assert "PERSONA ACTIVE:" not in main_chat_message
+    assert "USER INSTRUCTIONS:" not in main_chat_message
+    assert main_chat_message == message
+
+
+def test_build_persona_enhanced_message_no_persona_no_instructions():
+    """Test _build_persona_enhanced_message returns original message when no persona or instructions."""
+
+    user_message = "hello"
+    result = _build_persona_enhanced_message(None, None, user_message)
+
+    assert result == user_message
+
+@pytest.mark.asyncio
+async def test_extract_context_no_result(
+    chat_service,
+):
+    """Test _extract_context returns None, None when agent_run.result is None."""
+
+    mock_model = MagicMock()
+
+    message_history = [ModelRequest(parts=[UserPromptPart(content="test")])]
+
+    mock_agent_run = MagicMock()
+    mock_agent_run.__aiter__.return_value = []
+    mock_agent_run.result = None
+
+    mock_iter_cm = MagicMock()
+    mock_iter_cm.__aenter__.return_value = mock_agent_run
+    mock_iter_cm.__aexit__.return_value = False
+
+    with patch("practorflow.services.chat.chat_service.Agent") as mock_agent_class:
+        mock_agent_class.return_value.iter.return_value = mock_iter_cm
+
+        persona, instructions = await chat_service._extract_context(message_history, mock_model)
+
+    assert persona is None
+    assert instructions is None
