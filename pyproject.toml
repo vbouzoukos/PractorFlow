@@ -90,6 +90,18 @@ warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
 
+[tool.coverage.run]
+omit = [
+  "src/examples/**",
+  "src/gui/**",
+]
+
+[tool.coverage.report]
+omit = [
+  "src/examples/**",
+  "src/gui/**",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "tests"]
