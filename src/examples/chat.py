@@ -16,6 +16,16 @@ import os
 from dataclasses import dataclass
 from typing import BinaryIO, List, Optional, Tuple
 
+from pathlib import Path
+# Detect config path based on execution context
+if (Path.cwd() / "config" / "llm" / "options").exists():
+    _config_path = "config/llm/options"  # Running from project root
+else:
+    _config_path = "../config/llm/options"  # Running from src/
+
+from practorflow.settings.app_settings import load_configuration
+load_configuration(config_path=_config_path)
+
 from practorflow.llm import ModelPool
 from practorflow.llm.knowledge.chroma_knowledge_store import ChromaKnowledgeStore
 from practorflow.services.chat import ChatService

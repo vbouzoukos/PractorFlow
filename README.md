@@ -617,7 +617,7 @@ When running examples or scripts from the `src/` directory:
 
 ```bash
 cd src
-python examples/chat.py
+python python -m examples.chat
 ```
 
 **Configuration paths** (with `../` to reach project root):
@@ -797,20 +797,19 @@ Comprehensive examples are provided in the `src/examples/` directory:
 Run examples:
 
 ```bash
-cd src
-
 # Basic examples
-python examples/llm.py
+python -m src.examples.llm
 
 # With document
-python examples/llm.py path/to/document.pdf
+python -m src.examples.llm path/to/document.pdf
 
 # Pydantic AI examples
-python examples/pyai.py
+python -m src.examples.pyai
 
 # Chat examples
-python examples/chat.py
+python -m src.examples.chat
 ```
+Note: You can run the examples from  src folder too ( in case you make the app work from src)
 
 ## 🗃️ Architecture
 

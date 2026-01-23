@@ -13,6 +13,16 @@ Demonstrates:
 import asyncio
 import sys
 
+from pathlib import Path
+# Detect config path based on execution context
+if (Path.cwd() / "config" / "llm" / "options").exists():
+    _config_path = "config/llm/options"  # Running from project root
+else:
+    _config_path = "../config/llm/options"  # Running from src/
+
+from practorflow.settings.app_settings import load_configuration
+load_configuration(config_path=_config_path)
+
 from practorflow.llm import  ModelPool, create_runner
 from practorflow.llm.knowledge.chroma_knowledge_store import ChromaKnowledgeStore
 from practorflow.settings.app_settings import appConfiguration
