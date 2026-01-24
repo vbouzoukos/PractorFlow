@@ -1,0 +1,117 @@
+import logging
+from logging.handlers import RotatingFileHandler
+import os
+import sys
+from typing import Optional
+
+from platformdirs import user_log_dir
+
+# App identifiers for platformdirs
+APP_NAME = "PractorFlow"
+APP_AUTHOR = "PractorFlow"
+
+# Base log directory from platformdirs
+LOG_BASE_DIR = user_log_dir(APP_NAME, APP_AUTHOR)
+
+# Cache for reusable loggers
+_logger_cache = {}
+
+# ANSI color codes for stdout logging
+_LEVEL_COLORS = {
+    logging.DEBUG: "\033[90m",      # Gray
+    logging.INFO: "\033[32m",       # Green
+    logging.WARNING: "\033[33m",    # Yellow
+    logging.ERROR: "\033[31m",      # Red
+    logging.CRITICAL: "\033[1;31m", # Bold Red
+}
+_RESET = "\033[0m"
+
+
+class ColorFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        color = _LEVEL_COLORS.get(record.levelno, "")
+        message = super().format(record)
+        return f"{color}{message}{_RESET}" if color else message
+
+
+def _normalize_level(level: str) -> int:
+    """
+    Normalize string log level to logging module level.
+    Defaults to NOTSET if invalid.
+    """
+    if not isinstance(level, str):
+        return logging.NOTSET
+    return logging._nameToLevel.get(level.upper(), logging.INFO)
+
+
+def get_logger(
+    logger_name: str,
+    log_file: Optional[str] = None,
+    level: str = "INFO",
+    max_bytes: int = 2 * 1024 * 1024,
+    backup_count: int = 2,
+    stdout: bool = True,
+) -> logging.Logger:
+    """
+    Create or retrieve a cached logger.
+
+    Stdout logging is enabled by default (cloud-friendly).
+    File logging uses platformdirs user log directory as base path.
+
+    Args:
+        logger_name (str): Unique name for the logger.
+        log_file (Optional[str]): Relative path to the log file (will be placed under platformdirs log dir).
+        level (str): Log level ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL").
+        max_bytes (int): Max log file size before rotation (default 2 MB).
+        backup_count (int): Number of rotated logs to keep (default 2).
+        stdout (bool): Enable logging to stdout (default True).
+
+    Returns:
+        logging.Logger: Configured and reusable logger instance.
+    """
+    log_level = _normalize_level(level)
+
+    if logger_name in _logger_cache:
+        logger = _logger_cache[logger_name]
+    else:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(log_level)
+        logger.propagate = False
+        _logger_cache[logger_name] = logger
+
+    base_format = "%(asctime)s - %(levelname)s - %(message)s"
+
+    # Stdout handler
+    if stdout:
+        has_stdout_handler = any(
+            isinstance(h, logging.StreamHandler) and h.stream is sys.stdout
+            for h in logger.handlers
+        )
+        if not has_stdout_handler:
+            stream_handler = logging.StreamHandler(sys.stdout)
+            stream_handler.setLevel(log_level)
+            stream_handler.setFormatter(ColorFormatter(base_format))
+            logger.addHandler(stream_handler)
+
+    # File handler
+    if log_file:
+        full_log_path = os.path.join(LOG_BASE_DIR, log_file)
+        os.makedirs(os.path.dirname(full_log_path) or ".", exist_ok=True)
+
+        has_file_handler = any(
+            isinstance(h, RotatingFileHandler) and h.baseFilename == os.path.abspath(full_log_path)
+            for h in logger.handlers
+        )
+        if not has_file_handler:
+            file_handler = RotatingFileHandler(
+                full_log_path,
+                mode="w",
+                maxBytes=max_bytes,
+                backupCount=backup_count,
+                encoding="utf-8",
+            )
+            file_handler.setLevel(log_level)
+            file_handler.setFormatter(logging.Formatter(base_format))
+            logger.addHandler(file_handler)
+
+    return logger

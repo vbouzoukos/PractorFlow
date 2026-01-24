@@ -188,3 +188,11 @@ cython_debug/
 /chroma_db
 /knowledge_db
 /samples
+/data/session
+/data
+data/session/session.json
+
+/data/session/session.json
+/config/api/secrets
+sessions.json
+/.VSCodeCounter

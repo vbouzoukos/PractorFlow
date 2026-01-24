@@ -227,6 +227,19 @@ serpapi
 # - Essential for building production agents that reason across documents
 pydantic_ai
 
+# =============================================================================
+# FastAPI Dependencies
+# =============================================================================
+# FastAPI framework for building APIs
+fastapi
+# ASGI server with standard extras (websockets, httptools, etc.)
+uvicorn[standard]
+# Required for Form and File/UploadFile handling in FastAPI
+python-multipart
+# =============================================================================
+# Session Store
+# =============================================================================
+tinydb
 # ======================================================================================
 # INSTALLATION NOTES
 # ======================================================================================

@@ -84,7 +84,7 @@ class BaseTool(ABC):
     @abstractmethod
     def name(self) -> str:
         """Unique tool name identifier."""
-        pass
+        pass  # pragma: no cover
     
     @property
     @abstractmethod
@@ -93,13 +93,13 @@ class BaseTool(ABC):
         Human-readable description of what the tool does.
         This is provided to the LLM to help it decide when to use the tool.
         """
-        pass
+        pass  # pragma: no cover
     
     @property
     @abstractmethod
     def parameters(self) -> List[ToolParameter]:
         """List of parameters the tool accepts."""
-        pass
+        pass  # pragma: no cover
     
     @abstractmethod
     def execute(self, **kwargs) -> ToolResult:
@@ -112,7 +112,7 @@ class BaseTool(ABC):
         Returns:
             ToolResult with success status and data or error
         """
-        pass
+        pass  # pragma: no cover
     
     def validate_parameters(self, **kwargs) -> Optional[str]:
         """

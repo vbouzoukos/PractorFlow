@@ -39,23 +39,22 @@ PractorFlow is a production-ready, self-hosted AI service designed for real busi
 
 ## 🚀 Installation
 
-### Option 1: Install as Package (Recommended)
+### Core Library (practorflow)
 
-Install PractorFlow as an editable package using `pyproject.toml`:
+#### Option 1: Install as Package
 
 ```bash
 # Clone the repository
 git clone https://github.com/vbouzoukos/PractorFlow.git
 cd PractorFlow
 
-# Install as editable package
-cd src/practorflow
+# Install the package
 pip install -e .
 ```
 
 This installs all dependencies defined in `pyproject.toml` and makes the `practorflow` package available system-wide.
 
-### Option 2: Install from Requirements
+#### Option 2: Install from Requirements
 
 ```bash
 # Clone the repository
@@ -68,13 +67,48 @@ pip install -r requirements.txt
 
 The requirements.txt includes llama-cpp-python with CUDA 12.1 support. If you need a different CUDA version or CPU-only installation, modify the llama-cpp-python line accordingly.
 
-### Development Installation
+#### Development Installation
 
 For development with additional tools (pytest, black, mypy, etc.):
 
 ```bash
-cd src/practorflow
-pip install -e ".[dev]"
+CMAKE_ARGS="-DGGML_OPENMP=OFF" pip install -e ".[dev]"
+```
+
+### API Server (practorflow-api)
+
+Install the FastAPI server as a separate package:
+
+```bash
+pip install -e ./src/api
+```
+
+This automatically installs the core `practorflow` library as a dependency.
+
+#### Development Installation
+
+For development with additional tools (pytest, black, mypy, etc.):
+
+```bash
+pip install -e ".[dev]" ./src/api
+```
+
+### GUI Desktop Client (practorflow-gui)
+
+Install the GUI Desktop Clientr as a separate package:
+
+```bash
+pip install -e ./src/gui
+```
+
+This automatically installs the core `practorflow` library as a dependency.
+
+#### Development Installation
+
+For development with additional tools (pytest, black, mypy, etc.):
+
+```bash
+pip install -e ".[dev]" ./src/api
 ```
 
 ### Enabling Qwen3 and Mistral3 Support
@@ -111,7 +145,52 @@ For Python 3.10 (CUDA 12.8, Linux/WSL2):
 llama-cpp-python @ https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.18-cu128-AVX2-linux-20251220/llama_cpp_python-0.3.18-cp310-cp310-linux_x86_64.whl
 ```
 
-**Option 2: Build from Source (Advanced)**
+**Option 2: Prebuilt Wheels with pyproject.toml**
+
+The standard `pip install .` installs llama-cpp-python from PyPI, which does **NOT** support Qwen3VL and Mistral3.
+
+You need to remove llama-cpp-python from pyproject.toml and install it separately:
+
+```bash
+# Step 1: Clone the repository
+git clone https://github.com/vbouzoukos/PractorFlow.git
+cd PractorFlow
+
+# Step 2: Edit pyproject.toml - remove "llama-cpp-python" from the dependencies list
+
+# Step 3: Install custom llama-cpp-python
+
+# For Python 3.12 (CUDA 12.8, Linux/WSL2):
+pip install https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.18-cu128-AVX2-linux-20251220/llama_cpp_python-0.3.18-cp312-cp312-linux_x86_64.whl
+
+# For Python 3.10 (CUDA 12.8, Linux/WSL2):
+pip install https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.18-cu128-AVX2-linux-20251220/llama_cpp_python-0.3.18-cp310-cp310-linux_x86_64.whl
+
+# Step 4: Install PractorFlow
+pip install .
+```
+
+**Build from Source with pyproject.toml:**
+
+```bash
+# Steps 1-2: Same as above (clone, remove "llama-cpp-python" from pyproject.toml)
+
+# Step 3: Build and install custom llama-cpp-python (replace '89' with your GPU compute capability)
+CMAKE_ARGS="-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89 -DCMAKE_CUDA_COMPILER=$(which nvcc)" \
+pip install git+https://github.com/JamePeng/llama-cpp-python.git --no-cache-dir
+
+# Step 4: Install PractorFlow
+pip install .
+```
+
+**If you already ran `pip install .` without Qwen3/Mistral3 support:**
+
+```bash
+pip uninstall llama-cpp-python
+pip install https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.18-cu128-AVX2-linux-20251220/llama_cpp_python-0.3.18-cp312-cp312-linux_x86_64.whl
+```
+
+**Option 3: Build from Source (Advanced)**
 
 If prebuilt wheels don't work for your system:
 
@@ -224,6 +303,8 @@ nvcc --version
 
 To revert to standard llama-cpp-python for other models:
 
+**For requirements.txt users:**
+
 ```bash
 # Edit requirements.txt - comment out custom wheel
 # Uncomment standard version:
@@ -231,6 +312,19 @@ llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/wh
 
 # Reinstall:
 pip install --force-reinstall -r requirements.txt
+```
+
+**For pyproject.toml users:**
+
+```bash
+# Uninstall custom wheel
+pip uninstall llama-cpp-python
+
+# Install standard version FIRST
+pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
+
+# Then reinstall PractorFlow (pip will skip llama-cpp-python since it's already installed)
+pip install .
 ```
 
 #### Additional Resources
@@ -245,7 +339,7 @@ pip install --force-reinstall -r requirements.txt
 
 ## ⚙️ Configuration
 
-PractorFlow uses environment variables for configuration, managed by `app_settings.py`. Configuration is loaded from three `.env` files in the `config/` directory.
+PractorFlow uses environment variables for configuration, managed by `app_settings.py`. Configuration is loaded from three `.env` files in the `config/llm/options/` directory.
 
 ### Loading Configuration
 
@@ -254,7 +348,7 @@ Configuration is automatically loaded when you import the module. You can also s
 ```python
 from practorflow.settings.app_settings import load_configuration, appConfiguration
 
-# Load from default path (config/)
+# Load from default path (config/llm/options/)
 load_configuration()
 
 # Or load from custom path
@@ -266,7 +360,7 @@ config = appConfiguration.ModelConfiguration
 
 ### Configuration Files
 
-#### 1. Logger Configuration (`config/logger.env`)
+#### 1. Logger Configuration (`config/llm/options/logger.env`)
 
 Controls logging verbosity for different components. Useful for debugging specific parts of the system or reducing log noise in production.
 
@@ -301,7 +395,7 @@ LOG_AGENT_LEVEL=DEBUG
 
 ---
 
-#### 2. Model Configuration (`config/model.env`)
+#### 2. Model Configuration (`config/llm/options/model.env`)
 
 Configures the LLM model, backend, and inference parameters.
 
@@ -348,6 +442,12 @@ These settings only apply when `LLM_BACKEND=transformers`:
 
 **Example - GGUF model with llama.cpp:**
 
+In this example we use as working directory the src folder
+
+```bash
+cd src
+```
+
 ```bash
 LLM_MODEL=bartowski/Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf
 LLM_BACKEND=llama_cpp
@@ -363,6 +463,12 @@ LLM_MAX_SEARCH_RESULTS=5
 ```
 
 **Example - HuggingFace model with transformers:**
+
+In this example we use as working directory the src folder
+
+```bash
+cd src
+```
 
 ```bash
 LLM_MODEL=Qwen/Qwen2.5-7B-Instruct
@@ -381,7 +487,7 @@ LLM_WARMUP_ON_LOAD=true
 
 ---
 
-#### 3. Knowledge Database Configuration (`config/knowledge.env`)
+#### 3. Knowledge Database Configuration (`config/llm/options/knowledge.env`)
 
 Configures the ChromaDB-based knowledge store for RAG (Retrieval-Augmented Generation).
 
@@ -435,6 +541,12 @@ PractorFlow uses a two-tier chunking approach for optimal RAG performance:
 
 **Example:**
 
+In this example we use as working directory the src folder
+
+```bash
+cd src
+```
+
 ```bash
 # Knowledge store type
 KB_TYPE=chromadb
@@ -461,11 +573,85 @@ KB_CHROMA_CONTEXT_CHUNK_SIZE=1024
 KB_CHROMA_CONTEXT_CHUNK_OVERLAP=100
 ```
 
+#### 4. Session Storage Configuration (`session.env`)
+
+The application supports persistent session storage via TinyDB. Configure the following environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `STORE_SESSION` | Storage backend type. Use `LOCAL` for TinyDB file-based persistence or `MEMORY` for in-memory storage. | `LOCAL` |
+| `STORE_SESSION_DB_PATH` | File path for the TinyDB database when using `LOCAL` storage. | `data/session/session.json` |
+
+**Example configuration:**
+In this example we use as working directory the src folder
+
+```bash
+cd src
+```
+
+```env
+STORE_SESSION=LOCAL
+STORE_SESSION_DB_PATH=../data/session/session.json
+```
+
+#### 5. Path Notes:
+
+Note the following parameters should be relative to execution path
+
+```
+LLM_MODELS_DIR
+KB_CHROMA_PERSIST_DIRECTORY
+KB_CHROMA_EMBEDDING_MODEL_DIR
+STORE_SESSION_DB_PATH
+```
+
+---
+
+### Path Configuration for Different Execution Modes
+
+The configuration examples above assume execution from the `src/` directory, which is why paths use the `../` prefix. Depending on how you install and run PractorFlow, you'll need different path configurations:
+
+#### Running from `src/` Directory (Development Mode)
+
+When running examples or scripts from the `src/` directory:
+
+```bash
+cd src
+python python -m examples.chat
+```
+
+**Configuration paths** (with `../` to reach project root):
+```bash
+LLM_MODELS_DIR=../models
+KB_CHROMA_PERSIST_DIRECTORY=../chroma_db
+KB_CHROMA_EMBEDDING_MODEL_DIR=../models
+STORE_SESSION_DB_PATH=../data/session/session.json
+```
+
+#### Installed via pyproject.toml (Production Mode)
+
+When you install PractorFlow using `pip install .` and run from project root or any directory:
+
+```bash
+# From project root
+python your_script.py
+```
+
+**Configuration paths** (relative to project root, no `../`):
+```bash
+LLM_MODELS_DIR=models
+KB_CHROMA_PERSIST_DIRECTORY=chroma_db
+KB_CHROMA_EMBEDDING_MODEL_DIR=models
+STORE_SESSION_DB_PATH=data/session/session.json
+```
+
+**Best Practice:** Maintain separate configuration files for development and production, or use absolute paths to avoid confusion between execution contexts.
+
 ---
 
 ### Sample Model Configurations
 
-Sample configurations for various models are provided in `config/samples/models/`. Copy these to your `config/` directory as `model.env`:
+Sample configurations for various models are provided in `config/llm/samples/models/`. Copy these to your `config/llm/options` directory as `model.env`:
 
 | File | Model | Backend | Notes |
 |------|-------|---------|-------|
@@ -480,7 +666,7 @@ Sample configurations for various models are provided in `config/samples/models/
 
 ```bash
 # Copy a sample configuration to use
-cp config/samples/models/model-Qwen2.5-7B-Instruct-GGUF.env config/model.env
+cp config/llm/samples/models/model-Qwen2.5-7B-Instruct-GGUF.env config/llm/options/model.env
 ```
 
 ## 🎯 Quick Start
@@ -602,85 +788,155 @@ result = await agent.run(
 
 ## 📚 Examples
 
-Comprehensive examples are provided in the `src/` directory:
+Comprehensive examples are provided in the `src/examples/` directory:
 
-- `src/sample.py` - Basic usage, streaming, RAG workflows
-- `src/pyai-examples.py` - Pydantic AI integration patterns
+- `src/examples/llm.py` - Basic usage, streaming, RAG workflows
+- `src/examples/pyai.py` - Pydantic AI integration patterns
+- `src/examples/chat.py` - Chat interface examples
 
 Run examples:
 
 ```bash
-cd src
-
 # Basic examples
-python sample.py
+python -m src.examples.llm
 
 # With document
-python sample.py path/to/document.pdf
+python -m src.examples.llm path/to/document.pdf
 
 # Pydantic AI examples
-python pyai-examples.py
+python -m src.examples.pyai
+
+# Chat examples
+python -m src.examples.chat
 ```
+Note: You can run the examples from  src folder too ( in case you make the app work from src)
 
 ## 🗃️ Architecture
 
-### Project Structure
+PractorFlow is built with a modular, production-ready architecture designed for secure, private AI deployments.
 
+### Core Components
+
+#### 1. LLM Runners
+**Abstract base with multiple backend implementations:**
+- `LlamaCppRunner` - GGUF models with llama.cpp (optimized for inference)
+- `TransformersRunner` - HuggingFace models with transformers library
+- Both support streaming, native function calling detection, and thinking trace extraction
+- Unified interface: `generate()`, `generate_stream()`, `search()`
+
+#### 2. Model Pool
+**Production-ready async model management:**
+- LRU eviction with reference counting for safe concurrent access
+- Configuration-based caching (same config = reused model)
+- Async context managers for automatic acquire/release
+- Preload support for warm starts
+- Thread-pool execution to avoid blocking event loop
+- Supports multiple concurrent models with configurable limits
+
+#### 3. Knowledge Store (RAG)
+**Small-to-Big chunking strategy with ChromaDB:**
+- **Retrieval chunks** (128 chars): Small, embedded chunks for precise similarity search
+- **Context chunks** (1024 chars): Large parent chunks returned to LLM for rich context
+- **Document metadata**: Full document tracking with IDs
+- **Three collections**: `retrieval`, `context`, `documents`
+- **Document scoping**: Isolate searches to specific documents per session/user
+- Batch processing, persistent storage, and SentenceTransformer embeddings
+
+#### 4. Session Management
+**Dual-mode session persistence:**
+- `InMemorySessionStore` - Fast, ephemeral (development/testing)
+- `TinyDBSessionStore` - JSON file persistence (production)
+- Session history with message tracking and document references
+- Factory pattern for easy switching via configuration
+- Search by title, user filtering, and sorted retrieval
+
+#### 5. Services Layer
+
+**Chat Service:**
+- Session-based conversations with history management
+- Context window management with intelligent truncation
+- Document upload and scoping per session
+- Streaming support with async generators
+
+**Agent Service:**
+- Multi-agent pipeline: Plan → Execute → Synthesize → Verify
+- Tool integration with registry and OpenAI-format function definitions
+- Session persistence with execution logs
+- Retry logic and heuristic verification
+
+**History Service:**
+- Token estimation and context window management
+- Message truncation with summarization
+- Session title generation
+- Memory-efficient history preparation
+
+#### 6. Tool System
+**Extensible tool registry with built-in tools:**
+- `Calculator` - Math expressions with safe evaluation
+- `KnowledgeSearchTool` - RAG queries with document scoping
+- `DuckDuckGoSearchTool` - Free web search (no API key)
+- `SerpAPISearchTool` - Premium web search with structured results
+- `WebFetchTool` - URL content retrieval
+- `TextSummarizerTool` - Extractive summarization
+- `JSONTransformTool` - JSON manipulation
+- OpenAI-compatible tool definitions for native function calling
+
+#### 7. Pydantic AI Integration
+**Drop-in model implementation:**
+- `LocalLLMModel` - Implements Pydantic AI's `Model` protocol
+- `LocalStreamedResponse` - Streaming with tool call extraction
+- Message conversion between Pydantic AI and internal formats
+- Tool call parsing from LLM responses (JSON extraction)
+- Seamless integration with Pydantic AI agents
+
+### Architecture Patterns
+
+**Async-First Design:**
+- All I/O operations are async (model loading, generation, document processing)
+- Thread pool execution for CPU-bound operations (inference, embeddings)
+- Async context managers for resource management
+- Non-blocking streaming with async generators
+
+**Configuration Management:**
+- Environment-based configuration with `.env` files
+- Singleton pattern with lazy initialization
+- Validation and type safety with dataclasses
+- Support for custom configuration paths (Docker/container deployments)
+
+**Dependency Injection:**
+- Service container for FastAPI dependency injection
+- Factory pattern for session stores and runners
+- Clean separation between business logic and infrastructure
+
+**Privacy by Design:**
+- All processing happens locally - no external API calls (except optional web search)
+- Document scoping prevents cross-contamination between sessions
+- Session isolation with user-based filtering
+- Local model execution with full data control
+
+### Data Flow
+
+**Simple Generation:**
 ```
-PractorFlow/
-├── config/
-│   ├── knowledge.env              # Knowledge store configuration
-│   ├── logger.env                 # Logging configuration
-│   ├── model.env                  # Model configuration
-│   └── samples/
-│       └── models/                # Sample model configurations
-├── src/
-│   ├── sample.py                  # Basic usage examples
-│   ├── pyai-examples.py           # Pydantic AI examples
-│   └── practorflow/
-│       ├── __init__.py            # Package exports
-│       ├── pyproject.toml         # Package definition
-│       ├── converters/            # Type converters
-│       │   └── torch_dtype_convertor.py
-│       ├── llm/                   # Core LLM module
-│       │   ├── base/              # Abstract base classes
-│       │   │   ├── llm_runner.py  # Base runner interface
-│       │   │   ├── session.py     # Session management
-│       │   │   └── session_store.py
-│       │   ├── pool/              # Model pooling
-│       │   │   ├── model_pool.py  # Async pool with LRU
-│       │   │   └── model_handle.py
-│       │   ├── knowledge/         # RAG components
-│       │   │   ├── knowledge_store.py
-│       │   │   ├── chroma_knowledge_store.py
-│       │   │   └── chroma_knowledge_config.py
-│       │   ├── document/          # Document processing
-│       │   │   ├── document_loader.py
-│       │   │   └── embeddings.py
-│       │   ├── tools/             # Tool system
-│       │   │   ├── base.py
-│       │   │   ├── tool_registry.py
-│       │   │   ├── knowledge_search.py
-│       │   │   ├── base_web_search.py
-│       │   │   └── serpapi_web_search.py
-│       │   ├── pyai/              # Pydantic AI integration
-│       │   │   ├── model.py
-│       │   │   ├── stream_response.py
-│       │   │   ├── message_converter.py
-│       │   │   └── tools.py
-│       │   ├── session/           # Session stores
-│       │   │   └── memory_session_store.py
-│       │   ├── llama_cpp_runner.py
-│       │   ├── transformers_runner.py
-│       │   ├── factory.py
-│       │   └── llm_config.py
-│       ├── logger/                # Logging utilities
-│       │   └── logger.py
-│       └── settings/              # Configuration management
-│           └── app_settings.py
-├── requirements.txt
-├── LICENSE.txt
-└── CONTRIBUTING.md
+User → Runner → Model Pool (acquire) → Backend (llama.cpp/transformers) → Response
+```
+
+**RAG-Enhanced Generation:**
+```
+User → Runner.search() → Knowledge Store → ChromaDB (similarity search)
+     → Runner.generate() → Context injection → Model → Response
+```
+
+**Agent Workflow:**
+```
+User Task → Planner (decompose) → Executor (tools + LLM reasoning)
+         → Synthesizer (combine outputs) → Verifier (validate) → Final Answer
+```
+
+**Session-Based Chat:**
+```
+User → Chat Service → Session Store (load history) → History Manager (truncate)
+    → Runner.generate() → Session Store (save) → Response Stream
 ```
 
 ### Small-to-Big Chunking Strategy
@@ -803,14 +1059,55 @@ load_configuration(config_path="/app/config")
 cd src
 
 # Run basic examples
-python sample.py
+python examples/llm.py
 
 # Run Pydantic AI examples
-python pyai-examples.py
+python examples/pyai.py
 
 # Test with document
-python sample.py path/to/test.pdf
+python examples/llm.py path/to/test.pdf
 ```
+
+## Additional Components
+
+### API Server
+
+PractorFlow API is a production-ready FastAPI server that exposes the core library's capabilities through RESTful endpoints, enabling web-based access to LLM inference with authentication, session management, and agent workflows.
+
+**Key Features:**
+- RESTful API with chat, agent, and session endpoints
+- Three authentication modes: Open (no credentials), Local (app secret), OIDC (enterprise SSO)
+- Server-Sent Events (SSE) streaming for real-time responses
+- JWT-based authentication with configurable providers
+- Multi-file upload with automatic knowledge base integration
+- Background cleanup scheduler for maintenance tasks
+- OpenAPI documentation with Swagger UI
+
+**Use Cases:**
+Ideal for integrating LLM capabilities into web applications, mobile apps, or microservices without direct Python integration. Enables multiple clients to share model resources efficiently while maintaining session isolation and security.
+
+For detailed documentation including endpoint specifications, authentication setup, deployment guides, and configuration options, see **[API Server Documentation](src/api/README.md)**.
+
+---
+
+### GUI Client
+
+PractorFlow GUI is a desktop application built with PySide6 that provides a user-friendly chat interface for interacting with the LLM service through a native desktop experience.
+
+**Key Features:**
+- Modern chat interface with markdown rendering and syntax highlighting
+- Dual-mode operation: Chat mode and Agent mode (task execution with verification)
+- Document upload via drag-and-drop (PDF, DOCX, images, etc.)
+- Session history panel with search and resume functionality
+- Real-time streaming with live token updates
+- Message editing and resend capability
+- Automatic dark/light theme support
+- Background worker threads for responsive UI
+
+**User Experience:**
+Native desktop application with collapsible history sidebar, foldable documents panel, and seamless switching between chat and agent modes. All API communication handled in background threads to maintain UI responsiveness.
+
+For detailed documentation including installation instructions, usage guide, keyboard shortcuts, and troubleshooting, see **[GUI Client Documentation](src/gui/README.md)**.
 
 ## 📊 Performance Tips
 
@@ -829,7 +1126,7 @@ python sample.py path/to/test.pdf
 - **Government Agencies**: Public sector with security clearance needs
 - **Research Organizations**: Academic institutions with sensitive research data
 
-## 🤝 Contributing
+## � Contributing
 
 Contributions are welcome! We appreciate your help in building a better private AI service for organizations.
 
@@ -867,7 +1164,7 @@ With the requirement to:
 
 Built on modern open-source models including Qwen, Mistral, and others.
 
-## 📧 Support
+## 🔧 Support
 
 For questions, issues, or feature requests, please [open an issue](https://github.com/vbouzoukos/PractorFlow/issues) on GitHub.
 

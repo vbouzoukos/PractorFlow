@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 import uuid
 
 
@@ -48,7 +48,8 @@ class Session:
     metadata: Dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
-    
+    user:Optional[str] = None
+    title:Optional[str] = None
     def add_document(self, document: Dict[str, Any]) -> None:
         """
         Add a document to the session.
@@ -131,3 +132,80 @@ class Session:
             }
             for doc in self.documents
         ]
+    
+    def truncate_messages(self, from_index: int) -> int:
+        """
+        Remove all messages from the given index onwards.
+        
+        Used for edit-and-regenerate functionality where the user
+        edits a message and all subsequent messages are removed.
+        
+        Args:
+            from_index: Index from which to truncate (inclusive).
+                        Messages at and after this index are removed.
+        
+        Returns:
+            Number of messages removed.
+        
+        Raises:
+            ValueError: If from_index is negative.
+        """
+        if from_index < 0:
+            raise ValueError("from_index must be non-negative")
+        
+        if from_index >= len(self.messages):
+            return 0
+        
+        removed_count = len(self.messages) - from_index
+        self.messages = self.messages[:from_index]
+        self.updated_at = datetime.now()
+        
+        return removed_count
+    
+    def get_message_count(self) -> int:
+        """Get the number of messages in the session."""
+        return len(self.messages)
+    
+    def get_message_by_index(self, index: int) -> Optional[Message]:
+        """
+        Get a message by its index.
+        
+        Args:
+            index: Index of the message to retrieve.
+        
+        Returns:
+            Message object or None if index is out of bounds.
+        """
+        if 0 <= index < len(self.messages):
+            return self.messages[index]
+        return None
+    
+    def get_message_by_id(self, message_id: str) -> Optional[Message]:
+        """
+        Get a message by its ID.
+        
+        Args:
+            message_id: ID of the message to retrieve.
+        
+        Returns:
+            Message object or None if not found.
+        """
+        for msg in self.messages:
+            if msg.id == message_id:
+                return msg
+        return None
+    
+    def get_message_index_by_id(self, message_id: str) -> Optional[int]:
+        """
+        Get the index of a message by its ID.
+        
+        Args:
+            message_id: ID of the message to find.
+        
+        Returns:
+            Index of the message or None if not found.
+        """
+        for i, msg in enumerate(self.messages):
+            if msg.id == message_id:
+                return i
+        return None

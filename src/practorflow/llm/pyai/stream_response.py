@@ -43,6 +43,7 @@ class LocalStreamedResponse:
         gen_kwargs: Dict[str, Any],
         model_name_str: str,
         available_tools: List[ToolDefinition] = None,
+        run_context: Any = None,
     ):
         """
         Initialize streamed response.
@@ -52,11 +53,13 @@ class LocalStreamedResponse:
             gen_kwargs: Generation keyword arguments for the runner.
             model_name_str: Model name string for identification.
             available_tools: List of available tools for extraction.
+            run_context: Optional run context from Pydantic AI for dependencies and tracing.
         """
         self._runner = runner
         self._gen_kwargs = gen_kwargs
         self._model_name_str = model_name_str
         self._available_tools = available_tools or []
+        self._run_context = run_context
         self._timestamp = datetime.now(timezone.utc)
         self._usage: Optional[RequestUsage] = None
         self._parts: List[ModelResponsePart] = []
@@ -106,8 +109,8 @@ class LocalStreamedResponse:
                             obj = json.loads(json_str)
                             if "tool" in obj or "name" in obj:
                                 matches.append(obj)
-                        except json.JSONDecodeError:
-                            pass
+                        except json.JSONDecodeError: # pragma: no cover
+                            pass  # pragma: no cover
                         start_idx = None
 
         # Convert matches to ToolCallPart objects

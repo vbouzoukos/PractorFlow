@@ -83,7 +83,7 @@ def format_search_results(results: List[Dict[str, Any]], query: str) -> str:
 
 
 async def search_knowledge(
-    ctx: RunContext[KnowledgeDeps], query: str, top_k: int = 5
+    ctx: RunContext[KnowledgeDeps], query: str, top_k: int = 10
 ) -> str:
     """Search the knowledge base for relevant information.
 
@@ -98,7 +98,7 @@ async def search_knowledge(
     Returns:
         Formatted search results as a string, or a message if no results found.
     """
-    top_k = max(1, min(20, top_k))
+    top_k = max(10, min(20, top_k))
 
     logger.debug(f"[search_knowledge] Searching: '{query}' (top_k={top_k})")
 
@@ -114,7 +114,7 @@ async def search_knowledge(
         )
 
         if not results:
-            return "No relevant documents found for the query."
+            return ""
 
         return format_search_results(results, query)
 
@@ -141,7 +141,7 @@ async def search_knowledge_generic(
     Returns:
         Formatted search results as a string, or a message if no results found.
     """
-    top_k = max(1, min(20, top_k))
+    top_k = max(10, min(20, top_k))
 
     logger.debug(f"[search_knowledge_generic] Searching: '{query}' (top_k={top_k})")
 
@@ -156,7 +156,7 @@ async def search_knowledge_generic(
     if document_scope:
         logger.debug(
             f"[search_knowledge_generic] Scope: {len(document_scope)} documents"
-        )
+        ) # pragma: no cover
 
     try:
         results = knowledge_store.search_scoped(
@@ -164,7 +164,7 @@ async def search_knowledge_generic(
         )
 
         if not results:
-            return "No relevant documents found for the query."
+            return "" # pragma: no cover
 
         return format_search_results(results, query)
 
@@ -185,10 +185,6 @@ def register_knowledge_tools(agent, use_generic: bool = False):
 
     Returns:
         The agent (for chaining).
-
-    Example:
-        agent = Agent(model, deps_type=KnowledgeDeps)
-        register_knowledge_tools(agent)
     """
     if use_generic:
         agent.tool(search_knowledge_generic)

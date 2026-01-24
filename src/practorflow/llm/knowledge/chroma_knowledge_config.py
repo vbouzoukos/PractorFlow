@@ -24,7 +24,7 @@ class ChromaKnowledgeStoreConfig:
 
     # Embedding model
     embedding_model_name: str = "all-MiniLM-L6-v2"
-    embedding_cache_dir: Optional[str] = "../models"
+    embedding_model_dir: Optional[str] = "../models"
 
     # Chunking settings (Small-to-Big)
     retrieval_chunk_size: int = 128

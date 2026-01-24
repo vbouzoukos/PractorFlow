@@ -17,7 +17,7 @@ import json
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import AsyncIterator, List, Optional, Any, Dict
+from typing import AsyncIterator, List, Optional, Any
 
 from pydantic_ai.models import (
     Model,
@@ -197,7 +197,7 @@ After receiving tool results, provide your final answer based on the information
                             if "tool" in obj or "name" in obj:
                                 matches.append(obj)
                         except json.JSONDecodeError:
-                            pass
+                            pass  # pragma: no cover
                         start_idx = None
 
         # Convert matches to ToolCallPart objects
@@ -403,9 +403,7 @@ After receiving tool results, provide your final answer based on the information
             gen_kwargs=gen_kwargs,
             model_name_str=self.model_name,
             available_tools=all_tools,
+            run_context=run_context,
         )
 
-        try:
-            yield stream
-        finally:
-            pass
+        yield stream

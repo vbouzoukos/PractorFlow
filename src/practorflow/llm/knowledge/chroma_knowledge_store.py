@@ -30,6 +30,30 @@ logger = get_logger(
     "knowledge", level=appConfiguration.LoggerConfiguration.KnowledgeLevel
 )
 
+def validate_vector_db_path(path: str):
+    """
+    Validates if the chromadb directory exists
+
+    :param path: Path loaded from configuration
+    :type path: str
+    """
+    if not os.path.exists(path):
+        logger.warning(
+            f'KB_CHROMA_PERSIST_DIRECTORY does not exist in: "{path}". If first run it will be created'
+        )
+
+def validate_model_path(path: str):
+    """
+    Validates if the model directory exists
+
+    :param path: Path loaded from configuration
+    :type path: str
+    """
+    if not os.path.exists(path):
+        logger.warning(
+            f'KB_CHROMA_EMBEDDING_MODEL_DIR does not exist in: "{path}". If first run it will be created'
+        )
+
 class ChromaKnowledgeStore(KnowledgeStore):
     """
     ChromaDB-based persistent knowledge store.
@@ -50,6 +74,8 @@ class ChromaKnowledgeStore(KnowledgeStore):
         self.config = config or ChromaKnowledgeStoreConfig()
 
         # Ensure persist directory exists
+        validate_vector_db_path(self.config.persist_directory)
+        validate_model_path(self.config.embedding_model_dir)
         os.makedirs(self.config.persist_directory, exist_ok=True)
 
         logger.debug(
@@ -96,7 +122,7 @@ class ChromaKnowledgeStore(KnowledgeStore):
         )
         self.embedding_model = SentenceTransformerEmbeddingModel(
             model_name=self.config.embedding_model_name,
-            cache_dir=self.config.embedding_cache_dir,
+            cache_dir=self.config.embedding_model_dir,
         )
         self.dimension = self.embedding_model.embedding_dimension
 
@@ -507,7 +533,7 @@ class ChromaKnowledgeStore(KnowledgeStore):
                     "metadata": results["metadatas"][0] if results["metadatas"] else {},
                 }
         except Exception:
-            pass
+            pass  # pragma: no cover
 
         return None
 
@@ -530,7 +556,7 @@ class ChromaKnowledgeStore(KnowledgeStore):
                     ),
                 }
         except Exception:
-            pass
+            pass  # pragma: no cover
 
         return None
 
@@ -548,7 +574,7 @@ class ChromaKnowledgeStore(KnowledgeStore):
                     "metadata": results["metadatas"][0] if results["metadatas"] else {},
                 }
         except Exception:
-            pass
+            pass  # pragma: no cover
 
         return None
 

@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "practorflow-api"
+version = "0.1.0"
+description = "PractorFlow API - FastAPI server for PractorFlow LLM inference service"
+readme = "README.md"
+license = { text = "Apache License 2.0" }
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Framework :: FastAPI",
+]
+keywords = ["llm", "ai", "rag", "inference", "api", "fastapi"]
+
+dependencies = [
+    "practorflow",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "httpx",
+    "black",
+    "isort",
+    "mypy",
+]
+
+[project.urls]
+Homepage = "https://github.com/vbouzoukos/PractorFlow"
+Documentation = "https://github.com/vbouzoukos/PractorFlow#readme"
+Repository = "https://github.com/vbouzoukos/PractorFlow"
+Issues = "https://github.com/vbouzoukos/PractorFlow/issues"
+
+[project.scripts]
+practorflow-api = "api.main:run"
+practorflow-api-debug = "api.main:run_debug"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["api*"]
+
+[tool.setuptools.package-data]
+api = ["py.typed"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310", "py311", "py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

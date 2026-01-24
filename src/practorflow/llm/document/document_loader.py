@@ -441,8 +441,12 @@ class DocumentLoader:
                     tables.append(
                         {"index": idx, "data": table_df.to_dict(orient="records")}
                     )
-                except:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "[DocumentLoader] Failed to extract table %d: %s",
+                        idx,
+                        exc,
+                    )
 
         return content, tables
 
@@ -469,8 +473,12 @@ class DocumentLoader:
                         tables.append(
                             {"index": idx, "data": table_df.to_dict(orient="records")}
                         )
-                    except:
-                        pass
+                    except Exception as exc:
+                        logger.warning(
+                            "[DocumentLoader] Failed to extract table %d: %s",
+                            idx,
+                            exc,
+                        )
 
             return content, tables
         finally:

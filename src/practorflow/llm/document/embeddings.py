@@ -6,6 +6,7 @@ Supports:
 - LLM-based embeddings (llama-cpp or transformers)
 """
 
+import os
 from typing import List, Union, Any, Optional
 import numpy as np
 from abc import ABC, abstractmethod
@@ -23,18 +24,18 @@ class BaseEmbeddingModel(ABC):
     @abstractmethod
     def embed(self, text: Union[str, List[str]]) -> np.ndarray:
         """Generate embeddings for text."""
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     def embed_batch(self, texts: List[str], batch_size: int = 32) -> np.ndarray:
         """Generate embeddings for batches of text."""
-        pass
+        pass  # pragma: no cover
 
     @property
     @abstractmethod
     def embedding_dimension(self) -> int:
         """Get the dimension of embeddings."""
-        pass
+        pass  # pragma: no cover
 
 
 class SentenceTransformerEmbeddingModel(BaseEmbeddingModel):
@@ -64,9 +65,16 @@ class SentenceTransformerEmbeddingModel(BaseEmbeddingModel):
         from sentence_transformers import SentenceTransformer
 
         logger.debug(f"[Embeddings] Loading SentenceTransformer: {model_name}")
+        # Check if model exists locally to avoid network calls
+        local_files_only = False
+        if cache_dir:
+            model_path = os.path.join(cache_dir, model_name.replace("/", "_"))
+            if os.path.isdir(model_path):
+                local_files_only = True
+                logger.debug(f"[Embeddings] Model found locally at: {model_path}")
 
         self.model = SentenceTransformer(
-            model_name, device=device, cache_folder=cache_dir
+            model_name, device=device, cache_folder=cache_dir, local_files_only=local_files_only
         )
         self.model_name = model_name
         self._dimension = self.model.get_sentence_embedding_dimension()
