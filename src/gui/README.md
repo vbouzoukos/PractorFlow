@@ -183,3 +183,86 @@ All clients accept base URL and username, construct endpoints, and handle HTTP/S
 1. qdarktheme detects system theme (auto mode)
 2. Applies consistent styling across all widgets
 3. Updates on theme change without restart
+
+## Packaging
+
+### Prerequisites
+
+Install PyInstaller in your environment:
+
+```bash
+
+```
+
+Navigate to the GUI source directory:
+
+```bash
+cd src/gui
+```
+
+---
+
+### Windows
+
+```powershell
+pip install .
+pyinstaller --onefile --windowed --name practorflow-gui `
+  --hidden-import=PySide6.QtSvg `
+  --hidden-import=PySide6.QtXml `
+  --hidden-import=httpx `
+  --hidden-import=httpx_sse `
+  --hidden-import=qdarktheme `
+  --hidden-import=platformdirs `
+  --collect-data=qdarktheme `
+  main.py
+```
+
+Output: `dist\practorflow-gui.exe`
+
+---
+
+### Linux
+
+```bash
+pip install .
+pyinstaller --onefile --windowed --name practorflow-gui \
+  --hidden-import=PySide6.QtSvg \
+  --hidden-import=PySide6.QtXml \
+  --hidden-import=httpx \
+  --hidden-import=httpx_sse \
+  --hidden-import=qdarktheme \
+  --hidden-import=platformdirs \
+  --collect-data=qdarktheme \
+  main.py
+```
+
+Output: `dist/practorflow-gui`
+
+---
+
+### macOS
+
+```bash
+pip install .
+pyinstaller --onefile --windowed --name practorflow-gui \
+  --hidden-import=PySide6.QtSvg \
+  --hidden-import=PySide6.QtXml \
+  --hidden-import=httpx \
+  --hidden-import=httpx_sse \
+  --hidden-import=qdarktheme \
+  --hidden-import=platformdirs \
+  --collect-data=qdarktheme \
+  --osx-bundle-identifier=com.practorflow.gui \
+  main.py
+```
+
+Output: `dist/practorflow-gui.app`
+
+---
+
+### Notes
+
+- Build must be performed on the target OS (PyInstaller does not support cross-compilation)
+- The `--collect-data=qdarktheme` flag ensures theme assets are bundled
+- Use `--onedir` instead of `--onefile` for faster startup and easier debugging
+- Add `--icon=path/to/icon.ico` (Windows) or `--icon=path/to/icon.icns` (macOS) for custom icons
