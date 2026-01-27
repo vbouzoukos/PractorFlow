@@ -51,6 +51,7 @@ class ApiToolConfig(BaseModel):
     # Identity
     tool_id: str = Field(default_factory=lambda: str(uuid4()), description="Unique tool ID")
     user_id: str = Field(..., description="Owner user ID")
+    system: bool = Field(default=False, description="Whether tool is system-level (global scope)")
     created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
     updated_at: datetime = Field(default_factory=datetime.now, description="Last update timestamp")
     
@@ -64,12 +65,21 @@ class ApiToolConfig(BaseModel):
     path: str = Field(..., description="Endpoint path (supports templating)")
     body_content_type: BodyContentType = Field(default=BodyContentType.NONE, description="Request body type")
     
-    # Authentication (secret embedded)
+    # Authentication
     auth_type: AuthType = Field(default=AuthType.NONE, description="Authentication type")
-    auth_secret_value: Optional[str] = Field(default=None, description="Encrypted secret value")
+    # Used by: API Key, Bearer - encrypted token/key value
+    auth_secret: Optional[str] = Field(default=None, description="Encrypted token/key for API Key or Bearer auth")
+    # Used by: Basic - encrypted username
+    auth_username: Optional[str] = Field(default=None, description="Encrypted username for Basic auth")
+    # Used by: Basic - encrypted password
+    auth_password: Optional[str] = Field(default=None, description="Encrypted password for Basic auth")
+    # Used by: All - optional expiration timestamp
     auth_secret_expires_at: Optional[datetime] = Field(default=None, description="Secret expiration")
-    auth_key_location: Optional[AuthKeyLocation] = Field(default=None, description="API key location")
-    auth_key_name: Optional[str] = Field(default=None, description="API key parameter name")
+    # Used by: API Key - where to place the key (header, query, or body)
+    auth_key_location: Optional[AuthKeyLocation] = Field(default=None, description="API Key placement location")
+    # Used by: API Key - parameter name (e.g., appid, X-API-Key)
+
+
     
     # Reliability
     timeout_seconds: int = Field(default=30, ge=1, le=300, description="Request timeout")

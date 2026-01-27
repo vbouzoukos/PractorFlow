@@ -13,8 +13,10 @@ from practorflow.llm.tools.api.encryption import (
     get_encryption_service,
     is_encryption_initialized,
 )
+from practorflow.llm.tools.api.tool import ApiTool
 
 __all__ = [
+    "ApiTool",
     "EncryptionService",
     "EncryptionError",
     "EncryptionNotInitializedError",
