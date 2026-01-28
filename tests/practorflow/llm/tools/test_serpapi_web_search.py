@@ -314,25 +314,25 @@ class TestSerpAPISearchToolExtractResults:
 class TestSerpAPISearchToolExecute:
     """Tests for SerpAPISearchTool.execute()"""
 
-    def test_execute_missing_query_returns_error(self):
+    async def test_execute_missing_query_returns_error(self):
         """execute() returns error when query is missing."""
         tool = SerpAPISearchTool(api_key="key")
 
-        result = tool.execute()
+        result = await tool.execute()
 
         assert result.success is False
         assert "Query parameter is required" in result.error
 
-    def test_execute_empty_query_returns_error(self):
+    async def test_execute_empty_query_returns_error(self):
         """execute() returns error when query is empty string."""
         tool = SerpAPISearchTool(api_key="key")
 
-        result = tool.execute(query="")
+        result = await tool.execute(query="")
 
         assert result.success is False
         assert "Query parameter is required" in result.error
 
-    def test_execute_api_error_in_response(self):
+    async def test_execute_api_error_in_response(self):
         """execute() returns error when API returns error in response."""
         tool = SerpAPISearchTool(api_key="key")
 
@@ -343,12 +343,12 @@ class TestSerpAPISearchToolExecute:
             mock_client_class.return_value = mock_client
             mock_get_client.return_value = mock_client_class
 
-            result = tool.execute(query="test")
+            result = await tool.execute(query="test")
 
             assert result.success is False
             assert "SerpAPI error" in result.error
 
-    def test_execute_no_results_returns_success_with_none_data(self):
+    async def test_execute_no_results_returns_success_with_none_data(self):
         """execute() returns success with None data when no results found."""
         tool = SerpAPISearchTool(api_key="key")
 
@@ -359,14 +359,14 @@ class TestSerpAPISearchToolExecute:
             mock_client_class.return_value = mock_client
             mock_get_client.return_value = mock_client_class
 
-            result = tool.execute(query="nonexistent")
+            result = await tool.execute(query="nonexistent")
 
             assert result.success is True
             assert result.data is None
             assert result.metadata["results_count"] == 0
             assert result.metadata["provider"] == "serpapi"
 
-    def test_execute_with_results_returns_formatted_data(self):
+    async def test_execute_with_results_returns_formatted_data(self):
         """execute() returns formatted results when search succeeds."""
         tool = SerpAPISearchTool(api_key="key")
 
@@ -384,7 +384,7 @@ class TestSerpAPISearchToolExecute:
             mock_client_class.return_value = mock_client
             mock_get_client.return_value = mock_client_class
 
-            result = tool.execute(query="test query")
+            result = await tool.execute(query="test query")
 
             assert result.success is True
             assert "Result 1" in result.data
@@ -392,7 +392,7 @@ class TestSerpAPISearchToolExecute:
             assert result.metadata["results_count"] == 2
             assert result.metadata["search_id"] == "search123"
 
-    def test_execute_uses_default_max_results(self):
+    async def test_execute_uses_default_max_results(self):
         """execute() uses default_max_results when not provided."""
         tool = SerpAPISearchTool(api_key="key", default_max_results=7)
 
@@ -405,175 +405,21 @@ class TestSerpAPISearchToolExecute:
                 mock_client_class.return_value = mock_client
                 mock_get_client.return_value = mock_client_class
 
-                tool.execute(query="test")
+                await tool.execute(query="test")
 
                 mock_build_params.assert_called_once_with("test", 7)
 
-    def test_execute_exception_returns_error(self):
+    async def test_execute_exception_returns_error(self):
         """execute() returns error result when exception occurs."""
         tool = SerpAPISearchTool(api_key="key")
 
         with patch.object(tool, "_get_client") as mock_get_client:
             mock_get_client.side_effect = RuntimeError("Connection error")
 
-            result = tool.execute(query="test")
+            result = await tool.execute(query="test")
 
             assert result.success is False
             assert "Web search failed" in result.error
-
-
-class TestSerpAPISearchToolSearchNews:
-    """Tests for SerpAPISearchTool.search_news()"""
-
-    def test_search_news_returns_formatted_results(self):
-        """search_news() returns formatted news results."""
-        tool = SerpAPISearchTool(api_key="key")
-
-        with patch.object(tool, "_get_client") as mock_get_client:
-            mock_client_class = MagicMock()
-            mock_client = MagicMock()
-            mock_client.search.return_value = {
-                "news_results": [
-                    {
-                        "title": "News 1",
-                        "link": "http://news.com/1",
-                        "snippet": "First news",
-                        "date": "1 hour ago",
-                        "source": {"name": "CNN"},
-                    },
-                ]
-            }
-            mock_client_class.return_value = mock_client
-            mock_get_client.return_value = mock_client_class
-
-            result = tool.search_news("breaking news")
-
-            assert result.success is True
-            assert "News 1" in result.data
-            assert result.metadata["type"] == "news"
-            assert result.metadata["provider"] == "serpapi"
-
-    def test_search_news_api_error(self):
-        """search_news() returns error when API returns error."""
-        tool = SerpAPISearchTool(api_key="key")
-
-        with patch.object(tool, "_get_client") as mock_get_client:
-            mock_client_class = MagicMock()
-            mock_client = MagicMock()
-            mock_client.search.return_value = {"error": "Rate limit exceeded"}
-            mock_client_class.return_value = mock_client
-            mock_get_client.return_value = mock_client_class
-
-            result = tool.search_news("test")
-
-            assert result.success is False
-            assert "SerpAPI error" in result.error
-
-    def test_search_news_no_results(self):
-        """search_news() returns success with None data when no results."""
-        tool = SerpAPISearchTool(api_key="key")
-
-        with patch.object(tool, "_get_client") as mock_get_client:
-            mock_client_class = MagicMock()
-            mock_client = MagicMock()
-            mock_client.search.return_value = {"news_results": []}
-            mock_client_class.return_value = mock_client
-            mock_get_client.return_value = mock_client_class
-
-            result = tool.search_news("nonexistent")
-
-            assert result.success is True
-            assert result.data is None
-            assert result.metadata["results_count"] == 0
-
-    def test_search_news_exception_returns_error(self):
-        """search_news() returns error result when exception occurs."""
-        tool = SerpAPISearchTool(api_key="key")
-
-        with patch.object(tool, "_get_client") as mock_get_client:
-            mock_get_client.side_effect = RuntimeError("Network error")
-
-            result = tool.search_news("test")
-
-            assert result.success is False
-            assert "News search failed" in result.error
-
-
-class TestSerpAPISearchToolSearchImages:
-    """Tests for SerpAPISearchTool.search_images()"""
-
-    def test_search_images_returns_formatted_results(self):
-        """search_images() returns formatted image results."""
-        tool = SerpAPISearchTool(api_key="key")
-
-        with patch.object(tool, "_get_client") as mock_get_client:
-            mock_client_class = MagicMock()
-            mock_client = MagicMock()
-            mock_client.search.return_value = {
-                "images_results": [
-                    {
-                        "title": "Image 1",
-                        "link": "http://site.com/page",
-                        "original": "http://site.com/image.jpg",
-                        "source": "Example Site",
-                        "original_width": 800,
-                        "original_height": 600,
-                    },
-                ]
-            }
-            mock_client_class.return_value = mock_client
-            mock_get_client.return_value = mock_client_class
-
-            result = tool.search_images("cats")
-
-            assert result.success is True
-            assert "Image 1" in result.data
-            assert result.metadata["type"] == "images"
-
-    def test_search_images_api_error(self):
-        """search_images() returns error when API returns error."""
-        tool = SerpAPISearchTool(api_key="key")
-
-        with patch.object(tool, "_get_client") as mock_get_client:
-            mock_client_class = MagicMock()
-            mock_client = MagicMock()
-            mock_client.search.return_value = {"error": "Invalid request"}
-            mock_client_class.return_value = mock_client
-            mock_get_client.return_value = mock_client_class
-
-            result = tool.search_images("test")
-
-            assert result.success is False
-            assert "SerpAPI error" in result.error
-
-    def test_search_images_no_results(self):
-        """search_images() returns success with None data when no results."""
-        tool = SerpAPISearchTool(api_key="key")
-
-        with patch.object(tool, "_get_client") as mock_get_client:
-            mock_client_class = MagicMock()
-            mock_client = MagicMock()
-            mock_client.search.return_value = {"images_results": []}
-            mock_client_class.return_value = mock_client
-            mock_get_client.return_value = mock_client_class
-
-            result = tool.search_images("nonexistent")
-
-            assert result.success is True
-            assert result.data is None
-
-    def test_search_images_exception_returns_error(self):
-        """search_images() returns error result when exception occurs."""
-        tool = SerpAPISearchTool(api_key="key")
-
-        with patch.object(tool, "_get_client") as mock_get_client:
-            mock_get_client.side_effect = RuntimeError("Timeout")
-
-            result = tool.search_images("test")
-
-            assert result.success is False
-            assert "Image search failed" in result.error
-
 
 class TestSerpAPISearchToolFormatResults:
     """Tests for SerpAPISearchTool._format_results()"""
@@ -688,9 +534,9 @@ class TestSerpAPISearchToolSetEngine:
 
 
 class TestSerpAPISearchToolCallable:
-    """Tests for SerpAPISearchTool.__call__ (inherited from BaseTool)."""
+    """Tests for SerpAPISearchTool.__call__ (inherited from AsyncBaseTool)."""
 
-    def test_tool_is_callable(self):
+    async def test_tool_is_callable(self):
         """Tool can be called directly via __call__."""
         tool = SerpAPISearchTool(api_key="key")
 
@@ -701,13 +547,13 @@ class TestSerpAPISearchToolCallable:
             mock_client_class.return_value = mock_client
             mock_get_client.return_value = mock_client_class
 
-            result = tool(query="direct call")
+            result = await tool(query="direct call")
 
             assert result.success is True
 
 
 class TestSerpAPISearchToolSchema:
-    """Tests for SerpAPISearchTool.get_schema() (inherited from BaseTool)."""
+    """Tests for SerpAPISearchTool.get_schema() (inherited from AsyncBaseTool)."""
 
     def test_get_schema_returns_function_format(self):
         """get_schema returns OpenAI function calling format."""

@@ -202,7 +202,7 @@ class TestLlamaCppRunnerGenerateStream:
     @pytest.mark.asyncio
     async def test_generate_stream_with_context_metadata(self, runner):
         """generate_stream() includes search_metadata in final chunk when available."""
-        from practorflow.llm.tools.base import ToolResult
+        from practorflow.llm.tools import ToolResult
 
         runner._pending_context = "Document content."
         mock_result = ToolResult(

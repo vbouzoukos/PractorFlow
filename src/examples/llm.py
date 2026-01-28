@@ -173,7 +173,7 @@ async def main():
             question = "What is this document about?"
             print(f"Question: {question}")
             
-            search_result = runner.search(question)
+            search_result = await runner.search(question)
             print(f"Search found {search_result.metadata.get('results_count', 0)} results")
             
             result = await runner.generate(prompt=question)

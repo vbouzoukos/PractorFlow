@@ -6,7 +6,6 @@ Tests cover all ToolRegistry methods for 100% code coverage.
 
 import pytest
 
-from practorflow.llm.tools.base import ToolResult
 from practorflow.llm.tools.tool_registry import ToolRegistry
 from tests.practorflow.llm.tools.tools_common import create_mock_tool
 
@@ -259,48 +258,48 @@ class TestToolRegistryDocumentScope:
 class TestToolRegistryExecute:
     """Tests for ToolRegistry.execute()"""
 
-    def test_execute_calls_tool(self):
+    async def test_execute_calls_tool(self):
         """execute() calls the tool with provided kwargs."""
         registry = ToolRegistry()
         tool = create_mock_tool(name="exec_tool", data="executed")
         registry.register(tool)
 
-        result = registry.execute("exec_tool", query="test query")
+        result = await registry.execute("exec_tool", query="test query")
 
         assert result.success is True
         assert result.data == "executed"
         assert tool.get_last_call_kwargs() == {"query": "test query"}
 
-    def test_execute_nonexistent_tool_returns_error(self):
+    async def test_execute_nonexistent_tool_returns_error(self):
         """execute() returns error result for non-existent tool."""
         registry = ToolRegistry()
 
-        result = registry.execute("nonexistent", query="test")
+        result = await registry.execute("nonexistent", query="test")
 
         assert result.success is False
         assert result.error == "Tool not found: nonexistent"
 
-    def test_execute_stores_last_result(self):
+    async def test_execute_stores_last_result(self):
         """execute() stores result as last_result."""
         registry = ToolRegistry()
         tool = create_mock_tool(name="result_tool", data="stored")
         registry.register(tool)
 
-        registry.execute("result_tool", query="test")
+        await registry.execute("result_tool", query="test")
 
         assert registry.get_last_result().data == "stored"
 
-    def test_execute_stores_error_result(self):
+    async def test_execute_stores_error_result(self):
         """execute() stores error result for non-existent tool."""
         registry = ToolRegistry()
 
-        registry.execute("missing")
+        await registry.execute("missing")
 
         last_result = registry.get_last_result()
         assert last_result.success is False
         assert "Tool not found" in last_result.error
 
-    def test_execute_injects_document_scope(self):
+    async def test_execute_injects_document_scope(self):
         """execute() injects document scope to tools that support it."""
         registry = ToolRegistry()
         tool = create_mock_tool(
@@ -310,11 +309,11 @@ class TestToolRegistryExecute:
         registry.register(tool)
         registry.set_document_scope({"doc_a", "doc_b"})
 
-        registry.execute("scoped_tool", query="test")
+        await registry.execute("scoped_tool", query="test")
 
         assert tool.get_document_scope() == {"doc_a", "doc_b"}
 
-    def test_execute_no_scope_injection_without_support(self):
+    async def test_execute_no_scope_injection_without_support(self):
         """execute() does not inject scope to tools without set_document_scope."""
         registry = ToolRegistry()
         tool = create_mock_tool(
@@ -324,7 +323,7 @@ class TestToolRegistryExecute:
         registry.register(tool)
         registry.set_document_scope({"doc1"})
 
-        registry.execute("no_scope_tool", query="test")
+        await registry.execute("no_scope_tool", query="test")
 
         assert tool.get_document_scope() is None
 
@@ -338,23 +337,23 @@ class TestToolRegistryLastResult:
 
         assert registry.get_last_result() is None
 
-    def test_get_last_result_after_execution(self):
+    async def test_get_last_result_after_execution(self):
         """get_last_result() returns result from last execute()."""
         registry = ToolRegistry()
         tool = create_mock_tool(name="last_tool", data="last data")
         registry.register(tool)
 
-        registry.execute("last_tool", query="test")
+        await registry.execute("last_tool", query="test")
 
         result = registry.get_last_result()
         assert result.data == "last data"
 
-    def test_clear_last_result(self):
+    async def test_clear_last_result(self):
         """clear_last_result() sets last_result to None."""
         registry = ToolRegistry()
         tool = create_mock_tool(name="clear_tool")
         registry.register(tool)
-        registry.execute("clear_tool", query="test")
+        await registry.execute("clear_tool", query="test")
 
         registry.clear_last_result()
 
@@ -370,7 +369,7 @@ class TestToolRegistryPendingContext:
 
         assert registry.has_pending_context() is False
 
-    def test_has_pending_context_false_when_failed(self):
+    async def test_has_pending_context_false_when_failed(self):
         """has_pending_context() returns False when last result failed."""
         registry = ToolRegistry()
         tool = create_mock_tool(
@@ -379,11 +378,11 @@ class TestToolRegistryPendingContext:
             error="failed",
         )
         registry.register(tool)
-        registry.execute("fail_tool", query="test")
+        await registry.execute("fail_tool", query="test")
 
         assert registry.has_pending_context() is False
 
-    def test_has_pending_context_false_when_data_is_none(self):
+    async def test_has_pending_context_false_when_data_is_none(self):
         """has_pending_context() returns False when data is None."""
         registry = ToolRegistry()
         tool = create_mock_tool(
@@ -392,11 +391,11 @@ class TestToolRegistryPendingContext:
             data=None,
         )
         registry.register(tool)
-        registry.execute("none_tool", query="test")
+        await registry.execute("none_tool", query="test")
 
         assert registry.has_pending_context() is False
 
-    def test_has_pending_context_true_when_success_with_data(self):
+    async def test_has_pending_context_true_when_success_with_data(self):
         """has_pending_context() returns True when success with data."""
         registry = ToolRegistry()
         tool = create_mock_tool(
@@ -405,11 +404,11 @@ class TestToolRegistryPendingContext:
             data="context data",
         )
         registry.register(tool)
-        registry.execute("context_tool", query="test")
+        await registry.execute("context_tool", query="test")
 
         assert registry.has_pending_context() is True
 
-    def test_consume_context_returns_context_string(self):
+    async def test_consume_context_returns_context_string(self):
         """consume_context() returns context string from result."""
         registry = ToolRegistry()
         tool = create_mock_tool(
@@ -418,18 +417,18 @@ class TestToolRegistryPendingContext:
             data="consumable context",
         )
         registry.register(tool)
-        registry.execute("consume_tool", query="test")
+        await registry.execute("consume_tool", query="test")
 
         context = registry.consume_context()
 
         assert context == "consumable context"
 
-    def test_consume_context_clears_last_result(self):
+    async def test_consume_context_clears_last_result(self):
         """consume_context() sets last_result to None."""
         registry = ToolRegistry()
         tool = create_mock_tool(name="clear_on_consume", data="data")
         registry.register(tool)
-        registry.execute("clear_on_consume", query="test")
+        await registry.execute("clear_on_consume", query="test")
 
         registry.consume_context()
 
@@ -443,12 +442,12 @@ class TestToolRegistryPendingContext:
 
         assert result is None
 
-    def test_consume_context_returns_none_when_failed(self):
+    async def test_consume_context_returns_none_when_failed(self):
         """consume_context() returns None when last result failed."""
         registry = ToolRegistry()
         tool = create_mock_tool(name="fail", success=False, error="err")
         registry.register(tool)
-        registry.execute("fail", query="test")
+        await registry.execute("fail", query="test")
 
         result = registry.consume_context()
 

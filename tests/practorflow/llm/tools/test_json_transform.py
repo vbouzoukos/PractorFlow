@@ -94,82 +94,82 @@ class TestJsonTransformTool:
         scalar_flat = tool._flatten(5, prefix="x")
         assert scalar_flat == {"x": 5}
 
-    def test_execute_parse(self):
+    async def test_execute_parse(self):
         tool = JsonTransformTool()
-        result = tool.execute(json_data='{"a": 1}', operation="parse")
+        result = await tool.execute(json_data='{"a": 1}', operation="parse")
 
         assert result.success is True
         assert result.data["a"] == 1
         assert result.metadata["operation"] == "parse"
 
-    def test_execute_query_missing_path(self):
+    async def test_execute_query_missing_path(self):
         tool = JsonTransformTool()
-        result = tool.execute(json_data={"a": 1}, operation="query")
+        result = await tool.execute(json_data={"a": 1}, operation="query")
 
         assert result.success is False
         assert "'path' is required" in result.error
 
-    def test_execute_query_success(self):
+    async def test_execute_query_success(self):
         tool = JsonTransformTool()
-        result = tool.execute(json_data={"a": {"b": 2}}, operation="query", path="a.b")
+        result = await tool.execute(json_data={"a": {"b": 2}}, operation="query", path="a.b")
 
         assert result.success is True
         assert result.data == 2
 
-    def test_execute_extract_path_and_fields_and_error(self):
+    async def test_execute_extract_path_and_fields_and_error(self):
         tool = JsonTransformTool()
         data = {"a": {"b": 2, "c": 3}}
 
-        result_path = tool.execute(json_data=data, operation="extract", path="a.b")
+        result_path = await tool.execute(json_data=data, operation="extract", path="a.b")
         assert result_path.success is True
         assert result_path.data == 2
 
-        result_fields = tool.execute(
+        result_fields = await tool.execute(
             json_data=data,
             operation="extract",
             fields=["a.b", "a.c"],
         )
         assert result_fields.data == {"b": 2, "c": 3}
 
-        result_error = tool.execute(json_data=data, operation="extract")
+        result_error = await tool.execute(json_data=data, operation="extract")
         assert result_error.success is False
 
-    def test_execute_flatten(self):
+    async def test_execute_flatten(self):
         tool = JsonTransformTool()
-        result = tool.execute(json_data={"a": {"b": 1}}, operation="flatten")
+        result = await tool.execute(json_data={"a": {"b": 1}}, operation="flatten")
 
         assert result.success is True
         assert result.data == {"a.b": 1}
         assert result.metadata["keys_count"] == 1
 
-    def test_execute_keys_and_values_success_and_error(self):
+    async def test_execute_keys_and_values_success_and_error(self):
         tool = JsonTransformTool()
 
-        result_keys = tool.execute(json_data={"a": 1}, operation="keys")
+        result_keys = await tool.execute(json_data={"a": 1}, operation="keys")
         assert result_keys.success is True
         assert result_keys.data == ["a"]
 
-        result_values = tool.execute(json_data={"a": 1}, operation="values")
+        result_values = await tool.execute(json_data={"a": 1}, operation="values")
         assert result_values.success is True
         assert result_values.data == [1]
 
-        result_keys_error = tool.execute(json_data=[1, 2], operation="keys")
+        result_keys_error = await tool.execute(json_data=[1, 2], operation="keys")
         assert result_keys_error.success is False
 
-        result_values_error = tool.execute(json_data=[1, 2], operation="values")
+        result_values_error = await tool.execute(json_data=[1, 2], operation="values")
         assert result_values_error.success is False
 
-    def test_execute_unknown_operation(self):
+    async def test_execute_unknown_operation(self):
         tool = JsonTransformTool()
-        result = tool.execute(json_data={}, operation="unknown")
+        result = await tool.execute(json_data={}, operation="unknown")
 
         assert result.success is False
         assert "Unknown operation" in result.error
 
-    def test_execute_invalid_json_and_generic_exception(self, monkeypatch):
+    async def test_execute_invalid_json_and_generic_exception(self, monkeypatch):
         tool = JsonTransformTool()
 
-        result_invalid = tool.execute(json_data="{bad json}", operation="parse")
+        result_invalid = await tool.execute(json_data="{bad json}", operation="parse")
         assert result_invalid.success is False
         assert result_invalid.error.startswith("Invalid JSON:")
 
@@ -178,7 +178,7 @@ class TestJsonTransformTool:
 
         monkeypatch.setattr(tool, "_parse_json", boom)
 
-        result_exception = tool.execute(json_data={}, operation="parse")
+        result_exception = await tool.execute(json_data={}, operation="parse")
         assert result_exception.success is False
         assert result_exception.error.startswith("JSON transformation failed:")
         assert "boom" in result_exception.error

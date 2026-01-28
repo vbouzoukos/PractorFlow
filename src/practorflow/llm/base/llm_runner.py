@@ -4,8 +4,8 @@ from typing import Dict, Any, List, Optional, Set, AsyncIterator
 
 from practorflow.llm.pool.model_handle import ModelHandle
 from practorflow.llm.knowledge.knowledge_store import KnowledgeStore
-from practorflow.llm.tools.tool_registry import ToolRegistry
-from practorflow.llm.tools.base import ToolResult
+from practorflow.llm.tools import ToolRegistry,ToolResult
+
 
 
 @dataclass
@@ -84,7 +84,7 @@ class LLMRunner(ABC):
         """Get current document scope."""
         return self.tool_registry.get_document_scope()
 
-    def search(self, query: str, top_k: Optional[int] = None) -> ToolResult:
+    async def search(self, query: str, top_k: Optional[int] = None) -> ToolResult:
         """
         Search knowledge base within current document scope.
         
@@ -105,7 +105,7 @@ class LLMRunner(ABC):
         
         search_top_k = top_k if top_k is not None else self.config.max_search_results
         
-        result = self.tool_registry.execute(
+        result = await self.tool_registry.execute(
             "knowledge_search",
             query=query,
             top_k=search_top_k

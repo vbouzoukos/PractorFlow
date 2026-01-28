@@ -424,7 +424,7 @@ async def run_executor(
                     else str(agent_run.result.output)
                 )
 
-    step_results = parse_executor_results(plan, response_text, deps)
+    step_results = await parse_executor_results(plan, deps)
     execution_log = build_execution_log(step_results, plan)
 
     execution_result = ExecutionResult(

@@ -2,7 +2,6 @@ import math
 import ast
 import pytest
 
-from practorflow.llm.tools.base import ToolResult
 from practorflow.llm.tools.calculator import CalculatorTool
 
 
@@ -152,47 +151,47 @@ class TestCalculatorTool:
         with pytest.raises(ValueError):
             tool._convert_units(1, "m", "kg")
 
-    def test_execute_expression_success_int(self):
+    async def test_execute_expression_success_int(self):
         tool = CalculatorTool()
-        result = tool.execute(expression="2+2")
+        result = await tool.execute(expression="2+2")
         assert result.success is True
         assert result.data == 4
         assert result.metadata["operation"] == "evaluate"
 
-    def test_execute_expression_success_float(self):
+    async def test_execute_expression_success_float(self):
         tool = CalculatorTool()
-        result = tool.execute(expression="1/3")
+        result = await tool.execute(expression="1/3")
         assert result.success is True
         assert isinstance(result.data, float)
 
-    def test_execute_convert_success(self):
+    async def test_execute_convert_success(self):
         tool = CalculatorTool()
-        result = tool.execute(convert={"value": 100, "from": "cm", "to": "m"})
+        result = await tool.execute(convert={"value": 100, "from": "cm", "to": "m"})
         assert result.success is True
         assert result.data == 1
         assert result.metadata["operation"] == "convert"
 
-    def test_execute_value_error(self):
+    async def test_execute_value_error(self):
         tool = CalculatorTool()
-        result = tool.execute(expression="2 ** 1001")
+        result = await tool.execute(expression="2 ** 1001")
         assert result.success is False
         assert "Exponent too large" in result.error
 
-    def test_execute_zero_division(self):
+    async def test_execute_zero_division(self):
         tool = CalculatorTool()
-        result = tool.execute(expression="1/0")
+        result = await tool.execute(expression="1/0")
         assert result.success is False
         assert result.error == "Division by zero"
 
-    def test_execute_overflow(self):
+    async def test_execute_overflow(self):
         tool = CalculatorTool()
-        result = tool.execute(expression="exp(10000)")
+        result = await tool.execute(expression="exp(10000)")
         assert result.success is False
         assert result.error == "Result too large"
 
-    def test_execute_generic_exception(self):
+    async def test_execute_generic_exception(self):
         tool = CalculatorTool()
-        result = tool.execute(convert={"value": "x", "from": "m", "to": "cm"})
+        result = await tool.execute(convert={"value": "x", "from": "m", "to": "cm"})
         assert result.success is False
         assert "could not convert string to float" in result.error
 
@@ -211,20 +210,20 @@ class TestCalculatorTool:
         error = tool.validate_parameters(unknown_param=123)
         assert "Unknown parameters" in error
 
-    def test_execute_float_converted_to_int(self):
+    async def test_execute_float_converted_to_int(self):
         tool = CalculatorTool()
-        result = tool.execute(expression="4.0")
+        result = await tool.execute(expression="4.0")
         assert result.success is True
         assert result.data == 4
         assert isinstance(result.data, int)
 
-    def test_execute_float_rounded(self):
+    async def test_execute_float_rounded(self):
         tool = CalculatorTool()
-        result = tool.execute(expression="1/3")
+        result = await tool.execute(expression="1/3")
         assert result.success is True
         assert result.data == round(1 / 3, 10)
 
-    def test_execute_generic_exception_path(self, monkeypatch):
+    async def test_execute_generic_exception_path(self, monkeypatch):
         tool = CalculatorTool()
 
         def boom(*args, **kwargs):
@@ -232,7 +231,7 @@ class TestCalculatorTool:
 
         monkeypatch.setattr(tool, "_safe_eval", boom)
 
-        result = tool.execute(expression="2+2")
+        result = await tool.execute(expression="2+2")
 
         assert result.success is False
         assert result.error == "Calculation failed: boom"
@@ -249,9 +248,9 @@ class TestCalculatorTool:
         assert tool._convert_temperature(0, "c", "k") == 273.15
 
 
-    def test_execute_convert_rounds_float(self):
+    async def test_execute_convert_rounds_float(self):
         tool = CalculatorTool()
-        result = tool.execute(convert={"value": 1, "from": "in", "to": "m"})
+        result = await tool.execute(convert={"value": 1, "from": "in", "to": "m"})
         assert result.success is True
         assert result.data == round(0.0254, 10)
         assert isinstance(result.data, float)

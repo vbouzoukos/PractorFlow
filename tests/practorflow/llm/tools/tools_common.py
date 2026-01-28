@@ -7,10 +7,10 @@ tool_registry and other tool-related test files.
 
 from typing import Any, Dict, List, Optional
 
-from practorflow.llm.tools.base import BaseTool, ToolParameter, ToolResult
+from practorflow.llm.tools import AsyncBaseTool, ToolParameter, ToolResult
 
 
-class MockTool(BaseTool):
+class MockTool(AsyncBaseTool):
     """
     Mock tool implementation for testing.
     
@@ -63,7 +63,7 @@ class MockTool(BaseTool):
     def parameters(self) -> List[ToolParameter]:
         return self._parameters
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """Execute mock tool and record call arguments."""
         self._last_call_kwargs = kwargs
         return self._result

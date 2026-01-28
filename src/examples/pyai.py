@@ -510,28 +510,6 @@ async def example_web_search_serpapi():
             else:
                 return f"Search error: {result.error}"
 
-        @agent.tool
-        async def search_news(
-            ctx: RunContext[SerpAPISearchDeps], query: str, max_results: int = 5
-        ) -> str:
-            """Search Google News for recent news articles.
-
-            Args:
-                ctx: The run context with dependencies.
-                query: The search query to find news articles.
-                max_results: Maximum number of results to return.
-            """
-            result = ctx.deps.web_search_tool.search_news(
-                query=query, max_results=max_results
-            )
-
-            if result.success and result.data:
-                return result.data
-            elif result.success:
-                return "No news results found for the query."
-            else:
-                return f"News search error: {result.error}"
-
         # Create dependencies with SerpAPI tool
         serp_tool = SerpAPISearchTool(
             api_key=api_key,

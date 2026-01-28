@@ -189,7 +189,7 @@ class TestLlamaCppRunnerGenerate:
     @pytest.mark.asyncio
     async def test_generate_with_context_and_search_metadata(self, runner):
         """generate() includes search_metadata in response when available."""
-        from practorflow.llm.tools.base import ToolResult
+        from practorflow.llm.tools import ToolResult
 
         runner._pending_context = "Relevant document content."
         mock_result = ToolResult(
@@ -210,7 +210,7 @@ class TestLlamaCppRunnerGenerate:
     @pytest.mark.asyncio
     async def test_generate_with_context_but_no_metadata(self, runner):
         """generate() handles context without metadata gracefully."""
-        from practorflow.llm.tools.base import ToolResult
+        from practorflow.llm.tools import ToolResult
 
         runner._pending_context = "Document content."
         mock_result = ToolResult(
@@ -229,7 +229,7 @@ class TestLlamaCppRunnerGenerate:
     @pytest.mark.asyncio
     async def test_generate_with_context_clears_tool_registry(self, runner):
         """generate() clears last_result from tool registry after using context."""
-        from practorflow.llm.tools.base import ToolResult
+        from practorflow.llm.tools import ToolResult
 
         runner._pending_context = "Context."
         mock_result = ToolResult(success=True, data="data", metadata={"key": "value"})

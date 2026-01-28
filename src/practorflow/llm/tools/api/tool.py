@@ -88,7 +88,7 @@ class ApiTool(AsyncBaseTool):
         Convert config parameters to base ToolParameter format.
         
         Returns:
-            List of ToolParameter for BaseTool interface.
+            List of ToolParameter for AsyncBaseTool interface.
         """
         result = []
         

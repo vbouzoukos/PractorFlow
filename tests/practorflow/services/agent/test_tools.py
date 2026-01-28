@@ -1,6 +1,6 @@
 import json
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from practorflow.services.agent.tools import (
     register_default_tools,
@@ -102,9 +102,7 @@ async def test_execute_tool_not_found():
 async def test_search_knowledge_with_results():
     agent = MagicMock()
     knowledge_store = MagicMock()
-    knowledge_store.search_scoped.return_value = [
-        {"text": "abc", "filename": "f.txt"}
-    ]
+    knowledge_store.search_scoped.return_value = [{"text": "abc", "filename": "f.txt"}]
 
     deps = make_agent_deps(knowledge_store, MagicMock())
 
@@ -191,10 +189,12 @@ async def test_summarize_text_success():
 async def test_transform_json_dict_result():
     agent = MagicMock()
     tool_registry = MagicMock()
-    tool_registry.execute.return_value = MagicMock(
-        success=True,
-        data={"a": 1},
-        error=None,
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(
+            success=True,
+            data={"a": 1},
+            error=None,
+        )
     )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
@@ -257,6 +257,7 @@ async def test_calculate_success():
 
     assert result == "42"
 
+
 def test_register_default_tools_registers_missing_tools():
     tool_registry = MagicMock()
     tool_registry.__contains__.side_effect = lambda name: False
@@ -284,7 +285,9 @@ async def test_execute_tool_success_and_sets_scope():
     agent = MagicMock()
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.return_value = MagicMock(success=True, data="ok", error=None)
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(success=True, data="ok", error=None)
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry, document_scope={"d1"})
 
@@ -306,7 +309,9 @@ async def test_execute_tool_failure_result():
     agent = MagicMock()
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.return_value = MagicMock(success=False, data=None, error="bad")
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(success=False, data=None, error="bad")
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
@@ -347,7 +352,7 @@ async def test_execute_tool_exception_returns_tool_execution_failed():
     agent = MagicMock()
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.side_effect = RuntimeError("boom")
+    tool_registry.execute = AsyncMock(side_effect=RuntimeError("boom"))
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
@@ -407,7 +412,9 @@ async def test_search_knowledge_with_results():
 async def test_search_web_success():
     agent = MagicMock()
     tool_registry = MagicMock()
-    tool_registry.execute.return_value = MagicMock(success=True, data="web", error=None)
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(success=True, data="web", error=None)
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
@@ -427,7 +434,9 @@ async def test_search_web_success():
 async def test_search_web_error():
     agent = MagicMock()
     tool_registry = MagicMock()
-    tool_registry.execute.return_value = MagicMock(success=False, data=None, error="oops")
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(success=False, data=None, error="oops")
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
@@ -447,7 +456,9 @@ async def test_search_web_error():
 async def test_fetch_webpage_success_no_content():
     agent = MagicMock()
     tool_registry = MagicMock()
-    tool_registry.execute.return_value = MagicMock(success=True, data=None, error=None)
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(success=True, data=None, error=None)
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
@@ -467,7 +478,9 @@ async def test_fetch_webpage_success_no_content():
 async def test_fetch_webpage_error():
     agent = MagicMock()
     tool_registry = MagicMock()
-    tool_registry.execute.return_value = MagicMock(success=False, data=None, error="404")
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(success=False, data=None, error="404")
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
@@ -486,7 +499,9 @@ async def test_fetch_webpage_error():
 async def test_summarize_text_success():
     agent = MagicMock()
     tool_registry = MagicMock()
-    tool_registry.execute.return_value = MagicMock(success=True, data="summary", error=None)
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(success=True, data="summary", error=None)
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
@@ -506,7 +521,9 @@ async def test_summarize_text_success():
 async def test_summarize_text_error():
     agent = MagicMock()
     tool_registry = MagicMock()
-    tool_registry.execute.return_value = MagicMock(success=False, data=None, error="bad")
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(success=False, data=None, error="bad")
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
@@ -526,7 +543,9 @@ async def test_summarize_text_error():
 async def test_transform_json_dict_result_is_pretty_json():
     agent = MagicMock()
     tool_registry = MagicMock()
-    tool_registry.execute.return_value = MagicMock(success=True, data={"a": 1}, error=None)
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(success=True, data={"a": 1}, error=None)
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
@@ -547,8 +566,9 @@ async def test_transform_json_dict_result_is_pretty_json():
 async def test_transform_json_success_no_result_when_data_falsy():
     agent = MagicMock()
     tool_registry = MagicMock()
-    tool_registry.execute.return_value = MagicMock(success=True, data=None, error=None)
-
+    tool_registry.execute = AsyncMock(
+        return_value=AsyncMock(success=True, data=None, error=None)
+    )
     deps = make_agent_deps(MagicMock(), tool_registry)
 
     register_executor_tools(agent, deps)
@@ -568,7 +588,9 @@ async def test_transform_json_success_no_result_when_data_falsy():
 async def test_transform_json_failure():
     agent = MagicMock()
     tool_registry = MagicMock()
-    tool_registry.execute.return_value = MagicMock(success=False, data=None, error="bad")
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(success=False, data=None, error="bad")
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
@@ -589,7 +611,9 @@ async def test_transform_json_failure():
 async def test_calculate_success():
     agent = MagicMock()
     tool_registry = MagicMock()
-    tool_registry.execute.return_value = MagicMock(success=True, data=42, error=None)
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(success=True, data=42, error=None)
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
@@ -609,7 +633,9 @@ async def test_calculate_success():
 async def test_calculate_error():
     agent = MagicMock()
     tool_registry = MagicMock()
-    tool_registry.execute.return_value = MagicMock(success=False, data=None, error="nope")
+    tool_registry.execute = AsyncMock(
+        return_value=MagicMock(success=False, data=None, error="nope")
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
@@ -623,6 +649,7 @@ async def test_calculate_error():
     )
 
     assert result == "Calculation error: nope"
+
 
 @pytest.mark.asyncio
 async def test_search_knowledge_no_results_with_document_scope():

@@ -214,9 +214,8 @@ def _infer_tool_args(
     return args
 
 
-def parse_executor_results(
+async def parse_executor_results(
     plan: Plan,
-    response_text: str,
     deps: AgentDeps,
 ) -> List[StepResult]:
     """
@@ -228,7 +227,6 @@ def parse_executor_results(
 
     Args:
         plan: The plan being executed.
-        response_text: Executor's response text.
         deps: Dependencies for fallback execution.
 
     Returns:
@@ -255,7 +253,7 @@ def parse_executor_results(
             tool_args = _infer_tool_args(step.tool, step_outputs, tool_steps, tool_args)
 
             try:
-                tool_result = deps.tool_registry.execute(step.tool, **tool_args)
+                tool_result = await deps.tool_registry.execute(step.tool, **tool_args)
 
                 if tool_result.success:
                     # Store output and mark as tool step

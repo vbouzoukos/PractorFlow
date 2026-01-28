@@ -1,11 +1,15 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from practorflow.services.agent.parser import parse_executor_results
 from practorflow.services.agent.schemas import StepStatus
-from tests.practorflow.services.agent.common_agent_deps import make_plan, make_agent_deps, make_mock_tool_result
+from tests.practorflow.services.agent.common_agent_deps import (
+    make_plan,
+    make_agent_deps,
+    make_mock_tool_result,
+)
 
 
-def test_executor_with_successful_tool():
+async def test_executor_with_successful_tool():
     plan = make_plan()
     step = plan.steps[0]
     step.tool = "tool_a"
@@ -13,35 +17,39 @@ def test_executor_with_successful_tool():
 
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.return_value = make_mock_tool_result(success=True, data="ok")
+    tool_registry.execute = AsyncMock(
+        return_value=make_mock_tool_result(success=True, data="ok")
+    )
 
     deps = make_agent_deps(knowledge_store=MagicMock(), tool_registry=tool_registry)
 
-    results = parse_executor_results(plan, "response", deps)
+    results = await parse_executor_results(plan, deps)
 
     assert results[0].status == StepStatus.SUCCESS
     assert results[0].output == "ok"
     tool_registry.execute.assert_called_once()
 
 
-def test_executor_tool_failure():
+async def test_executor_tool_failure():
     plan = make_plan()
     step = plan.steps[0]
     step.tool = "tool_a"
 
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.return_value = make_mock_tool_result(success=False, error="err")
+    tool_registry.execute = AsyncMock(
+        return_value=make_mock_tool_result(success=False, error="err")
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    results = parse_executor_results(plan, "", deps)
+    results = await parse_executor_results(plan, deps)
 
     assert results[0].status == StepStatus.FAILURE
     assert results[0].error == "err"
 
 
-def test_executor_tool_exception():
+async def test_executor_tool_exception():
     plan = make_plan()
     step = plan.steps[0]
     step.tool = "tool_a"
@@ -52,13 +60,13 @@ def test_executor_tool_exception():
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    results = parse_executor_results(plan, "", deps)
+    results = await parse_executor_results(plan, deps)
 
     assert results[0].status == StepStatus.FAILURE
     assert "boom" in results[0].error
 
 
-def test_executor_tool_not_found():
+async def test_executor_tool_not_found():
     plan = make_plan()
     step = plan.steps[0]
     step.tool = "missing"
@@ -68,24 +76,25 @@ def test_executor_tool_not_found():
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    results = parse_executor_results(plan, "", deps)
+    results = await parse_executor_results(plan, deps)
 
     assert results[0].status == StepStatus.FAILURE
     assert "Tool not found" in results[0].error
 
 
-def test_executor_reasoning_step():
+async def test_executor_reasoning_step():
     plan = make_plan()
     plan.steps[0].tool = None
 
-    deps = make_agent_deps(MagicMock(), MagicMock())
+    deps = make_agent_deps(MagicMock(), AsyncMock())
 
-    results = parse_executor_results(plan, "do something", deps)
+    results = await parse_executor_results(plan, deps)
 
     assert results[0].status == StepStatus.SUCCESS
     assert "Reasoning completed" in results[0].output
 
-def test_executor_resolves_previous_reference():
+
+async def test_executor_resolves_previous_reference():
     plan = make_plan()
 
     plan.steps = [
@@ -107,19 +116,21 @@ def test_executor_resolves_previous_reference():
 
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.side_effect = [
-        make_mock_tool_result(success=True, data="first"),
-        make_mock_tool_result(success=True, data="second"),
-    ]
+    tool_registry.execute = AsyncMock(
+        side_effect=[
+            make_mock_tool_result(success=True, data="first"),
+            make_mock_tool_result(success=True, data="second"),
+        ]
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    parse_executor_results(plan, "", deps)
+    await parse_executor_results(plan, deps)
 
     tool_registry.execute.assert_called_with("tool_b", y="first")
 
 
-def test_executor_resolves_explicit_step_output_reference():
+async def test_executor_resolves_explicit_step_output_reference():
     plan = make_plan()
 
     plan.steps = [
@@ -141,19 +152,21 @@ def test_executor_resolves_explicit_step_output_reference():
 
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.side_effect = [
-        make_mock_tool_result(success=True, data="out1"),
-        make_mock_tool_result(success=True, data="out2"),
-    ]
+    tool_registry.execute = AsyncMock(
+        side_effect=[
+            make_mock_tool_result(success=True, data="out1"),
+            make_mock_tool_result(success=True, data="out2"),
+        ]
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    parse_executor_results(plan, "", deps)
+    await parse_executor_results(plan, deps)
 
     tool_registry.execute.assert_called_with("tool_b", y="out1")
 
 
-def test_executor_reference_falls_back_when_step_failed():
+async def test_executor_reference_falls_back_when_step_failed():
     plan = make_plan()
 
     plan.steps = [
@@ -182,26 +195,26 @@ def test_executor_reference_falls_back_when_step_failed():
 
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.side_effect = [
-        make_mock_tool_result(success=True, data="good"),     # step_1
-        make_mock_tool_result(success=False, error="fail"),  # step_2
-        make_mock_tool_result(success=True, data="fallback") # step_3
-    ]
+    tool_registry.execute = AsyncMock(
+        side_effect=[
+            make_mock_tool_result(success=True, data="good"),  # step_1
+            make_mock_tool_result(success=False, error="fail"),  # step_2
+            make_mock_tool_result(success=True, data="fallback"),  # step_3
+        ]
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    results = parse_executor_results(plan, "", deps)
+    results = await parse_executor_results(plan, deps)
 
     assert results[2].status == StepStatus.SUCCESS
     tool_registry.execute.assert_called_with("tool_c", y="good")
 
 
-def test_executor_inferrs_missing_tool_input_param():
+async def test_executor_inferrs_missing_tool_input_param():
     plan = make_plan()
     plan.steps = [
-        plan.steps[0].model_copy(
-            update={"tool": "tool_a"}
-        ),
+        plan.steps[0].model_copy(update={"tool": "tool_a"}),
         plan.steps[0].model_copy(
             update={
                 "step_id": "step_2",
@@ -213,21 +226,24 @@ def test_executor_inferrs_missing_tool_input_param():
 
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.side_effect = [
-        make_mock_tool_result(success=True, data="raw text"),
-        make_mock_tool_result(success=True, data="summary"),
-    ]
+    tool_registry.execute = AsyncMock(
+        side_effect=[
+            make_mock_tool_result(success=True, data="raw text"),
+            make_mock_tool_result(success=True, data="summary"),
+        ]
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    parse_executor_results(plan, "", deps)
+    await parse_executor_results(plan, deps)
 
     tool_registry.execute.assert_called_with(
         "summarize_text",
         text="raw text",
     )
 
-def test_executor_previous_skips_reasoning_steps():
+
+async def test_executor_previous_skips_reasoning_steps():
     plan = make_plan()
     plan.steps = [
         plan.steps[0].model_copy(update={"tool": None}),
@@ -242,16 +258,19 @@ def test_executor_previous_skips_reasoning_steps():
 
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.return_value = make_mock_tool_result(success=True, data="tool-out")
+    tool_registry.execute = AsyncMock(
+        return_value=make_mock_tool_result(success=True, data="tool-out")
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    results = parse_executor_results(plan, "", deps)
+    results = await parse_executor_results(plan, deps)
 
     tool_registry.execute.assert_called_with("tool_b", y=None)
     assert results[1].status == StepStatus.SUCCESS
 
-def test_executor_get_last_tool_output_returns_none_when_all_tool_outputs_none():
+
+async def test_executor_get_last_tool_output_returns_none_when_all_tool_outputs_none():
     plan = make_plan()
 
     plan.steps = [
@@ -276,21 +295,24 @@ def test_executor_get_last_tool_output_returns_none_when_all_tool_outputs_none()
 
     # step_1: tool step but returns None output
     # step_2: tries to resolve $previous → no usable tool output → None
-    tool_registry.execute.side_effect = [
-        make_mock_tool_result(success=False, error="fail"),  # output=None
-        make_mock_tool_result(success=True, data="ignored"),
-    ]
+    tool_registry.execute = AsyncMock(
+        side_effect=[
+            make_mock_tool_result(success=False, error="fail"),  # output=None
+            make_mock_tool_result(success=True, data="ignored"),
+        ]
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    results = parse_executor_results(plan, "", deps)
+    results = await parse_executor_results(plan, deps)
 
     # step_2 still executes, but with y=None
     tool_registry.execute.assert_called_with("tool_b", y=None)
 
     assert results[1].status == StepStatus.SUCCESS
 
-def test_executor_unresolvable_reference_sets_none():
+
+async def test_executor_unresolvable_reference_sets_none():
     plan = make_plan()
 
     plan.steps = [
@@ -307,26 +329,29 @@ def test_executor_unresolvable_reference_sets_none():
     tool_registry.__contains__.return_value = True
 
     # No previous tool outputs exist
-    tool_registry.execute.return_value = make_mock_tool_result(
-        success=True,
-        data="ignored",
+    tool_registry.execute = AsyncMock(
+        return_value=make_mock_tool_result(
+            success=True,
+            data="ignored",
+        )
     )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    results = parse_executor_results(plan, "", deps)
+    results = await parse_executor_results(plan, deps)
 
     tool_registry.execute.assert_called_with("tool_a", x=None)
     assert results[0].status == StepStatus.SUCCESS
 
-def test_resolve_tool_args_unresolvable_step_no_fallback():
+
+async def test_resolve_tool_args_unresolvable_step_no_fallback():
     plan = make_plan()
     plan.steps = [
         plan.steps[0].model_copy(
             update={
                 "step_id": "step_1",
                 "tool": "tool_a",
-                "tool_args": {},   # executes first
+                "tool_args": {},  # executes first
             }
         ),
         plan.steps[0].model_copy(
@@ -343,70 +368,77 @@ def test_resolve_tool_args_unresolvable_step_no_fallback():
 
     # step_1 fails → output=None
     # no other tool outputs exist → no fallback
-    tool_registry.execute.side_effect = [
-        make_mock_tool_result(success=False, error="fail"),
-        make_mock_tool_result(success=True, data="ignored"),
-    ]
+    tool_registry.execute = AsyncMock(
+        side_effect=[
+            make_mock_tool_result(success=False, error="fail"),
+            make_mock_tool_result(success=True, data="ignored"),
+        ]
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    parse_executor_results(plan, "", deps)
+    await parse_executor_results(plan, deps)
 
     tool_registry.execute.assert_called_with("tool_b", x=None)
 
-def test_resolve_tool_args_malformed_dollar_reference_passthrough():
+
+async def test_resolve_tool_args_malformed_dollar_reference_passthrough():
     plan = make_plan()
     plan.steps[0].tool = "tool_a"
     plan.steps[0].tool_args = {"x": "$not a valid ref"}
 
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.return_value = make_mock_tool_result(success=True, data="ok")
+    tool_registry.execute = AsyncMock(
+        return_value=make_mock_tool_result(success=True, data="ok")
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    parse_executor_results(plan, "", deps)
+    await parse_executor_results(plan, deps)
 
     tool_registry.execute.assert_called_with("tool_a", x="$not a valid ref")
 
-def test_resolve_tool_args_plain_string_passthrough():
+
+async def test_resolve_tool_args_plain_string_passthrough():
     plan = make_plan()
     plan.steps[0].tool = "tool_a"
     plan.steps[0].tool_args = {"x": "hello"}
 
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.return_value = make_mock_tool_result(success=True, data="ok")
-
+    tool_registry.execute = AsyncMock(
+        return_value=make_mock_tool_result(success=True, data="ok")
+    )
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    parse_executor_results(plan, "", deps)
+    await parse_executor_results(plan, deps)
 
     tool_registry.execute.assert_called_with("tool_a", x="hello")
 
-def test_resolve_tool_args_nested_dict():
+
+async def test_resolve_tool_args_nested_dict():
     plan = make_plan()
     plan.steps[0].tool = "tool_a"
-    plan.steps[0].tool_args = {
-        "config": {
-            "param": "value"
-        }
-    }
+    plan.steps[0].tool_args = {"config": {"param": "value"}}
 
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.return_value = make_mock_tool_result(success=True, data="ok")
+    tool_registry.execute = AsyncMock(
+        return_value=make_mock_tool_result(success=True, data="ok")
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    parse_executor_results(plan, "", deps)
+    await parse_executor_results(plan, deps)
 
     tool_registry.execute.assert_called_with(
         "tool_a",
         config={"param": "value"},
     )
 
-def test_resolve_tool_args_list_recursion():
+
+async def test_resolve_tool_args_list_recursion():
     plan = make_plan()
     plan.steps[0].tool = "tool_a"
     plan.steps[0].tool_args = {
@@ -418,18 +450,21 @@ def test_resolve_tool_args_list_recursion():
 
     tool_registry = MagicMock()
     tool_registry.__contains__.return_value = True
-    tool_registry.execute.return_value = make_mock_tool_result(success=True, data="ok")
+    tool_registry.execute = AsyncMock(
+        return_value=make_mock_tool_result(success=True, data="ok")
+    )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    parse_executor_results(plan, "", deps)
+    await parse_executor_results(plan, deps)
 
     tool_registry.execute.assert_called_with(
         "tool_a",
         items=[{"a": "x"}, 123],
     )
 
-def test_infer_tool_args_no_tool_outputs_logs_warning_and_does_not_infer():
+
+async def test_infer_tool_args_no_tool_outputs_logs_warning_and_does_not_infer():
     plan = make_plan()
 
     # Step 1: reasoning step (NOT a tool, so no tool outputs exist)
@@ -453,14 +488,16 @@ def test_infer_tool_args_no_tool_outputs_logs_warning_and_does_not_infer():
     tool_registry.__contains__.return_value = True
 
     # summarize_text executes, but inference should fail BEFORE execution
-    tool_registry.execute.return_value = make_mock_tool_result(
-        success=True,
-        data="summary",
+    tool_registry.execute = AsyncMock(
+        return_value=make_mock_tool_result(
+            success=True,
+            data="summary",
+        )
     )
 
     deps = make_agent_deps(MagicMock(), tool_registry)
 
-    results = parse_executor_results(plan, "", deps)
+    results = await parse_executor_results(plan, deps)
 
     # summarize_text should be called WITHOUT inferred 'text'
     tool_registry.execute.assert_called_with("summarize_text")

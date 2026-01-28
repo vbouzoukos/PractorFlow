@@ -10,14 +10,15 @@ from typing import List, Optional
 
 import httpx
 
-from practorflow.llm.tools.base import BaseTool, ToolParameter, ToolResult
+from practorflow.llm.tools.async_tool import AsyncBaseTool
+from practorflow.llm.tools.base import ToolParameter, ToolResult
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
 
 logger = get_logger("tool", level=appConfiguration.LoggerConfiguration.ToolLevel)
 
 
-class WebFetchTool(BaseTool):
+class WebFetchTool(AsyncBaseTool):
     """
     Web fetch tool for retrieving web page content.
 
@@ -183,7 +184,7 @@ class WebFetchTool(BaseTool):
 
         return metadata
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
         Fetch and extract content from a web page.
 
@@ -212,8 +213,8 @@ class WebFetchTool(BaseTool):
                 "Accept-Language": "en-US,en;q=0.5",
             }
 
-            with httpx.Client(timeout=self._default_timeout, follow_redirects=True) as client:
-                response = client.get(url, headers=headers)
+            async with httpx.AsyncClient(timeout=self._default_timeout, follow_redirects=True) as client:
+                response = await client.get(url, headers=headers)
 
             if response.status_code >= 400:
                 return ToolResult(

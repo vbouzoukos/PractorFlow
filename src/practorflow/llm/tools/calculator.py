@@ -8,16 +8,17 @@ basic arithmetic, math functions, and unit conversions.
 import ast
 import math
 import operator
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
-from practorflow.llm.tools.base import BaseTool, ToolParameter, ToolResult
+from practorflow.llm.tools.async_tool import AsyncBaseTool
+from practorflow.llm.tools.base import ToolParameter, ToolResult
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
 
 logger = get_logger("tool", level=appConfiguration.LoggerConfiguration.ToolLevel)
 
 
-class CalculatorTool(BaseTool):
+class CalculatorTool(AsyncBaseTool):
     """
     Calculator tool for safe mathematical expression evaluation.
 
@@ -332,7 +333,7 @@ class CalculatorTool(BaseTool):
 
         return None
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
         Execute calculation or unit conversion.
 

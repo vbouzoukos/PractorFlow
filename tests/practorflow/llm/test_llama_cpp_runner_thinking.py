@@ -486,7 +486,7 @@ class TestLlamaCppRunnerGenerateStreamWithThinking:
         self, runner
     ):
         """generate_stream() merges thinking with existing context metadata."""
-        from practorflow.llm.tools.base import ToolResult
+        from practorflow.llm.tools import ToolResult
 
         runner._pending_context = "Document content."
         runner.tool_registry._last_result = ToolResult(

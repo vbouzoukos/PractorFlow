@@ -6,7 +6,8 @@ Implements Small-to-Big retrieval over scoped documents.
 
 from typing import Any, Dict, List, Optional
 
-from practorflow.llm.tools.base import BaseTool, ToolParameter, ToolResult
+from practorflow.llm.tools.async_tool import AsyncBaseTool
+from practorflow.llm.tools.base import ToolParameter, ToolResult
 from practorflow.llm.knowledge.knowledge_store import KnowledgeStore
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
@@ -14,7 +15,7 @@ from practorflow.settings.app_settings import appConfiguration
 logger = get_logger("tool", level=appConfiguration.LoggerConfiguration.ToolLevel)
 
 
-class KnowledgeSearchTool(BaseTool):
+class KnowledgeSearchTool(AsyncBaseTool):
     """
     Tool for searching the knowledge base.
 
@@ -75,7 +76,7 @@ class KnowledgeSearchTool(BaseTool):
         """
         self._document_scope = document_ids
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
         Execute knowledge search.
 

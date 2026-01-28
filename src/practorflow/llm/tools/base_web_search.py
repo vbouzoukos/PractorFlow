@@ -9,14 +9,15 @@ Install: pip install ddgs
 
 from typing import Any, Dict, List
 
-from practorflow.llm.tools.base import BaseTool, ToolParameter, ToolResult
+from practorflow.llm.tools.async_tool import AsyncBaseTool
+from practorflow.llm.tools.base import ToolParameter, ToolResult
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
 
 logger = get_logger("tool", level=appConfiguration.LoggerConfiguration.ToolLevel)
 
 
-class DuckDuckGoSearchTool(BaseTool):
+class DuckDuckGoSearchTool(AsyncBaseTool):
     """
     Web search tool using DuckDuckGo.
 
@@ -86,7 +87,7 @@ class DuckDuckGoSearchTool(BaseTool):
                 )
         return self._ddgs
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
         Execute web search.
 
@@ -152,68 +153,6 @@ class DuckDuckGoSearchTool(BaseTool):
         except Exception as e:
             logger.error(f"[DuckDuckGo] Error: {e}")
             return ToolResult(success=False, error=f"Web search failed: {str(e)}")
-
-    def search_news(self, query: str, max_results: int = 5) -> ToolResult:
-        """
-        Search for news articles.
-
-        Args:
-            query: Search query string
-            max_results: Maximum number of results
-
-        Returns:
-            ToolResult with news results
-        """
-        try:
-            logger.debug(f"[DuckDuckGo] News search: '{query}' (max_results={max_results})")
-
-            client = self._get_client()
-
-            raw_results = client.news(
-                query,
-                region=self._region,
-                safesearch=self._safesearch,
-                max_results=max_results,
-            )
-
-            results = []
-            for item in raw_results:
-                results.append({
-                    "title": item.get("title", ""),
-                    "url": item.get("url", ""),
-                    "snippet": item.get("body", ""),
-                    "date": item.get("date", ""),
-                    "source": item.get("source", ""),
-                })
-
-            if not results:
-                return ToolResult(
-                    success=True,
-                    data=None,
-                    metadata={
-                        "query": query,
-                        "results_count": 0,
-                        "message": "No news results found",
-                        "provider": "duckduckgo",
-                    },
-                )
-
-            formatted = self._format_news_results(results)
-
-            return ToolResult(
-                success=True,
-                data=formatted,
-                metadata={
-                    "query": query,
-                    "results_count": len(results),
-                    "provider": "duckduckgo",
-                    "type": "news",
-                },
-            )
-
-        except Exception as e:
-            logger.error(f"[DuckDuckGo] News search error: {e}")
-            return ToolResult(success=False, error=f"News search failed: {str(e)}")
 
     def _format_results(self, results: List[Dict[str, Any]]) -> str:
         """

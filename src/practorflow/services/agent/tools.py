@@ -16,7 +16,9 @@ from practorflow.settings.app_settings import appConfiguration
 
 from practorflow.services.agent.deps import AgentDeps
 
-logger = get_logger("agent_tools", level=appConfiguration.LoggerConfiguration.AgentLevel)
+logger = get_logger(
+    "agent_tools", level=appConfiguration.LoggerConfiguration.AgentLevel
+)
 
 
 def register_default_tools(
@@ -79,6 +81,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         agent: Agent to register tools with.
         deps: Dependencies containing tool registry.
     """
+
     @agent.tool
     async def execute_tool(
         ctx: RunContext[AgentDeps],
@@ -104,7 +107,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
 
         try:
             args = tool_args or {}
-            result = ctx.deps.tool_registry.execute(tool_name, **args)
+            result = await ctx.deps.tool_registry.execute(tool_name, **args)
 
             if result.success:
                 return str(result.data) if result.data else "Tool executed successfully"
@@ -133,7 +136,6 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         # Guard: No documents in scope means no search
         if ctx.deps.document_scope is None:
             return ""
-
 
         results = ctx.deps.knowledge_store.search_scoped(
             query=query,
@@ -170,7 +172,9 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         """
         logger.debug(f"[AgentService] search_web called: {query}")
 
-        result = ctx.deps.tool_registry.execute("web_search", query=query, max_results=max_results)
+        result = await ctx.deps.tool_registry.execute(
+            "web_search", query=query, max_results=max_results
+        )
 
         if result.success:
             return str(result.data) if result.data else ""
@@ -195,7 +199,9 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         """
         logger.debug(f"[AgentService] fetch_webpage called: {url}")
 
-        result = ctx.deps.tool_registry.execute("web_fetch", url=url, extract_mode=extract_mode)
+        result = await ctx.deps.tool_registry.execute(
+            "web_fetch", url=url, extract_mode=extract_mode
+        )
 
         if result.success:
             return str(result.data) if result.data else ""
@@ -220,7 +226,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         """
         logger.debug(f"[AgentService] summarize_text called: {len(text)} chars")
 
-        result = ctx.deps.tool_registry.execute(
+        result = await ctx.deps.tool_registry.execute(
             "summarize_text",
             text=text,
             num_sentences=num_sentences,
@@ -251,7 +257,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         """
         logger.debug(f"[AgentService] transform_json called: {operation}")
 
-        result = ctx.deps.tool_registry.execute(
+        result = await ctx.deps.tool_registry.execute(
             "json_transform",
             json_data=json_data,
             operation=operation,
@@ -262,6 +268,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
             data = result.data
             if isinstance(data, (dict, list)):
                 import json
+
                 return json.dumps(data, indent=2)
             return str(data) if data else "No result."
         else:
@@ -285,7 +292,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         """
         logger.debug(f"[AgentService] calculate called: {expression or convert}")
 
-        result = ctx.deps.tool_registry.execute(
+        result = await ctx.deps.tool_registry.execute(
             "calculator",
             expression=expression,
             convert=convert,

@@ -10,14 +10,15 @@ Install: pip install google-search-results
 
 from typing import Any, Dict, List
 
-from practorflow.llm.tools.base import BaseTool, ToolParameter, ToolResult
+from practorflow.llm.tools.async_tool import AsyncBaseTool
+from practorflow.llm.tools.base import ToolParameter, ToolResult
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
 
 logger = get_logger("tool", level=appConfiguration.LoggerConfiguration.ToolLevel)
 
 
-class SerpAPISearchTool(BaseTool):
+class SerpAPISearchTool(AsyncBaseTool):
     """
     Web search tool using SerpAPI.
 
@@ -190,7 +191,7 @@ class SerpAPISearchTool(BaseTool):
 
         return results
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
         Execute web search.
 
@@ -263,159 +264,6 @@ class SerpAPISearchTool(BaseTool):
         except Exception as e:
             logger.error(f"[SerpAPI] Error: {e}")
             return ToolResult(success=False, error=f"Web search failed: {str(e)}")
-
-    def search_news(self, query: str, max_results: int = 5) -> ToolResult:
-        """
-        Search for news articles using Google News.
-
-        Args:
-            query: Search query string
-            max_results: Maximum number of results
-
-        Returns:
-            ToolResult with news results
-        """
-        try:
-            logger.debug(f"[SerpAPI] News search: '{query}' (max_results={max_results})")
-
-            client_class = self._get_client()
-
-            params = {
-                "q": query,
-                "engine": "google_news",
-                "gl": self._country,
-                "hl": self._language,
-            }
-
-            client = client_class(api_key=self._api_key)
-            response = client.search(params)
-
-            if "error" in response:
-                return ToolResult(
-                    success=False,
-                    error=f"SerpAPI error: {response['error']}",
-                )
-
-            news_results = response.get("news_results", [])
-
-            results = []
-            for item in news_results[:max_results]:
-                results.append({
-                    "title": item.get("title", ""),
-                    "url": item.get("link", ""),
-                    "snippet": item.get("snippet", ""),
-                    "date": item.get("date", ""),
-                    "source": item.get("source", {}).get("name", ""),
-                    "thumbnail": item.get("thumbnail", ""),
-                })
-
-            if not results:
-                return ToolResult(
-                    success=True,
-                    data=None,
-                    metadata={
-                        "query": query,
-                        "results_count": 0,
-                        "message": "No news results found",
-                        "provider": "serpapi",
-                        "type": "news",
-                    },
-                )
-
-            formatted = self._format_news_results(results)
-
-            return ToolResult(
-                success=True,
-                data=formatted,
-                metadata={
-                    "query": query,
-                    "results_count": len(results),
-                    "provider": "serpapi",
-                    "type": "news",
-                },
-            )
-
-        except Exception as e:
-            logger.error(f"[SerpAPI] News search error: {e}")
-            return ToolResult(success=False, error=f"News search failed: {str(e)}")
-
-    def search_images(self, query: str, max_results: int = 5) -> ToolResult:
-        """
-        Search for images using Google Images.
-
-        Args:
-            query: Search query string
-            max_results: Maximum number of results
-
-        Returns:
-            ToolResult with image results
-        """
-        try:
-            logger.debug(f"[SerpAPI] Image search: '{query}' (max_results={max_results})")
-
-            client_class = self._get_client()
-
-            params = {
-                "q": query,
-                "engine": "google_images",
-                "gl": self._country,
-                "hl": self._language,
-                "safe": "active" if self._safe_search else "off",
-                "num": max_results,
-            }
-
-            client = client_class(api_key=self._api_key)
-            response = client.search(params)
-
-            if "error" in response:
-                return ToolResult(
-                    success=False,
-                    error=f"SerpAPI error: {response['error']}",
-                )
-
-            image_results = response.get("images_results", [])
-
-            results = []
-            for item in image_results[:max_results]:
-                results.append({
-                    "title": item.get("title", ""),
-                    "url": item.get("link", ""),
-                    "image_url": item.get("original", ""),
-                    "thumbnail": item.get("thumbnail", ""),
-                    "source": item.get("source", ""),
-                    "width": item.get("original_width"),
-                    "height": item.get("original_height"),
-                })
-
-            if not results:
-                return ToolResult(
-                    success=True,
-                    data=None,
-                    metadata={
-                        "query": query,
-                        "results_count": 0,
-                        "message": "No image results found",
-                        "provider": "serpapi",
-                        "type": "images",
-                    },
-                )
-
-            formatted = self._format_image_results(results)
-
-            return ToolResult(
-                success=True,
-                data=formatted,
-                metadata={
-                    "query": query,
-                    "results_count": len(results),
-                    "provider": "serpapi",
-                    "type": "images",
-                },
-            )
-
-        except Exception as e:
-            logger.error(f"[SerpAPI] Image search error: {e}")
-            return ToolResult(success=False, error=f"Image search failed: {str(e)}")
 
     def _format_results(self, results: List[Dict[str, Any]]) -> str:
         """

@@ -135,25 +135,25 @@ class TestDuckDuckGoSearchToolGetClient:
 class TestDuckDuckGoSearchToolExecute:
     """Tests for DuckDuckGoSearchTool.execute()"""
 
-    def test_execute_missing_query_returns_error(self):
+    async def test_execute_missing_query_returns_error(self):
         """execute() returns error when query is missing."""
         tool = DuckDuckGoSearchTool()
 
-        result = tool.execute()
+        result = await tool.execute()
 
         assert result.success is False
         assert "Query parameter is required" in result.error
 
-    def test_execute_empty_query_returns_error(self):
+    async def test_execute_empty_query_returns_error(self):
         """execute() returns error when query is empty string."""
         tool = DuckDuckGoSearchTool()
 
-        result = tool.execute(query="")
+        result = await tool.execute(query="")
 
         assert result.success is False
         assert "Query parameter is required" in result.error
 
-    def test_execute_no_results_returns_success_with_none_data(self):
+    async def test_execute_no_results_returns_success_with_none_data(self):
         """execute() returns success with None data when no results found."""
         tool = DuckDuckGoSearchTool()
 
@@ -162,14 +162,14 @@ class TestDuckDuckGoSearchToolExecute:
             mock_client.text.return_value = []
             mock_get_client.return_value = mock_client
 
-            result = tool.execute(query="nonexistent query")
+            result = await tool.execute(query="nonexistent query")
 
             assert result.success is True
             assert result.data is None
             assert result.metadata["results_count"] == 0
             assert result.metadata["provider"] == "duckduckgo"
 
-    def test_execute_with_results_returns_formatted_data(self):
+    async def test_execute_with_results_returns_formatted_data(self):
         """execute() returns formatted results when search succeeds."""
         tool = DuckDuckGoSearchTool()
 
@@ -181,7 +181,7 @@ class TestDuckDuckGoSearchToolExecute:
             ]
             mock_get_client.return_value = mock_client
 
-            result = tool.execute(query="test query")
+            result = await tool.execute(query="test query")
 
             assert result.success is True
             assert "Result 1" in result.data
@@ -189,7 +189,7 @@ class TestDuckDuckGoSearchToolExecute:
             assert result.metadata["results_count"] == 2
             assert result.metadata["query"] == "test query"
 
-    def test_execute_uses_default_max_results(self):
+    async def test_execute_uses_default_max_results(self):
         """execute() uses default_max_results when not provided."""
         tool = DuckDuckGoSearchTool(default_max_results=7)
 
@@ -198,7 +198,7 @@ class TestDuckDuckGoSearchToolExecute:
             mock_client.text.return_value = []
             mock_get_client.return_value = mock_client
 
-            tool.execute(query="test")
+            await tool.execute(query="test")
 
             mock_client.text.assert_called_once_with(
                 "test",
@@ -207,7 +207,7 @@ class TestDuckDuckGoSearchToolExecute:
                 max_results=7,
             )
 
-    def test_execute_uses_provided_max_results(self):
+    async def test_execute_uses_provided_max_results(self):
         """execute() uses provided max_results over default."""
         tool = DuckDuckGoSearchTool(default_max_results=5)
 
@@ -216,7 +216,7 @@ class TestDuckDuckGoSearchToolExecute:
             mock_client.text.return_value = []
             mock_get_client.return_value = mock_client
 
-            tool.execute(query="test", max_results=3)
+            await tool.execute(query="test", max_results=3)
 
             mock_client.text.assert_called_once_with(
                 "test",
@@ -225,7 +225,7 @@ class TestDuckDuckGoSearchToolExecute:
                 max_results=3,
             )
 
-    def test_execute_passes_region_and_safesearch(self):
+    async def test_execute_passes_region_and_safesearch(self):
         """execute() passes region and safesearch to client."""
         tool = DuckDuckGoSearchTool(region="uk-en", safesearch="off")
 
@@ -234,7 +234,7 @@ class TestDuckDuckGoSearchToolExecute:
             mock_client.text.return_value = []
             mock_get_client.return_value = mock_client
 
-            tool.execute(query="test")
+            await tool.execute(query="test")
 
             mock_client.text.assert_called_once_with(
                 "test",
@@ -243,7 +243,7 @@ class TestDuckDuckGoSearchToolExecute:
                 max_results=5,
             )
 
-    def test_execute_exception_returns_error(self):
+    async def test_execute_exception_returns_error(self):
         """execute() returns error result when exception occurs."""
         tool = DuckDuckGoSearchTool()
 
@@ -252,87 +252,11 @@ class TestDuckDuckGoSearchToolExecute:
             mock_client.text.side_effect = RuntimeError("Network error")
             mock_get_client.return_value = mock_client
 
-            result = tool.execute(query="test")
+            result = await tool.execute(query="test")
 
             assert result.success is False
             assert "Web search failed" in result.error
             assert "Network error" in result.error
-
-
-class TestDuckDuckGoSearchToolSearchNews:
-    """Tests for DuckDuckGoSearchTool.search_news()"""
-
-    def test_search_news_returns_formatted_results(self):
-        """search_news() returns formatted news results."""
-        tool = DuckDuckGoSearchTool()
-
-        with patch.object(tool, "_get_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_client.news.return_value = [
-                {
-                    "title": "News 1",
-                    "url": "http://news.com/1",
-                    "body": "First news",
-                    "date": "2024-01-01",
-                    "source": "News Source",
-                },
-            ]
-            mock_get_client.return_value = mock_client
-
-            result = tool.search_news("breaking news")
-
-            assert result.success is True
-            assert "News 1" in result.data
-            assert result.metadata["type"] == "news"
-            assert result.metadata["provider"] == "duckduckgo"
-
-    def test_search_news_no_results(self):
-        """search_news() returns success with None data when no results."""
-        tool = DuckDuckGoSearchTool()
-
-        with patch.object(tool, "_get_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_client.news.return_value = []
-            mock_get_client.return_value = mock_client
-
-            result = tool.search_news("nonexistent news")
-
-            assert result.success is True
-            assert result.data is None
-            assert result.metadata["results_count"] == 0
-
-    def test_search_news_uses_max_results(self):
-        """search_news() passes max_results to client."""
-        tool = DuckDuckGoSearchTool()
-
-        with patch.object(tool, "_get_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_client.news.return_value = []
-            mock_get_client.return_value = mock_client
-
-            tool.search_news("test", max_results=10)
-
-            mock_client.news.assert_called_once_with(
-                "test",
-                region="wt-wt",
-                safesearch="moderate",
-                max_results=10,
-            )
-
-    def test_search_news_exception_returns_error(self):
-        """search_news() returns error result when exception occurs."""
-        tool = DuckDuckGoSearchTool()
-
-        with patch.object(tool, "_get_client") as mock_get_client:
-            mock_client = MagicMock()
-            mock_client.news.side_effect = RuntimeError("API error")
-            mock_get_client.return_value = mock_client
-
-            result = tool.search_news("test")
-
-            assert result.success is False
-            assert "News search failed" in result.error
-
 
 class TestDuckDuckGoSearchToolFormatResults:
     """Tests for DuckDuckGoSearchTool._format_results()"""
@@ -447,9 +371,9 @@ class TestDuckDuckGoSearchToolFormatNewsResults:
 
 
 class TestDuckDuckGoSearchToolCallable:
-    """Tests for DuckDuckGoSearchTool.__call__ (inherited from BaseTool)."""
+    """Tests for DuckDuckGoSearchTool.__call__ (inherited from AsyncBaseTool)."""
 
-    def test_tool_is_callable(self):
+    async def test_tool_is_callable(self):
         """Tool can be called directly via __call__."""
         tool = DuckDuckGoSearchTool()
 
@@ -458,13 +382,13 @@ class TestDuckDuckGoSearchToolCallable:
             mock_client.text.return_value = []
             mock_get_client.return_value = mock_client
 
-            result = tool(query="direct call")
+            result = await tool(query="direct call")
 
             assert result.success is True
 
 
 class TestDuckDuckGoSearchToolSchema:
-    """Tests for DuckDuckGoSearchTool.get_schema() (inherited from BaseTool)."""
+    """Tests for DuckDuckGoSearchTool.get_schema() (inherited from AsyncBaseTool)."""
 
     def test_get_schema_returns_function_format(self):
         """get_schema returns OpenAI function calling format."""

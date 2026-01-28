@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import torch
 
 from practorflow.llm.transformers_runner import TransformersRunner
-from practorflow.llm.tools.base import ToolResult
+from practorflow.llm.tools import ToolResult
 from tests.practorflow.llm.common_runner import create_mock_model_handle
 
 

@@ -640,7 +640,7 @@ class ChatService:
                 return "Web search is not available."
 
             try:
-                result = ctx.deps.web_search_tool.execute(query=query)
+                result = await ctx.deps.web_search_tool.execute(query=query)
 
                 if not result.success:
                     logger.warning(f"[ChatService] Web search failed: {result.error}")

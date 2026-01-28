@@ -7,16 +7,17 @@ Useful for processing structured data from APIs or documents.
 
 import json
 import re
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Union
 
-from practorflow.llm.tools.base import BaseTool, ToolParameter, ToolResult
+from practorflow.llm.tools.async_tool import AsyncBaseTool
+from practorflow.llm.tools.base import ToolParameter, ToolResult
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
 
 logger = get_logger("tool", level=appConfiguration.LoggerConfiguration.ToolLevel)
 
 
-class JsonTransformTool(BaseTool):
+class JsonTransformTool(AsyncBaseTool):
     """
     JSON transformation tool.
 
@@ -234,7 +235,7 @@ class JsonTransformTool(BaseTool):
 
         return result
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
         Execute JSON transformation.
 

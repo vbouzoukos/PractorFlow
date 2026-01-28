@@ -1,13 +1,13 @@
 """
 Unit tests for base tool classes.
 
-Tests cover ToolParameter, ToolResult, and BaseTool for 100% code coverage.
+Tests cover ToolParameter, ToolResult, and AsyncBaseTool for 100% code coverage.
 """
 
 import pytest
 from typing import List
 
-from practorflow.llm.tools.base import BaseTool, ToolParameter, ToolResult
+from practorflow.llm.tools import AsyncBaseTool, ToolParameter, ToolResult
 
 
 class TestToolParameter:
@@ -232,9 +232,9 @@ class TestToolResultMetadata:
         assert result.metadata["count"] == 5
 
 
-# Concrete implementation for testing BaseTool
-class ConcreteTool(BaseTool):
-    """Concrete tool implementation for testing BaseTool methods."""
+# Concrete implementation for testing AsyncBaseTool
+class ConcreteTool(AsyncBaseTool):
+    """Concrete tool implementation for testing AsyncBaseTool methods."""
 
     def __init__(self, params: List[ToolParameter] = None):
         self._params = params or [
@@ -266,7 +266,7 @@ class ConcreteTool(BaseTool):
     def parameters(self) -> List[ToolParameter]:
         return self._params
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         return self._execute_result
 
     def set_execute_result(self, result: ToolResult):
@@ -274,7 +274,7 @@ class ConcreteTool(BaseTool):
 
 
 class TestBaseToolValidateParameters:
-    """Tests for BaseTool.validate_parameters()"""
+    """Tests for AsyncBaseTool.validate_parameters()"""
 
     def test_validate_parameters_valid(self):
         """validate_parameters returns None for valid parameters."""
@@ -332,7 +332,7 @@ class TestBaseToolValidateParameters:
 
 
 class TestBaseToolGetSchema:
-    """Tests for BaseTool.get_schema()"""
+    """Tests for AsyncBaseTool.get_schema()"""
 
     def test_get_schema_structure(self):
         """get_schema returns correct structure."""
@@ -395,38 +395,38 @@ class TestBaseToolGetSchema:
 
 
 class TestBaseToolCall:
-    """Tests for BaseTool.__call__()"""
+    """Tests for AsyncBaseTool.__call__()"""
 
-    def test_call_executes_with_valid_params(self):
+    async def test_call_executes_with_valid_params(self):
         """__call__ executes tool with valid parameters."""
         tool = ConcreteTool()
 
-        result = tool(query="test")
+        result = await tool(query="test")
 
         assert result.success is True
         assert result.data == "executed"
 
-    def test_call_returns_validation_error(self):
+    async def test_call_returns_validation_error(self):
         """__call__ returns error for invalid parameters."""
         tool = ConcreteTool()
 
-        result = tool()  # Missing required 'query'
+        result = await tool()  # Missing required 'query'
 
         assert result.success is False
         assert "Missing required parameter" in result.error
 
-    def test_call_returns_validation_error_unknown_params(self):
+    async def test_call_returns_validation_error_unknown_params(self):
         """__call__ returns error for unknown parameters."""
         tool = ConcreteTool()
 
-        result = tool(query="test", invalid_param="value")
+        result = await tool(query="test", invalid_param="value")
 
         assert result.success is False
         assert "Unknown parameters" in result.error
 
 
 class TestBaseToolRepr:
-    """Tests for BaseTool.__repr__()"""
+    """Tests for AsyncBaseTool.__repr__()"""
 
     def test_repr_format(self):
         """__repr__ returns expected format."""

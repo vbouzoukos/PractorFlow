@@ -117,39 +117,39 @@ class TestKnowledgeSearchToolSetDocumentScope:
 class TestKnowledgeSearchToolExecute:
     """Tests for KnowledgeSearchTool.execute()"""
 
-    def test_execute_missing_query_returns_error(self, mock_knowledge_store):
+    async def test_execute_missing_query_returns_error(self, mock_knowledge_store):
         """execute() returns error when query is missing."""
         tool = KnowledgeSearchTool(knowledge_store=mock_knowledge_store)
 
-        result = tool.execute()
+        result = await tool.execute()
 
         assert result.success is False
         assert "Query parameter is required" in result.error
 
-    def test_execute_empty_query_returns_error(self, mock_knowledge_store):
+    async def test_execute_empty_query_returns_error(self, mock_knowledge_store):
         """execute() returns error when query is empty string."""
         tool = KnowledgeSearchTool(knowledge_store=mock_knowledge_store)
 
-        result = tool.execute(query="")
+        result = await tool.execute(query="")
 
         assert result.success is False
         assert "Query parameter is required" in result.error
 
-    def test_execute_no_results_returns_success_with_none_data(
+    async def test_execute_no_results_returns_success_with_none_data(
         self, mock_knowledge_store
     ):
         """execute() returns success with None data when no results found."""
         mock_knowledge_store.search_scoped.return_value = []
         tool = KnowledgeSearchTool(knowledge_store=mock_knowledge_store)
 
-        result = tool.execute(query="test query")
+        result = await tool.execute(query="test query")
 
         assert result.success is True
         assert result.data is None
         assert result.metadata["results_count"] == 0
         assert result.metadata["query"] == "test query"
 
-    def test_execute_with_results_returns_formatted_data(self, mock_knowledge_store):
+    async def test_execute_with_results_returns_formatted_data(self, mock_knowledge_store):
         """execute() returns formatted results when search succeeds."""
         mock_knowledge_store.search_scoped.return_value = [
             {
@@ -167,7 +167,7 @@ class TestKnowledgeSearchToolExecute:
         ]
         tool = KnowledgeSearchTool(knowledge_store=mock_knowledge_store)
 
-        result = tool.execute(query="search term")
+        result = await tool.execute(query="search term")
 
         assert result.success is True
         assert "First result text" in result.data
@@ -175,7 +175,7 @@ class TestKnowledgeSearchToolExecute:
         assert result.metadata["results_count"] == 2
         assert result.metadata["query"] == "search term"
 
-    def test_execute_uses_default_top_k(self, mock_knowledge_store):
+    async def test_execute_uses_default_top_k(self, mock_knowledge_store):
         """execute() uses default_top_k when not provided."""
         mock_knowledge_store.search_scoped.return_value = []
         tool = KnowledgeSearchTool(
@@ -183,7 +183,7 @@ class TestKnowledgeSearchToolExecute:
             default_top_k=7,
         )
 
-        tool.execute(query="test")
+        await tool.execute(query="test")
 
         mock_knowledge_store.search_scoped.assert_called_once_with(
             query="test",
@@ -191,7 +191,7 @@ class TestKnowledgeSearchToolExecute:
             document_ids=None,
         )
 
-    def test_execute_uses_provided_top_k(self, mock_knowledge_store):
+    async def test_execute_uses_provided_top_k(self, mock_knowledge_store):
         """execute() uses provided top_k over default."""
         mock_knowledge_store.search_scoped.return_value = []
         tool = KnowledgeSearchTool(
@@ -199,7 +199,7 @@ class TestKnowledgeSearchToolExecute:
             default_top_k=5,
         )
 
-        tool.execute(query="test", top_k=3)
+        await tool.execute(query="test", top_k=3)
 
         mock_knowledge_store.search_scoped.assert_called_once_with(
             query="test",
@@ -207,13 +207,13 @@ class TestKnowledgeSearchToolExecute:
             document_ids=None,
         )
 
-    def test_execute_passes_document_scope(self, mock_knowledge_store):
+    async def test_execute_passes_document_scope(self, mock_knowledge_store):
         """execute() passes document scope to search_scoped."""
         mock_knowledge_store.search_scoped.return_value = []
         tool = KnowledgeSearchTool(knowledge_store=mock_knowledge_store)
         tool.set_document_scope({"doc-a", "doc-b"})
 
-        tool.execute(query="test")
+        await tool.execute(query="test")
 
         mock_knowledge_store.search_scoped.assert_called_once_with(
             query="test",
@@ -221,18 +221,18 @@ class TestKnowledgeSearchToolExecute:
             document_ids={"doc-a", "doc-b"},
         )
 
-    def test_execute_exception_returns_error(self, mock_knowledge_store):
+    async def test_execute_exception_returns_error(self, mock_knowledge_store):
         """execute() returns error result when exception occurs."""
         mock_knowledge_store.search_scoped.side_effect = RuntimeError("DB error")
         tool = KnowledgeSearchTool(knowledge_store=mock_knowledge_store)
 
-        result = tool.execute(query="test")
+        result = await tool.execute(query="test")
 
         assert result.success is False
         assert "Search failed" in result.error
         assert "DB error" in result.error
 
-    def test_execute_metadata_contains_document_ids(self, mock_knowledge_store):
+    async def test_execute_metadata_contains_document_ids(self, mock_knowledge_store):
         """execute() metadata includes unique document IDs from results."""
         mock_knowledge_store.search_scoped.return_value = [
             {"text": "text1", "metadata": {}, "document_id": "doc-1"},
@@ -241,11 +241,11 @@ class TestKnowledgeSearchToolExecute:
         ]
         tool = KnowledgeSearchTool(knowledge_store=mock_knowledge_store)
 
-        result = tool.execute(query="test")
+        result = await tool.execute(query="test")
 
         assert set(result.metadata["document_ids"]) == {"doc-1", "doc-2"}
 
-    def test_execute_handles_missing_document_id(self, mock_knowledge_store):
+    async def test_execute_handles_missing_document_id(self, mock_knowledge_store):
         """execute() handles results without document_id gracefully."""
         mock_knowledge_store.search_scoped.return_value = [
             {"text": "text1", "metadata": {}},
@@ -253,7 +253,7 @@ class TestKnowledgeSearchToolExecute:
         ]
         tool = KnowledgeSearchTool(knowledge_store=mock_knowledge_store)
 
-        result = tool.execute(query="test")
+        result = await tool.execute(query="test")
 
         assert result.success is True
         assert result.metadata["document_ids"] == ["doc-1"]
@@ -360,21 +360,21 @@ class TestKnowledgeSearchToolFormatResults:
 
 
 class TestKnowledgeSearchToolCallable:
-    """Tests for KnowledgeSearchTool.__call__ (inherited from BaseTool)."""
+    """Tests for KnowledgeSearchTool.__call__ (inherited from AsyncBaseTool)."""
 
-    def test_tool_is_callable(self, mock_knowledge_store):
+    async def test_tool_is_callable(self, mock_knowledge_store):
         """Tool can be called directly via __call__."""
         mock_knowledge_store.search_scoped.return_value = []
         tool = KnowledgeSearchTool(knowledge_store=mock_knowledge_store)
 
-        result = tool(query="direct call")
+        result = await tool(query="direct call")
 
         assert result.success is True
         mock_knowledge_store.search_scoped.assert_called_once()
 
 
 class TestKnowledgeSearchToolSchema:
-    """Tests for KnowledgeSearchTool.get_schema() (inherited from BaseTool)."""
+    """Tests for KnowledgeSearchTool.get_schema() (inherited from AsyncBaseTool)."""
 
     def test_get_schema_returns_function_format(self, mock_knowledge_store):
         """get_schema returns OpenAI function calling format."""

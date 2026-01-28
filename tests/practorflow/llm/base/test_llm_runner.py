@@ -99,17 +99,17 @@ class TestLLMRunnerDocumentScope:
 class TestLLMRunnerSearch:
     """Tests for LLMRunner.search() method."""
 
-    def test_search_without_knowledge_store(self):
+    async def test_search_without_knowledge_store(self):
         """search() returns error when knowledge_store not configured."""
         handle = create_mock_model_handle(backend="llama_cpp")
         runner = LlamaCppRunner(handle, knowledge_store=None)
 
-        result = runner.search("test query")
+        result = await runner.search("test query")
 
         assert result.success is False
         assert "Knowledge search tool not available" in result.error
 
-    def test_search_with_knowledge_store(self, mock_knowledge_store):
+    async def test_search_with_knowledge_store(self, mock_knowledge_store):
         """search() executes knowledge_search tool."""
         mock_knowledge_store.search_scoped.return_value = [
             {"text": "Result text", "metadata": {"filename": "doc.txt"}, "similarity": 0.9}
@@ -117,19 +117,19 @@ class TestLLMRunnerSearch:
         handle = create_mock_model_handle(backend="llama_cpp")
         runner = LlamaCppRunner(handle, knowledge_store=mock_knowledge_store)
 
-        result = runner.search("test query")
+        result = await runner.search("test query")
 
         assert result.success is True
         mock_knowledge_store.search_scoped.assert_called_once()
 
-    def test_search_uses_default_top_k(self, mock_knowledge_store):
+    async def test_search_uses_default_top_k(self, mock_knowledge_store):
         """search() uses config.max_search_results when top_k not provided."""
         mock_knowledge_store.search_scoped.return_value = []
         handle = create_mock_model_handle(backend="llama_cpp")
         handle.config.max_search_results = 7
         runner = LlamaCppRunner(handle, knowledge_store=mock_knowledge_store)
 
-        runner.search("test query")
+        await runner.search("test query")
 
         mock_knowledge_store.search_scoped.assert_called_once_with(
             query="test query",
@@ -137,14 +137,14 @@ class TestLLMRunnerSearch:
             document_ids=None,
         )
 
-    def test_search_uses_provided_top_k(self, mock_knowledge_store):
+    async def test_search_uses_provided_top_k(self, mock_knowledge_store):
         """search() uses provided top_k over default."""
         mock_knowledge_store.search_scoped.return_value = []
         handle = create_mock_model_handle(backend="llama_cpp")
         handle.config.max_search_results = 5
         runner = LlamaCppRunner(handle, knowledge_store=mock_knowledge_store)
 
-        runner.search("test query", top_k=3)
+        await runner.search("test query", top_k=3)
 
         mock_knowledge_store.search_scoped.assert_called_once_with(
             query="test query",
@@ -152,7 +152,7 @@ class TestLLMRunnerSearch:
             document_ids=None,
         )
 
-    def test_search_stores_pending_context(self, mock_knowledge_store):
+    async def test_search_stores_pending_context(self, mock_knowledge_store):
         """search() stores successful results as pending context."""
         mock_knowledge_store.search_scoped.return_value = [
             {"text": "Found content", "metadata": {"filename": "doc.txt"}, "similarity": 0.9}
@@ -160,18 +160,18 @@ class TestLLMRunnerSearch:
         handle = create_mock_model_handle(backend="llama_cpp")
         runner = LlamaCppRunner(handle, knowledge_store=mock_knowledge_store)
 
-        runner.search("test query")
+        await runner.search("test query")
 
         assert runner._pending_context is not None
         assert "Found content" in runner._pending_context
 
-    def test_search_no_pending_context_on_empty_results(self, mock_knowledge_store):
+    async def test_search_no_pending_context_on_empty_results(self, mock_knowledge_store):
         """search() does not store pending context when no results."""
         mock_knowledge_store.search_scoped.return_value = []
         handle = create_mock_model_handle(backend="llama_cpp")
         runner = LlamaCppRunner(handle, knowledge_store=mock_knowledge_store)
 
-        runner.search("test query")
+        await runner.search("test query")
 
         assert runner._pending_context is None
 

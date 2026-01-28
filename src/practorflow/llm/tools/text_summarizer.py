@@ -8,14 +8,15 @@ Useful for processing large documents within context limits.
 import re
 from typing import List
 
-from practorflow.llm.tools.base import BaseTool, ToolParameter, ToolResult
+from practorflow.llm.tools.async_tool import AsyncBaseTool
+from practorflow.llm.tools.base import ToolParameter, ToolResult
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
 
 logger = get_logger("tool", level=appConfiguration.LoggerConfiguration.ToolLevel)
 
 
-class TextSummarizerTool(BaseTool):
+class TextSummarizerTool(AsyncBaseTool):
     """
     Text summarization tool using extractive summarization.
 
@@ -169,7 +170,7 @@ class TextSummarizerTool(BaseTool):
         score = sum(word_frequencies.get(word, 0) for word in words)
         return score / len(words)
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
         Execute text summarization.
 

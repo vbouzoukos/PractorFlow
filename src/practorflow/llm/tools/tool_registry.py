@@ -5,7 +5,8 @@ Provides centralized tool registration, lookup, and execution.
 """
 
 from typing import Dict, List, Optional, Any
-from practorflow.llm.tools.base import BaseTool, ToolResult
+from practorflow.llm.tools.async_tool import AsyncBaseTool
+from practorflow.llm.tools.base import ToolResult
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
 
@@ -22,11 +23,11 @@ class ToolRegistry:
 
     def __init__(self):
         """Initialize empty tool registry."""
-        self._tools: Dict[str, BaseTool] = {}
+        self._tools: Dict[str, AsyncBaseTool] = {}
         self._document_scope: Optional[set] = None
         self._last_result: Optional[ToolResult] = None
 
-    def register(self, tool: BaseTool) -> None:
+    def register(self, tool: AsyncBaseTool) -> None:
         """
         Register a tool.
 
@@ -58,7 +59,7 @@ class ToolRegistry:
             return True
         return False
 
-    def get(self, tool_name: str) -> Optional[BaseTool]:
+    def get(self, tool_name: str) -> Optional[AsyncBaseTool]:
         """
         Get a tool by name.
 
@@ -74,7 +75,7 @@ class ToolRegistry:
         """Get list of registered tool names."""
         return list(self._tools.keys())
 
-    def get_all_tools(self) -> List[BaseTool]:
+    def get_all_tools(self) -> List[AsyncBaseTool]:
         """Get all registered tool instances."""
         return list(self._tools.values())
 
@@ -113,7 +114,7 @@ class ToolRegistry:
         self._document_scope = None
         logger.info("[ToolRegistry] Document scope cleared")
 
-    def execute(self, tool_name: str, **kwargs) -> ToolResult:
+    async def execute(self, tool_name: str, **kwargs) -> ToolResult:
         """
         Execute a tool by name.
 
@@ -135,7 +136,7 @@ class ToolRegistry:
         if hasattr(tool, "set_document_scope"):
             tool.set_document_scope(self._document_scope)
 
-        result = tool(**kwargs)
+        result = await tool(**kwargs)
         self._last_result = result
 
         return result

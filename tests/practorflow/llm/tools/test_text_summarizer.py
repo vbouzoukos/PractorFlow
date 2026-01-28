@@ -100,26 +100,26 @@ class TestTextSummarizerTool:
         # words: alpha, beta, beta => (1.0 + 0.5 + 0.5) / 3
         assert score == pytest.approx(2.0 / 3.0)
 
-    def test_execute_missing_text_returns_error(self):
+    async def test_execute_missing_text_returns_error(self):
         tool = TextSummarizerTool()
-        result = tool.execute()
+        result = await tool.execute()
 
         assert result.success is False
         assert result.error == "Text parameter is required"
 
-    def test_execute_text_too_long_returns_error(self):
+    async def test_execute_text_too_long_returns_error(self):
         tool = TextSummarizerTool(max_input_length=10)
-        result = tool.execute(text="x" * 11)
+        result = await tool.execute(text="x" * 11)
 
         assert result.success is False
         assert "Text exceeds maximum length of 10 characters" in result.error
 
-    def test_execute_when_text_already_shorter_than_requested_returns_original(self):
+    async def test_execute_when_text_already_shorter_than_requested_returns_original(self):
         tool = TextSummarizerTool(default_num_sentences=5)
 
         text = "This is sentence one. This is sentence two."
         # two sentences <= num_sentences => return original text
-        result = tool.execute(text=text, num_sentences=10)
+        result = await tool.execute(text=text, num_sentences=10)
 
         assert result.success is True
         assert result.data == text
@@ -128,7 +128,7 @@ class TestTextSummarizerTool:
         assert result.metadata["compression_ratio"] == 1.0
         assert "already shorter" in result.metadata["note"].lower()
 
-    def test_execute_extracts_top_sentences_preserve_order_true(self):
+    async def test_execute_extracts_top_sentences_preserve_order_true(self):
         tool = TextSummarizerTool(default_num_sentences=2)
 
         # Make sentence 2 highest scoring (repeats 'banana'), sentence 1 next.
@@ -138,7 +138,7 @@ class TestTextSummarizerTool:
             "Carrot alone is not as popular."
         )
 
-        result = tool.execute(text=text, num_sentences=2, preserve_order=True)
+        result = await tool.execute(text=text, num_sentences=2, preserve_order=True)
 
         assert result.success is True
         assert isinstance(result.data, str)
@@ -156,7 +156,7 @@ class TestTextSummarizerTool:
         assert result.metadata["summary_length"] == len(result.data)
         assert 0 < result.metadata["compression_ratio"] <= 1
 
-    def test_execute_extracts_top_sentences_preserve_order_false(self):
+    async def test_execute_extracts_top_sentences_preserve_order_false(self):
         tool = TextSummarizerTool(default_num_sentences=2)
 
         text = (
@@ -165,7 +165,7 @@ class TestTextSummarizerTool:
             "Carrot alone is not as popular."
         )
 
-        result = tool.execute(text=text, num_sentences=2, preserve_order=False)
+        result = await tool.execute(text=text, num_sentences=2, preserve_order=False)
 
         assert result.success is True
         assert "Apple banana carrot is tasty." in result.data
@@ -174,7 +174,7 @@ class TestTextSummarizerTool:
         # preserve_order=False => highest-scoring sentence should come first (banana-heavy)
         assert result.data.strip().startswith("Banana banana banana is very tasty indeed.")
 
-    def test_execute_exception_path_returns_error(self, monkeypatch):
+    async def test_execute_exception_path_returns_error(self, monkeypatch):
         tool = TextSummarizerTool()
 
         def boom(_text):
@@ -182,7 +182,7 @@ class TestTextSummarizerTool:
 
         monkeypatch.setattr(tool, "_tokenize_sentences", boom)
 
-        result = tool.execute(text="This is a long enough sentence. Another long enough sentence.")
+        result = await tool.execute(text="This is a long enough sentence. Another long enough sentence.")
 
         assert result.success is False
         assert result.error.startswith("Summarization failed: ")
