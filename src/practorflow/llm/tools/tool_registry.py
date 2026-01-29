@@ -2,6 +2,7 @@
 Tool registry for managing available tools.
 
 Provides centralized tool registration, lookup, and execution.
+Supports dynamic loading of user-defined API tools via ApiToolFactory.
 """
 
 from typing import Dict, List, Optional, Any
@@ -18,7 +19,7 @@ class ToolRegistry:
     Registry for managing LLM tools.
 
     Handles tool registration, lookup, and execution with
-    support for document scope management.
+    support for document scope management and dynamic API tool loading.
     """
 
     def __init__(self):
@@ -26,6 +27,71 @@ class ToolRegistry:
         self._tools: Dict[str, AsyncBaseTool] = {}
         self._document_scope: Optional[set] = None
         self._last_result: Optional[ToolResult] = None
+        self._loaded_user_id: Optional[str] = None
+
+    def load_api_tools_for_user(self, user_id: str) -> int:
+        """
+        Load user-defined API tools from the factory.
+        
+        Clears previously loaded API tools for different user and loads
+        new tools for the specified user. Skips expired tools.
+        
+        Args:
+            user_id: User ID to load tools for.
+        
+        Returns:
+            Number of tools loaded.
+        """
+        from practorflow.llm.tools.api.factory import is_factory_initialized, get_factory
+        
+        if not is_factory_initialized():
+            logger.debug("[ToolRegistry] API tool factory not initialized, skipping")
+            return 0
+        
+        # Clear previously loaded user tools if switching users
+        if self._loaded_user_id and self._loaded_user_id != user_id:
+            self._unregister_api_tools()
+        
+        factory = get_factory()
+        tools = factory.create_tools_for_user(user_id)
+        
+        registered_count = 0
+        for tool in tools:
+            if tool.name in self._tools:
+                logger.debug(f"[ToolRegistry] Tool '{tool.name}' already registered, skipping")
+                continue
+            
+            self._tools[tool.name] = tool
+            registered_count += 1
+            logger.info(f"[ToolRegistry] Registered API tool: {tool.name}")
+        
+        self._loaded_user_id = user_id
+        logger.info(f"[ToolRegistry] Loaded {registered_count} API tools for user '{user_id}'")
+        
+        return registered_count
+
+    def _unregister_api_tools(self) -> int:
+        """
+        Unregister all API tools (tools with user_id attribute).
+        
+        Returns:
+            Number of tools unregistered.
+        """
+        to_remove = [
+            name for name, tool in self._tools.items()
+            if hasattr(tool, 'user_id')
+        ]
+        
+        for name in to_remove:
+            del self._tools[name]
+            logger.debug(f"[ToolRegistry] Unregistered API tool: {name}")
+        
+        self._loaded_user_id = None
+        
+        if to_remove:
+            logger.info(f"[ToolRegistry] Unregistered {len(to_remove)} API tools")
+        
+        return len(to_remove)
 
     def register(self, tool: AsyncBaseTool) -> None:
         """

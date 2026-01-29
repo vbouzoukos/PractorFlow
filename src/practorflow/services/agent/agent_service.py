@@ -34,7 +34,6 @@ from practorflow.services.agent.schemas import (
     AgentTaskResult,
 )
 from practorflow.services.agent.context import build_execution_context
-from practorflow.services.agent.tools import register_default_tools
 from practorflow.services.agent.session_utils import (
     persist_to_session,
     extract_final_output,
@@ -45,6 +44,10 @@ from practorflow.services.agent.runners import (
     run_executor,
     run_synthesizer,
     run_verifier,
+)
+from practorflow.services.tools.registration import (
+    register_default_tools,
+    load_api_tools_for_user,
 )
 
 logger = get_logger(
@@ -173,6 +176,9 @@ class AgentService:
         logger.info(f"[AgentService] Executing task for session: {session_id}")
 
         session = self._get_or_create_session(session_id, user)
+
+        # Load API tools for user
+        load_api_tools_for_user(self._tool_registry, user)
 
         if files:
             for file in files:

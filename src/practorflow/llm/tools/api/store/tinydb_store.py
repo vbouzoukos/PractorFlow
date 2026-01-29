@@ -100,6 +100,19 @@ class TinyDBApiToolStore(ApiToolStore):
         )
         return [self._deserialize(r) for r in results]
     
+    def list_filtered(self, query: Any) -> List[ApiToolConfig]:
+        """
+        List tool configurations matching query.
+        
+        Args:
+            query: TinyDB Query condition.
+        
+        Returns:
+            List of matching ApiToolConfig instances.
+        """
+        results = self._table.search(query)
+        return [self._deserialize(r) for r in results]
+    
     def close(self) -> None:
         """Close the database connection."""
         self._db.close()

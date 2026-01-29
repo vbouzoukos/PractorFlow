@@ -43,7 +43,6 @@ from practorflow.services.agent.prompts import (
 )
 from practorflow.services.agent.context import ExecutionContext
 from practorflow.services.agent.deps import AgentDeps
-from practorflow.services.agent.tools import register_executor_tools
 from practorflow.services.agent.parser import (
     parse_json_from_response,
     parse_executor_results,
@@ -52,6 +51,7 @@ from practorflow.services.agent.json_helpers import repair_plan_json
 from practorflow.services.agent.verification import heuristic_verification
 from practorflow.services.agent.session_utils import build_execution_log
 
+from practorflow.services.tools.registration import register_executor_tools
 from practorflow.services.history.types import HistoryConfig
 from practorflow.services.history.preparer import prepare_history
 

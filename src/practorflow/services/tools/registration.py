@@ -1,8 +1,8 @@
 """
-Agent tool registration utilities.
+Tool registration utilities.
 
 Provides functions to register default tools and executor-specific tools
-with agent instances.
+with agent instances. Used by both AgentService and ChatService.
 """
 
 from typing import Any, Dict, Optional
@@ -11,13 +11,14 @@ from pydantic_ai import Agent, RunContext
 
 from practorflow.llm.knowledge.knowledge_store import KnowledgeStore
 from practorflow.llm.tools.tool_registry import ToolRegistry
+from practorflow.llm.tools.api.tool import ApiTool
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
 
-from practorflow.services.agent.deps import AgentDeps
+from practorflow.services.tools.deps import ToolsDeps
 
 logger = get_logger(
-    "agent_tools", level=appConfiguration.LoggerConfiguration.AgentLevel
+    "tools", level=appConfiguration.LoggerConfiguration.AgentLevel
 )
 
 
@@ -45,35 +46,49 @@ def register_default_tools(
             default_top_k=5,
         )
         tool_registry.register(knowledge_tool)
-        logger.debug("[AgentService] Registered search_knowledge tool")
+        logger.debug("Registered search_knowledge tool")
 
     if "web_search" not in tool_registry:
         web_search_tool = DuckDuckGoSearchTool()
         tool_registry.register(web_search_tool)
-        logger.debug("[AgentService] Registered web_search tool")
+        logger.debug("Registered web_search tool")
 
     if "web_fetch" not in tool_registry:
         web_fetch_tool = WebFetchTool()
         tool_registry.register(web_fetch_tool)
-        logger.debug("[AgentService] Registered web_fetch tool")
+        logger.debug("Registered web_fetch tool")
 
     if "summarize_text" not in tool_registry:
         summarizer_tool = TextSummarizerTool()
         tool_registry.register(summarizer_tool)
-        logger.debug("[AgentService] Registered summarize_text tool")
+        logger.debug("Registered summarize_text tool")
 
     if "json_transform" not in tool_registry:
         json_tool = JsonTransformTool()
         tool_registry.register(json_tool)
-        logger.debug("[AgentService] Registered json_transform tool")
+        logger.debug("Registered json_transform tool")
 
     if "calculator" not in tool_registry:
         calculator_tool = CalculatorTool()
         tool_registry.register(calculator_tool)
-        logger.debug("[AgentService] Registered calculator tool")
+        logger.debug("Registered calculator tool")
 
 
-def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
+def load_api_tools_for_user(tool_registry: ToolRegistry, user_id: str) -> int:
+    """
+    Load user-defined API tools from the factory.
+
+    Args:
+        tool_registry: Registry to load tools into.
+        user_id: User ID to load tools for.
+
+    Returns:
+        Number of tools loaded.
+    """
+    return tool_registry.load_api_tools_for_user(user_id)
+
+
+def register_executor_tools(agent: Agent, deps: ToolsDeps) -> None:
     """
     Register tools with the executor agent.
 
@@ -84,7 +99,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
 
     @agent.tool
     async def execute_tool(
-        ctx: RunContext[AgentDeps],
+        ctx: RunContext[ToolsDeps],
         tool_name: str,
         tool_args: Optional[Dict[str, Any]] = None,
     ) -> str:
@@ -98,7 +113,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         Returns:
             Tool result as string.
         """
-        logger.debug(f"[AgentService] execute_tool called: {tool_name}")
+        logger.debug(f"execute_tool called: {tool_name}")
 
         if tool_name not in ctx.deps.tool_registry:
             return f"Error: Tool '{tool_name}' not found"
@@ -114,12 +129,12 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
             else:
                 return f"Tool error: {result.error}"
         except Exception as e:
-            logger.error(f"[AgentService] Tool execution failed: {e}")
+            logger.error(f"Tool execution failed: {e}")
             return f"Tool execution failed: {e}"
 
     @agent.tool
     async def search_knowledge(
-        ctx: RunContext[AgentDeps],
+        ctx: RunContext[ToolsDeps],
         query: str,
     ) -> str:
         """
@@ -131,9 +146,8 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         Returns:
             Search results as formatted string.
         """
-        logger.debug(f"[AgentService] search_knowledge called: {query}")
+        logger.debug(f"search_knowledge called: {query}")
 
-        # Guard: No documents in scope means no search
         if ctx.deps.document_scope is None:
             return ""
 
@@ -156,7 +170,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
 
     @agent.tool
     async def search_web(
-        ctx: RunContext[AgentDeps],
+        ctx: RunContext[ToolsDeps],
         query: str,
         max_results: int = 5,
     ) -> str:
@@ -183,7 +197,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
 
     @agent.tool
     async def fetch_webpage(
-        ctx: RunContext[AgentDeps],
+        ctx: RunContext[ToolsDeps],
         url: str,
         extract_mode: str = "text",
     ) -> str:
@@ -197,7 +211,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         Returns:
             Page content as string.
         """
-        logger.debug(f"[AgentService] fetch_webpage called: {url}")
+        logger.debug(f"fetch_webpage called: {url}")
 
         result = await ctx.deps.tool_registry.execute(
             "web_fetch", url=url, extract_mode=extract_mode
@@ -210,7 +224,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
 
     @agent.tool
     async def summarize_text(
-        ctx: RunContext[AgentDeps],
+        ctx: RunContext[ToolsDeps],
         text: str,
         num_sentences: int = 5,
     ) -> str:
@@ -224,7 +238,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         Returns:
             Summarized text.
         """
-        logger.debug(f"[AgentService] summarize_text called: {len(text)} chars")
+        logger.debug(f"summarize_text called: {len(text)} chars")
 
         result = await ctx.deps.tool_registry.execute(
             "summarize_text",
@@ -239,7 +253,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
 
     @agent.tool
     async def transform_json(
-        ctx: RunContext[AgentDeps],
+        ctx: RunContext[ToolsDeps],
         json_data: str,
         operation: str,
         path: Optional[str] = None,
@@ -255,7 +269,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         Returns:
             Transformed data as string.
         """
-        logger.debug(f"[AgentService] transform_json called: {operation}")
+        logger.debug(f"transform_json called: {operation}")
 
         result = await ctx.deps.tool_registry.execute(
             "json_transform",
@@ -276,7 +290,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
 
     @agent.tool
     async def calculate(
-        ctx: RunContext[AgentDeps],
+        ctx: RunContext[ToolsDeps],
         expression: Optional[str] = None,
         convert: Optional[Dict[str, Any]] = None,
     ) -> str:
@@ -290,7 +304,7 @@ def register_executor_tools(agent: Agent, deps: AgentDeps) -> None:
         Returns:
             Calculation result as string.
         """
-        logger.debug(f"[AgentService] calculate called: {expression or convert}")
+        logger.debug(f"calculate called: {expression or convert}")
 
         result = await ctx.deps.tool_registry.execute(
             "calculator",

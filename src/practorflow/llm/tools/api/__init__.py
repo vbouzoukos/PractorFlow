@@ -13,10 +13,20 @@ from practorflow.llm.tools.api.encryption import (
     get_encryption_service,
     is_encryption_initialized,
 )
+from practorflow.llm.tools.api.factory import (
+    ApiToolFactory,
+    initialize_factory,
+    get_factory,
+    is_factory_initialized,
+)
 from practorflow.llm.tools.api.tool import ApiTool
 
 __all__ = [
     "ApiTool",
+    "ApiToolFactory",
+    "initialize_factory",
+    "get_factory",
+    "is_factory_initialized",
     "EncryptionService",
     "EncryptionError",
     "EncryptionNotInitializedError",

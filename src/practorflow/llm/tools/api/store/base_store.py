@@ -5,7 +5,7 @@ Defines the interface for tool configuration storage.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from practorflow.llm.tools.api.models.models import ApiToolConfig
 
@@ -40,6 +40,18 @@ class ApiToolStore(ABC):
     @abstractmethod
     def list_enabled(self, user_id: str) -> List[ApiToolConfig]:
         """List enabled tool configurations for a user."""
+    
+    @abstractmethod
+    def list_filtered(self, query: Any) -> List[ApiToolConfig]:
+        """
+        List tool configurations matching query.
+        
+        Args:
+            query: Query condition (implementation-specific, e.g., TinyDB Query).
+        
+        Returns:
+            List of matching ApiToolConfig instances.
+        """
     
     @abstractmethod
     def close(self) -> None:
