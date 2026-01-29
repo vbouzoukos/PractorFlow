@@ -12,7 +12,7 @@ import httpx
 from practorflow.llm.tools import AsyncBaseTool, ToolParameter, ToolResult
 from practorflow.llm.tools.api.encryption import get_encryption_service
 from practorflow.llm.tools.api.models import ApiToolConfig, AuthType, ParamType
-from practorflow.llm.tools.api.request import RequestBuilder, ResponseParser
+from practorflow.llm.tools.api.request import RequestBuilder, ResponseParser, RetryHandler, RateLimiter
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
 
@@ -27,7 +27,7 @@ class ApiTool(AsyncBaseTool):
     Decrypts secrets once at load time, not on every execution.
     """
     
-    def __init__(self, config: ApiToolConfig):
+    def __init__(self, config: ApiToolConfig, rate_limiter: Optional[RateLimiter] = None):
         """
         Initialize API tool from configuration.
         
@@ -48,6 +48,12 @@ class ApiTool(AsyncBaseTool):
         
         self._builder = RequestBuilder()
         self._parser = ResponseParser()
+        self._retry_handler = RetryHandler(
+            max_attempts=config.retry_max_attempts,
+            backoff=config.retry_backoff,
+            retry_on_status=config.retry_on_status,
+        )
+        self._rate_limiter = rate_limiter or RateLimiter(rpm=config.rate_limit_rpm)
         
         if config.auth_secret_expires_at and config.auth_secret_expires_at < datetime.now():
             self.expired = True
@@ -126,15 +132,52 @@ class ApiTool(AsyncBaseTool):
         """
         logger.debug(f"[ApiTool] Executing '{self.name}' with params: {list(kwargs.keys())}")
         
-        try:
-            request_data = self._builder.build(
-                config=self._config,
-                decrypted_secret=self._decrypted_secret,
-                decrypted_username=self._decrypted_username,
-                decrypted_password=self._decrypted_password,
-                **kwargs,
-            )
+        request_data = self._builder.build(
+            config=self._config,
+            decrypted_secret=self._decrypted_secret,
+            decrypted_username=self._decrypted_username,
+            decrypted_password=self._decrypted_password,
+            **kwargs,
+        )
+        
+        last_result: Optional[ToolResult] = None
+        
+        for attempt in range(1, self._retry_handler.max_attempts + 1):
+            await self._rate_limiter.acquire()
+            result = await self._execute_request(request_data, attempt)
             
+            if result.success:
+                return result
+            
+            last_result = result
+            status_code = result.metadata.get("status_code") if result.metadata else None
+            category = result.metadata.get("category", "") if result.metadata else ""
+            is_network_error = category in ("connection_error", "timeout_error")
+            
+            if attempt < self._retry_handler.max_attempts and self._retry_handler.is_retryable(status_code, is_network_error):
+                logger.info(f"[ApiTool] '{self.name}' retry {attempt}/{self._retry_handler.max_attempts}")
+                await self._retry_handler.wait(attempt)
+            else:
+                break
+        
+        return last_result or ToolResult(
+            success=False,
+            error="Request failed",
+            metadata={"tool_id": self._config.tool_id},
+        )
+    
+    async def _execute_request(self, request_data, attempt: int) -> ToolResult:
+        """
+        Execute a single HTTP request.
+        
+        Args:
+            request_data: Built request data.
+            attempt: Current attempt number.
+        
+        Returns:
+            ToolResult with success status and data or error.
+        """
+        try:
             async with httpx.AsyncClient(timeout=self._config.timeout_seconds) as client:
                 response = await client.request(
                     method=request_data.method,
@@ -155,6 +198,7 @@ class ApiTool(AsyncBaseTool):
                     metadata={
                         "status_code": parsed.status_code,
                         "tool_id": self._config.tool_id,
+                        "attempt": attempt,
                     },
                 )
             else:
@@ -166,6 +210,7 @@ class ApiTool(AsyncBaseTool):
                         "status_code": parsed.status_code,
                         "category": "http_error",
                         "tool_id": self._config.tool_id,
+                        "attempt": attempt,
                     },
                 )
         
@@ -174,7 +219,7 @@ class ApiTool(AsyncBaseTool):
             return ToolResult(
                 success=False,
                 error=f"Request timeout after {self._config.timeout_seconds}s",
-                metadata={"category": "timeout_error", "tool_id": self._config.tool_id},
+                metadata={"category": "timeout_error", "tool_id": self._config.tool_id, "attempt": attempt},
             )
         
         except httpx.ConnectError as e:
@@ -182,7 +227,7 @@ class ApiTool(AsyncBaseTool):
             return ToolResult(
                 success=False,
                 error=f"Connection failed: {e}",
-                metadata={"category": "connection_error", "tool_id": self._config.tool_id},
+                metadata={"category": "connection_error", "tool_id": self._config.tool_id, "attempt": attempt},
             )
         
         except Exception as e:
@@ -190,5 +235,5 @@ class ApiTool(AsyncBaseTool):
             return ToolResult(
                 success=False,
                 error=str(e),
-                metadata={"category": "unexpected_error", "tool_id": self._config.tool_id},
+                metadata={"category": "unexpected_error", "tool_id": self._config.tool_id, "attempt": attempt},
             )
