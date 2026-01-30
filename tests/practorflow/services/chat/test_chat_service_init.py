@@ -33,7 +33,6 @@ def test_chat_service_init(
         model_config=mock_model_config,
         knowledge_store=mock_knowledge_store,
         session_store=mock_session_store,
-        web_search_tool=mock_web_search_tool,
         default_instructions="Test instructions",
     )
 
@@ -41,25 +40,7 @@ def test_chat_service_init(
     assert service._model_config == mock_model_config
     assert service._knowledge_store == mock_knowledge_store
     assert service._session_store == mock_session_store
-    assert service._web_search_tool == mock_web_search_tool
     assert "Test instructions" in service._instructions
-
-
-def test_chat_service_init_default_web_search(
-    mock_model_pool,
-    mock_model_config,
-    mock_knowledge_store,
-    mock_session_store,
-):
-    """Test ChatService initialization with default web search tool."""
-    service = ChatService(
-        model_pool=mock_model_pool,
-        model_config=mock_model_config,
-        knowledge_store=mock_knowledge_store,
-        session_store=mock_session_store,
-    )
-
-    assert isinstance(service._web_search_tool, DuckDuckGoSearchTool)
 
 
 def test_chat_service_init_default_instructions(

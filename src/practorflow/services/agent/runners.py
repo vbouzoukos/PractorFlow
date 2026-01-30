@@ -51,7 +51,7 @@ from practorflow.services.agent.json_helpers import repair_plan_json
 from practorflow.services.agent.verification import heuristic_verification
 from practorflow.services.agent.session_utils import build_execution_log
 
-from practorflow.services.tools.registration import register_executor_tools
+from practorflow.services.tools.registration import build_tools_for_registry
 from practorflow.services.history.types import HistoryConfig
 from practorflow.services.history.preparer import prepare_history
 
@@ -177,10 +177,13 @@ async def _extract_context(
     if not message_history:
         return None, None
 
+    tools = build_tools_for_registry(tool_registry)
+
     agent = Agent(
         model=model,
         deps_type=AgentDeps,
         system_prompt="You are a context extraction assistant. Analyze conversation history and extract any requested persona and instructions.",
+        tools=tools,
     )
 
     try:
@@ -191,9 +194,8 @@ async def _extract_context(
         ) as agent_run:
             async for node in agent_run:
                 logger.debug(
-                    "[Synthesizer][ContextExtract] node=%s",
-                    getattr(node, "name", type(node).__name__),
-                )  # pragma: no cover
+                    f"[ContextExtract] node={getattr(node, 'name', type(node).__name__)}"
+                )
 
             if agent_run.result:
                 result = agent_run.result.output or ""
@@ -221,22 +223,26 @@ async def _extract_context(
                             instructions = instructions_text
 
                 if persona:
-                    logger.info(f"[Synthesizer] Extracted persona: {persona}")
+                    logger.info(f"[ContextExtract] Extracted persona: {persona}")
                 if instructions:
-                    logger.info(f"[Synthesizer] Extracted instructions: {instructions[:100]}...")
+                    logger.info(f"[ContextExtract] Extracted instructions: {instructions[:100]}...")
 
                 return persona, instructions
 
     except Exception as e:
-        logger.warning(f"[Synthesizer] Context extraction failed: {e}")
+        logger.warning(f"[ContextExtract] Context extraction failed: {e}")
         return None, None
 
     return None, None
 
 
-def _build_context_enhanced_prompt(persona: Optional[str], instructions: Optional[str], prompt: str) -> str:
+def _build_context_enhanced_prompt(
+    persona: Optional[str],
+    instructions: Optional[str],
+    prompt: str,
+) -> str:
     """
-    Build synthesis prompt with persona and instructions reminder injected.
+    Build prompt with persona/instructions reminder injected.
 
     Args:
         persona: Extracted persona description (or None).
@@ -394,6 +400,8 @@ async def run_executor(
         document_scope=ctx.document_scope,
     )
 
+    tools = build_tools_for_registry(tool_registry)
+
     async with model_pool.acquire_context(model_config) as handle:
         runner = create_runner(handle, knowledge_store=knowledge_store)
         model = LocalLLMModel(runner)
@@ -402,9 +410,8 @@ async def run_executor(
             model=model,
             deps_type=AgentDeps,
             system_prompt=EXECUTOR_SYSTEM_PROMPT,
+            tools=tools,
         )
-
-        register_executor_tools(agent, deps)
 
         async with agent.iter(
             prompt,

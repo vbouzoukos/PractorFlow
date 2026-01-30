@@ -75,7 +75,6 @@ def chat_service(
     mock_model_config,
     mock_knowledge_store,
     mock_session_store,
-    mock_web_search_tool,
 ):
     """ChatService instance for testing."""
     return ChatService(
@@ -83,7 +82,6 @@ def chat_service(
         model_config=mock_model_config,
         knowledge_store=mock_knowledge_store,
         session_store=mock_session_store,
-        web_search_tool=mock_web_search_tool,
     )
 
 

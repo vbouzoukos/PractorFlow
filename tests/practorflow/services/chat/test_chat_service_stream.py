@@ -491,7 +491,7 @@ async def test_extract_context_no_result(
     with patch("practorflow.services.chat.chat_service.Agent") as mock_agent_class:
         mock_agent_class.return_value.iter.return_value = mock_iter_cm
 
-        persona, instructions = await chat_service._extract_context(message_history, mock_model)
+        persona, instructions = await chat_service._extract_context(message_history, mock_model, [])
 
     assert persona is None
     assert instructions is None
