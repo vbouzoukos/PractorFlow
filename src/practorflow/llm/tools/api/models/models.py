@@ -78,7 +78,7 @@ class ApiToolConfig(BaseModel):
     # Used by: API Key - where to place the key (header, query, or body)
     auth_key_location: Optional[AuthKeyLocation] = Field(default=None, description="API Key placement location")
     # Used by: API Key - parameter name (e.g., appid, X-API-Key)
-
+    auth_key_name: Optional[str] = Field(default=None, description="API Key parameter name (e.g., appid, X-API-Key)")
 
     
     # Reliability
@@ -95,12 +95,10 @@ class ApiToolConfig(BaseModel):
     keywords: List[str] = Field(..., min_length=1, description="Trigger words for matching")
     category: str = Field(default="", description="Domain grouping")
     tags: List[str] = Field(default_factory=list, description="Additional classification")
-    priority: int = Field(default=5, ge=1, le=10, description="Disambiguation ranking")
     use_when: List[str] = Field(default_factory=list, description="Positive use case examples")
     do_not_use_when: List[str] = Field(default_factory=list, description="Anti-patterns to avoid")
     requires: List[str] = Field(default_factory=list, description="Input prerequisites")
     returns: str = Field(default="", description="Output description")
-    dependencies: List[str] = Field(default_factory=list, description="Tools to execute first")
     
     # Parameters
     parameters: List[ToolParameter] = Field(default_factory=list, description="Tool parameters")

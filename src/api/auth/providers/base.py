@@ -5,8 +5,8 @@ Defines the abstract interface that all authentication providers must implement.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 
 @dataclass
@@ -19,6 +19,7 @@ class AuthResult:
     
     success: bool
     user_id: Optional[str] = None
+    permissions: List[str] = field(default_factory=list)
     error: Optional[str] = None
     error_description: Optional[str] = None
 

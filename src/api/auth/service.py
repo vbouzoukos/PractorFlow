@@ -58,7 +58,7 @@ class AuthService:
         if self._config.is_oidc_mode:
             return OIDCAuthProvider(self._config.oidc)
         else:
-            return LocalAuthProvider(self._config.app_secret)
+            return LocalAuthProvider(self._config)
     
     @property
     def provider_name(self) -> str:
@@ -99,6 +99,7 @@ class AuthService:
         else:
             credentials = {
                 "app_secret": request.app_secret,
+                "admin_secret": request.admin_secret,
                 "username": request.username,
             }
         
@@ -113,7 +114,10 @@ class AuthService:
         
         # Issue API JWT
         try:
-            token = self._jwt_handler.create_token(result.user_id)
+            token = self._jwt_handler.create_token(
+                result.user_id,
+                permissions=result.permissions,
+            )
         except JWTError as e:
             raise AuthenticationError(
                 error=e.error,
@@ -162,8 +166,10 @@ class AuthService:
         import uuid
         
         user_id = username if username else f"anonymous_{uuid.uuid4().hex[:8]}"
+        permissions = ["llm_admin"] if self._config.admin_enabled else []
         
         return UserContext(
             user_id=user_id,
             is_authenticated=False,
+            permissions=permissions,
         )

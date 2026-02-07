@@ -4,11 +4,22 @@ FastAPI dependencies for dependency injection.
 
 from typing import Optional
 
+from fastapi import Depends, HTTPException, status
+
 from practorflow.services.chat import ChatService
 from practorflow.services.agent import AgentService
 from practorflow.services.history.truncator import DeleteSessionService
 from practorflow.session_store.session_history import SessionHistory
 from api.auth.service import AuthService
+from api.auth.dependencies import get_current_user
+from api.auth.schemas import UserContext
+from practorflow.llm.tools.api.store.base_store import ApiToolStore
+from practorflow.llm.tools.api.encryption import EncryptionService
+from practorflow.llm.tools.api.models.models import ApiToolConfig
+
+
+# System tools use empty string as user_id
+SYSTEM_USER_ID = ""
 
 
 class ServiceContainer:
@@ -23,6 +34,8 @@ class ServiceContainer:
     session_history: Optional[SessionHistory] = None
     auth_service: Optional[AuthService] = None
     delete_session_service: Optional[DeleteSessionService] = None
+    api_tool_store: Optional[ApiToolStore] = None
+    encryption_service: Optional[EncryptionService] = None
 
 
 # Global service container instance
@@ -101,3 +114,76 @@ def get_delete_session_service() -> DeleteSessionService:
     if container.delete_session_service is None:
         raise RuntimeError("DeleteSessionService not initialized. Application not started properly.")
     return container.delete_session_service
+
+
+def get_api_tool_store() -> ApiToolStore:
+    """
+    Dependency to get ApiToolStore instance.
+    
+    Returns:
+        ApiToolStore instance.
+    
+    Raises:
+        RuntimeError: If ApiToolStore is not initialized.
+    """
+    if container.api_tool_store is None:
+        raise RuntimeError("ApiToolStore not initialized. Application not started properly.")
+    return container.api_tool_store
+
+
+def get_encryption_service() -> EncryptionService:
+    """
+    Dependency to get EncryptionService instance.
+    
+    Returns:
+        EncryptionService instance.
+    
+    Raises:
+        RuntimeError: If EncryptionService is not initialized.
+    """
+    if container.encryption_service is None:
+        raise RuntimeError("EncryptionService not initialized. Application not started properly.")
+    return container.encryption_service
+
+
+async def resolve_tool(
+    tool_id: str,
+    current_user: UserContext = Depends(get_current_user),
+    store: ApiToolStore = Depends(get_api_tool_store),
+) -> ApiToolConfig:
+    """
+    Resolve a tool by path parameter with authorization enforcement.
+    
+    Looks up tool by tool_id, then checks:
+    - If tool belongs to current user: allowed.
+    - If tool is a system tool: requires llm_admin permission.
+    - Otherwise: 403 forbidden.
+    
+    Args:
+        tool_id: Tool identifier from path.
+        current_user: Authenticated user context.
+        store: API tool store instance.
+    
+    Returns:
+        ApiToolConfig instance.
+    
+    Raises:
+        HTTPException: 404 if not found, 403 if not authorized.
+    """
+    tool = store.get(tool_id)
+    if tool is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tool '{tool_id}' not found",
+        )
+
+    if tool.user_id == current_user.user_id:
+        return tool
+
+    if tool.system and "llm_admin" in current_user.permissions:
+        return tool
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Not authorized to access this tool",
+    )

@@ -38,35 +38,22 @@ class TinyDBApiToolStore(ApiToolStore):
     
     def create(self, tool: ApiToolConfig) -> ApiToolConfig:
         """Create a new tool configuration."""
-        existing = self._table.get(
-            (self._query.name == tool.name) & 
-            (self._query.user_id == tool.user_id)
-        )
-        if existing:
-            raise ValueError(f"Tool with name '{tool.name}' already exists")
-        
         tool.created_at = datetime.now()
         tool.updated_at = datetime.now()
         
         self._table.insert(self._serialize(tool))
         return tool
     
-    def get(self, tool_id: str, user_id: str) -> Optional[ApiToolConfig]:
+    def get(self, tool_id: str) -> Optional[ApiToolConfig]:
         """Get a tool configuration by ID."""
-        result = self._table.get(
-            (self._query.tool_id == tool_id) & 
-            (self._query.user_id == user_id)
-        )
+        result = self._table.get(self._query.tool_id == tool_id)
         if result:
             return self._deserialize(result)
         return None
     
     def update(self, tool: ApiToolConfig) -> Optional[ApiToolConfig]:
         """Update an existing tool configuration."""
-        existing = self._table.get(
-            (self._query.tool_id == tool.tool_id) & 
-            (self._query.user_id == tool.user_id)
-        )
+        existing = self._table.get(self._query.tool_id == tool.tool_id)
         if not existing:
             return None
         
@@ -74,17 +61,13 @@ class TinyDBApiToolStore(ApiToolStore):
         
         self._table.update(
             self._serialize(tool),
-            (self._query.tool_id == tool.tool_id) & 
-            (self._query.user_id == tool.user_id)
+            self._query.tool_id == tool.tool_id,
         )
         return tool
     
-    def delete(self, tool_id: str, user_id: str) -> bool:
+    def delete(self, tool_id: str) -> bool:
         """Delete a tool configuration."""
-        removed = self._table.remove(
-            (self._query.tool_id == tool_id) & 
-            (self._query.user_id == user_id)
-        )
+        removed = self._table.remove(self._query.tool_id == tool_id)
         return len(removed) > 0
     
     def list(self, user_id: str) -> List[ApiToolConfig]:

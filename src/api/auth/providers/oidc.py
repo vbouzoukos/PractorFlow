@@ -5,7 +5,7 @@ Validates identity tokens from external OIDC providers and extracts
 user information for API JWT issuance.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 import jwt
@@ -107,9 +107,13 @@ class OIDCAuthProvider(AuthProvider):
             # Extract user identifier
             user_id = self._extract_user_id(payload)
             
+            # Extract permissions from token claims
+            permissions = self._extract_permissions(payload)
+            
             return AuthResult(
                 success=True,
                 user_id=user_id,
+                permissions=permissions,
             )
         
         except InvalidTokenError as e:
@@ -167,6 +171,45 @@ class OIDCAuthProvider(AuthProvider):
         
         # Fallback to subject (always required)
         return str(payload["sub"])
+    
+    def _extract_permissions(self, payload: Dict[str, Any]) -> List[str]:
+        """
+        Extract permissions from OIDC token claims.
+        
+        Checks common claim locations used by OIDC providers:
+        - "scope": space-delimited string (OAuth 2.0 standard)
+        - "permissions": array (Auth0 convention)
+        - "realm_access.roles": array (Keycloak convention)
+        
+        Only recognized permissions (e.g. llm_admin) are returned.
+        
+        Args:
+            payload: Decoded JWT payload.
+        
+        Returns:
+            List of recognized permission strings.
+        """
+        recognized = {"llm_admin"}
+        found: set = set()
+        
+        # OAuth 2.0 scope claim (space-delimited string)
+        scope = payload.get("scope", "")
+        if isinstance(scope, str) and scope:
+            found.update(scope.split())
+        
+        # Auth0-style permissions claim (array)
+        permissions = payload.get("permissions", [])
+        if isinstance(permissions, list):
+            found.update(str(p) for p in permissions)
+        
+        # Keycloak-style realm_access.roles (nested object)
+        realm_access = payload.get("realm_access", {})
+        if isinstance(realm_access, dict):
+            roles = realm_access.get("roles", [])
+            if isinstance(roles, list):
+                found.update(str(r) for r in roles)
+        
+        return sorted(found & recognized)
     
     def clear_cache(self) -> None:
         """Clear cached OIDC configuration and JWKS client."""

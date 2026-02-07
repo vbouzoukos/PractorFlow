@@ -17,9 +17,7 @@ from practorflow.settings.app_settings import appConfiguration
 
 from practorflow.services.tools.deps import ToolsDeps
 
-logger = get_logger(
-    "tools", level=appConfiguration.LoggerConfiguration.AgentLevel
-)
+logger = get_logger("agentic_tools", level=appConfiguration.LoggerConfiguration.AgentLevel)
 
 
 def register_default_tools(
@@ -84,6 +82,7 @@ def _create_api_tool_wrapper(tool_name: str):
     Returns:
         Async function that executes the tool via the registry.
     """
+
     async def api_tool_executor(ctx: RunContext[ToolsDeps], **kwargs) -> str:
         """Execute the API tool with provided arguments."""
         ctx.deps.tool_registry.set_document_scope(ctx.deps.document_scope)
@@ -106,9 +105,9 @@ def _build_tool_description(tool: ApiTool) -> str:
     """
     Build a rich description for an API tool including all usage guidelines.
 
-    Combines description, purpose, use_when, do_not_use_when, requires,
-    and returns from the tool's configuration into a comprehensive
-    description for the LLM.
+    Combines description, purpose, keywords, category, tags,
+    use_when, do_not_use_when, requires, and returns
+    from the tool's configuration into a comprehensive description for the LLM.
 
     Args:
         tool: ApiTool instance with configuration.
@@ -121,6 +120,15 @@ def _build_tool_description(tool: ApiTool) -> str:
 
     if config.purpose:
         parts.append(f"\nPurpose: {config.purpose}")
+
+    if config.keywords:
+        parts.append(f"\nKeywords: {', '.join(config.keywords)}")
+
+    if config.category:
+        parts.append(f"\nCategory: {config.category}")
+
+    if config.tags:
+        parts.append(f"\nTags: {', '.join(config.tags)}")
 
     if config.use_when:
         use_cases = "\n".join(f"  - {case}" for case in config.use_when)
@@ -153,7 +161,7 @@ def _build_api_tools(tool_registry: ToolRegistry) -> List[Tool]:
     tools = []
 
     for tool in tool_registry.get_all_tools():
-        if not hasattr(tool, 'user_id'):
+        if not hasattr(tool, "user_id"):
             continue
 
         if not isinstance(tool, ApiTool):
@@ -164,11 +172,14 @@ def _build_api_tools(tool_registry: ToolRegistry) -> List[Tool]:
             func_schema = schema.get("function", {})
             tool_name = func_schema.get("name", tool.name)
             description = _build_tool_description(tool)
-            parameters = func_schema.get("parameters", {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            })
+            parameters = func_schema.get(
+                "parameters",
+                {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            )
 
             wrapper_func = _create_api_tool_wrapper(tool_name)
 

@@ -156,3 +156,29 @@ async def get_optional_user(
         return auth_service.validate_token(credentials.credentials)
     except AuthenticationError:
         return None
+
+
+async def require_llm_admin(
+    current_user: UserContext = Depends(get_current_user),
+) -> UserContext:
+    """
+    Require the llm_admin permission for the request.
+    
+    Depends on get_current_user to extract the user context,
+    then verifies that the user has the llm_admin permission.
+    
+    Args:
+        current_user: Current user context from authentication.
+    
+    Returns:
+        UserContext with verified llm_admin permission.
+    
+    Raises:
+        HTTPException: 403 if user does not have llm_admin permission.
+    """
+    if "llm_admin" not in current_user.permissions:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="llm_admin permission required",
+        )
+    return current_user

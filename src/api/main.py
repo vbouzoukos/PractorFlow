@@ -7,6 +7,7 @@ Sets up the FastAPI application with:
 - Chat routes
 - Agent routes
 - Session routes
+- API tool routes
 - CORS middleware
 - Background cleanup scheduler for orphaned documents
 """
@@ -48,6 +49,7 @@ from api.routes.auth import router as auth_router
 from api.routes.chat import router as chat_router
 from api.routes.agent import router as agent_router
 from api.routes.session import router as session_router
+from api.routes.api_tools import router as api_tools_router
 from api.services.maintenance.orphan_cleanup_service import OrphanCleanupService
 from api.scheduler.cleanup_scheduler import CleanupScheduler
 
@@ -61,6 +63,9 @@ from practorflow.session_store.factory import (
     create_session_history,
     create_session_store,
 )
+from practorflow.llm.tools.api.encryption import EncryptionService
+from practorflow.llm.tools.api.store.tinydb_store import TinyDBApiToolStore
+from practorflow.llm.tools.api.factory import initialize_factory
 
 logger = get_logger("agent-api", level="INFO")
 
@@ -97,6 +102,21 @@ async def lifespan(app: FastAPI):
     container.auth_service = auth_service
     set_auth_service(auth_service)
     logger.info("[API] Authentication service initialized")
+
+    # Initialize encryption service (uses JWT secret key)
+    encryption_service = EncryptionService(api_config.auth.jwt.secret_key)
+    container.encryption_service = encryption_service
+    logger.info("[API] Encryption service initialized")
+
+    # Initialize API tool store
+    api_tools_db_path = os.getenv("API_TOOLS_DB_PATH", "./api_tools.json")
+    api_tool_store = TinyDBApiToolStore(db_path=api_tools_db_path)
+    container.api_tool_store = api_tool_store
+    logger.info(f"[API] API tool store initialized: {api_tools_db_path}")
+
+    # Initialize API tool factory
+    initialize_factory(api_tool_store)
+    logger.info("[API] API tool factory initialized")
 
     # Initialize configuration
     model_config = appConfiguration.ModelConfiguration
@@ -179,6 +199,10 @@ async def lifespan(app: FastAPI):
         await _cleanup_scheduler.stop()
         logger.info("[API] Cleanup scheduler stopped")
 
+    # Close API tool store
+    api_tool_store.close()
+    logger.info("[API] API tool store closed")
+
     # Unload all models
     await model_pool.unload_all()
 
@@ -207,6 +231,7 @@ app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(agent_router)
 app.include_router(session_router)
+app.include_router(api_tools_router)
 
 
 @app.get("/health", tags=["health"])

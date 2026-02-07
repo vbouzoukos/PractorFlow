@@ -14,7 +14,9 @@ class ApiToolStore(ABC):
     """
     Abstract base class for API tool storage.
     
-    Handles tool configuration CRUD operations per user.
+    Handles tool configuration CRUD operations.
+    Tool ID (tool_id) is the sole unique identifier.
+    Authorization logic belongs in the service/API layer, not here.
     """
     
     @abstractmethod
@@ -22,7 +24,7 @@ class ApiToolStore(ABC):
         """Create a new tool configuration."""
     
     @abstractmethod
-    def get(self, tool_id: str, user_id: str) -> Optional[ApiToolConfig]:
+    def get(self, tool_id: str) -> Optional[ApiToolConfig]:
         """Get a tool configuration by ID."""
     
     @abstractmethod
@@ -30,7 +32,7 @@ class ApiToolStore(ABC):
         """Update an existing tool configuration."""
     
     @abstractmethod
-    def delete(self, tool_id: str, user_id: str) -> bool:
+    def delete(self, tool_id: str) -> bool:
         """Delete a tool configuration."""
     
     @abstractmethod

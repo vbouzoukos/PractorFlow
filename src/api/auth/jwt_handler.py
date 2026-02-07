@@ -6,7 +6,7 @@ All tokens are issued by the API regardless of authentication source.
 """
 
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import List, Optional
 
 import jwt
 from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
@@ -70,13 +70,19 @@ class JWTHandler:
         """Get token expiry time in seconds."""
         return self._expiry_minutes * 60
     
-    def create_token(self, user_id: str) -> str:
+    def create_token(
+        self,
+        user_id: str,
+        permissions: Optional[List[str]] = None,
+    ) -> str:
         """
         Create a new JWT token for the given user.
         
         Args:
             user_id: User identifier to set as the subject claim.
                     Maps to the user field in Session model.
+            permissions: Optional list of granted permissions to embed
+                        in the token (e.g. ["llm_admin"]).
         
         Returns:
             Encoded JWT token string.
@@ -98,6 +104,7 @@ class JWTHandler:
             "iat": now,
             "exp": expires_at,
             "iss": "practorflow-api",
+            "permissions": permissions or [],
         }
         
         try:
@@ -147,9 +154,12 @@ class JWTHandler:
             if not user_id:
                 raise JWTInvalidError("Token missing subject claim")
             
+            permissions = payload.get("permissions", [])
+            
             return UserContext(
                 user_id=user_id,
                 is_authenticated=True,
+                permissions=permissions,
             )
         
         except ExpiredSignatureError:

@@ -4,7 +4,7 @@ Authentication schemas.
 Pydantic models for authentication requests and responses.
 """
 
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -20,6 +20,10 @@ class TokenRequest(BaseModel):
     app_secret: Optional[str] = Field(
         default=None,
         description="Application secret for local authentication",
+    )
+    admin_secret: Optional[str] = Field(
+        default=None,
+        description="Admin secret for obtaining llm_admin permission (local mode only)",
     )
     identity_token: Optional[str] = Field(
         default=None,
@@ -50,6 +54,10 @@ class UserContext(BaseModel):
     is_authenticated: bool = Field(
         default=True,
         description="Whether user is authenticated (False in open mode)",
+    )
+    permissions: List[str] = Field(
+        default_factory=list,
+        description="List of granted permissions (e.g. llm_admin)",
     )
 
 
