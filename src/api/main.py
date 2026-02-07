@@ -109,7 +109,7 @@ async def lifespan(app: FastAPI):
     logger.info("[API] Encryption service initialized")
 
     # Initialize API tool store
-    api_tools_db_path = os.getenv("API_TOOLS_DB_PATH", "./api_tools.json")
+    api_tools_db_path = os.getenv("API_TOOLS_DB_PATH")
     api_tool_store = TinyDBApiToolStore(db_path=api_tools_db_path)
     container.api_tool_store = api_tool_store
     logger.info(f"[API] API tool store initialized: {api_tools_db_path}")
