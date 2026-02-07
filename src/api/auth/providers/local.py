@@ -10,6 +10,7 @@ import secrets
 import uuid
 
 from api.auth.providers.base import AuthProvider, AuthResult
+from api.config import AuthConfig
 
 
 class LocalAuthProvider(AuthProvider):
@@ -20,15 +21,16 @@ class LocalAuthProvider(AuthProvider):
     In open mode (no configured secret), tokens are issued without validation.
     """
     
-    def __init__(self, app_secret: str = ""):
+    def __init__(self, config: AuthConfig):
         """
         Initialize local authentication provider.
         
         Args:
-            app_secret: Configured application secret.
-                       Empty string enables open mode.
+            config: Authentication configuration settings.
         """
-        self._app_secret = app_secret
+        self._app_secret = config.app_secret
+        self._admin_enabled = config.admin_enabled
+        self._admin_secret = config.admin_secret
     
     @property
     def provider_name(self) -> str:
@@ -58,25 +60,31 @@ class LocalAuthProvider(AuthProvider):
         Validate local credentials.
         
         In open mode, always succeeds and generates a user ID if not provided.
+        If admin_enabled, llm_admin permission is granted automatically in open mode.
         In secure mode, validates the provided app_secret.
+        If admin_secret is also provided and valid, llm_admin permission is granted.
         
         Args:
             credentials: Dictionary with optional keys:
                         - app_secret: Secret to validate
+                        - admin_secret: Secret for llm_admin permission
                         - username: Optional username for user_id
         
         Returns:
             AuthResult with success status and user information.
         """
         provided_secret = credentials.get("app_secret", "")
+        provided_admin_secret = credentials.get("admin_secret", "")
         username = credentials.get("username")
         
         # Open mode: issue token without validation
         if self.is_open_mode:
             user_id = username if username else self._generate_anonymous_id()
+            permissions = ["llm_admin"] if self._admin_enabled else []
             return AuthResult(
                 success=True,
                 user_id=user_id,
+                permissions=permissions,
             )
         
         # Secure mode: validate the provided secret
@@ -95,11 +103,21 @@ class LocalAuthProvider(AuthProvider):
                 error_description="Invalid application secret",
             )
         
-        # Validation successful
+        # Validation successful - check for admin permission
+        permissions = []
+        if (
+            self._admin_enabled
+            and self._admin_secret
+            and provided_admin_secret
+            and secrets.compare_digest(provided_admin_secret, self._admin_secret)
+        ):
+            permissions.append("llm_admin")
+        
         user_id = username if username else "local_user"
         return AuthResult(
             success=True,
             user_id=user_id,
+            permissions=permissions,
         )
     
     def _generate_anonymous_id(self) -> str:

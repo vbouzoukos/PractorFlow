@@ -196,3 +196,4 @@ data/session/session.json
 /config/api/secrets
 sessions.json
 /.VSCodeCounter
+/=data

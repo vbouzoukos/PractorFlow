@@ -44,6 +44,7 @@ from practorflow.services.agent.runners import (
     run_executor,
     run_synthesizer,
     run_verifier,
+    adapt_plan,
 )
 from practorflow.services.tools.registration import (
     register_default_tools,
@@ -268,6 +269,29 @@ class AgentService:
                 logger.info(
                     f"[AgentService] Retrying execution (attempt {retries}/{max_retries})"
                 )
+
+                try:
+                    new_plan = await adapt_plan(
+                        task=task,
+                        failed_plan=plan,
+                        execution_result=execution_result,
+                        verification_result=verification_result,
+                        ctx=ctx,
+                        model_pool=self._model_pool,
+                        model_config=self._model_config,
+                        knowledge_store=self._knowledge_store,
+                        tool_registry=self._tool_registry,
+                        attempt_number=retries,
+                    )
+                    plan = new_plan
+                    logger.info(
+                        f"[AgentService] Adapted plan: {plan.plan_id} with {len(plan.steps)} steps"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"[AgentService] adapt_plan failed: {e}, continuing with original plan"
+                    )
+
                 continue
 
             logger.info(

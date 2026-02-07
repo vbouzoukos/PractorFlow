@@ -6,13 +6,14 @@ Provides isolated prompts for each agent role:
 - Executor: Executes plan steps using tools
 - Verifier: Validates execution against success criteria
 - Synthesizer: Combines tool outputs into final answer
+- Replanner: Analyzes failures and creates corrected plans
 
 Each prompt enforces strict separation of concerns and structured output.
 """
 
 from typing import Any, Dict, List, Optional
 
-from .schemas import ExecutionResult, Plan, StepResult
+from .schemas import ExecutionResult, Plan, StepResult, VerificationResult
 
 
 PLANNER_SYSTEM_PROMPT = """You are a planning agent. You create execution plans as JSON.
@@ -126,6 +127,49 @@ OUTPUT GUIDELINES:
 - Use proper paragraphs, not bullet lists of raw data
 - Directly address what the user asked for
 - Do not include URLs unless specifically relevant to the answer"""
+
+
+ADAPT_PLAN_SYSTEM_PROMPT = """You are a REPLANNER agent in a multi-agent task execution system.
+
+YOUR ROLE: Analyze execution failures and create a corrected plan that addresses the specific issues.
+
+STRICT RULES:
+1. Analyze the verification issues to understand WHY the previous plan failed
+2. Create a NEW corrected plan that addresses the specific failures
+3. Reuse successful steps from the original plan when appropriate
+4. Fix or replace failed steps with better approaches
+5. Consider alternative tools if the original tool failed
+6. Return a complete valid plan in the same JSON structure as the Planner
+
+COMMON FAILURE PATTERNS AND STRATEGIES:
+- Tool failure: Try an alternative tool or different arguments
+- Missing evidence: Add steps to gather the required information
+- Incomplete execution: Break complex steps into smaller, more focused ones
+- Inconsistency: Add validation steps between dependent operations
+
+OUTPUT FORMAT - Return a JSON object with this EXACT structure:
+
+{
+    "plan_id": "replan-<original_plan_id>-<attempt_number>",
+    "task": "copy the original task here",
+    "steps": [
+        {
+            "step_id": "step_1",
+            "description": "describe what this step does",
+            "tool": "tool_name_or_null",
+            "tool_args": {"arg": "value"},
+            "expected_output": "what success looks like"
+        }
+    ],
+    "success_criteria": ["criterion 1"],
+    "retry_policy": {"max_retries": 0}
+}
+
+IMPORTANT:
+- Set retry_policy.max_retries to 0 to prevent nested retries
+- The plan_id MUST follow the format: replan-<original_plan_id>-<attempt_number>
+- ALL fields are required. Return ONLY this JSON, no other text."""
+
 
 def build_planner_prompt(
     task: str,
@@ -306,6 +350,118 @@ Write naturally as if you know this information - do not mention tools or data c
 Be concise but comprehensive. Use paragraphs, not raw data dumps."""
 
 
+def build_adapt_plan_prompt(
+    task: str,
+    failed_plan: Plan,
+    execution_result: ExecutionResult,
+    verification_result: VerificationResult,
+    tools_metadata: List[Dict[str, Any]],
+    attempt_number: int,
+    document_context: Optional[str] = None,
+) -> str:
+    """
+    Build the complete prompt for the adapt_plan (Replanner) agent.
+
+    Args:
+        task: The original user task.
+        failed_plan: The plan that failed verification.
+        execution_result: Results from the failed execution.
+        verification_result: Verification result with failure details.
+        tools_metadata: List of tool schemas from ToolRegistry.
+        attempt_number: Current replan attempt number.
+        document_context: Optional description of available documents.
+
+    Returns:
+        Complete prompt string for the replanner.
+    """
+    parts = []
+
+    # Original task
+    parts.append(f"<original_task>\n{task}\n</original_task>")
+
+    # Failed plan details
+    plan_steps = []
+    for step in failed_plan.steps:
+        step_str = f"- {step.step_id}: {step.description}"
+        if step.tool:
+            args_str = _format_tool_args(step.tool_args)
+            step_str += f"\n  Tool: {step.tool}({args_str})"
+        else:
+            step_str += "\n  Tool: None (reasoning step)"
+        step_str += f"\n  Expected: {step.expected_output}"
+        plan_steps.append(step_str)
+
+    criteria = "\n".join(f"- {c}" for c in failed_plan.success_criteria)
+
+    parts.append(f"""
+<failed_plan>
+Plan ID: {failed_plan.plan_id}
+
+Steps:
+{chr(10).join(plan_steps)}
+
+Success Criteria:
+{criteria}
+</failed_plan>""")
+
+    # Execution results
+    exec_results = _format_execution_results(execution_result.step_results)
+    parts.append(f"""
+<execution_results>
+{exec_results}
+</execution_results>""")
+
+    # Verification failure details
+    failed_criteria_str = "\n".join(
+        f"- {c}" for c in verification_result.failed_criteria
+    ) if verification_result.failed_criteria else "None"
+
+    issues_str_parts = []
+    for issue in verification_result.issues:
+        issue_line = f"- [{issue.issue_type}] {issue.description}"
+        if issue.step_id:
+            issue_line += f" (step: {issue.step_id})"
+        issues_str_parts.append(issue_line)
+    issues_str = "\n".join(issues_str_parts) if issues_str_parts else "None"
+
+    parts.append(f"""
+<verification_failure>
+Status: {verification_result.verification_status}
+
+Failed Criteria:
+{failed_criteria_str}
+
+Issues:
+{issues_str}
+</verification_failure>""")
+
+    # Document context
+    if document_context:
+        parts.append(f"\n<documents>\n{document_context}\n</documents>")
+
+    # Available tools
+    if tools_metadata:
+        tools_desc = _format_tools_for_prompt(tools_metadata)
+        parts.append(f"\n<available_tools>\n{tools_desc}\n</available_tools>")
+    else:
+        parts.append("\n<available_tools>None - use null for tool field in all steps</available_tools>")
+
+    # Instructions
+    parts.append(f"""
+<instructions>
+Analyze the failure above and create a corrected plan.
+
+Attempt number: {attempt_number}
+Original plan ID: {failed_plan.plan_id}
+New plan ID must be: replan-{failed_plan.plan_id}-{attempt_number}
+
+Set retry_policy.max_retries to 0.
+Return ONLY the corrected plan as JSON, no other text.
+</instructions>""")
+
+    return "\n".join(parts)
+
+
 def _format_tools_for_prompt(tools_metadata: List[Dict[str, Any]]) -> str:
     """Format tool schemas for inclusion in prompts."""
     if not tools_metadata:
@@ -367,4 +523,3 @@ def _format_execution_results(step_results: List[StepResult]) -> str:
         lines.append("")
 
     return "\n".join(lines)
-
