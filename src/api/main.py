@@ -64,7 +64,7 @@ from practorflow.session_store.factory import (
     create_session_store,
 )
 from practorflow.llm.tools.api.encryption import EncryptionService
-from practorflow.llm.tools.api.store.tinydb_store import TinyDBApiToolStore
+from practorflow.tool_store.tinydb_api_store import TinyDBApiToolStore
 from practorflow.llm.tools.api.factory import initialize_factory
 
 logger = get_logger("agent-api", level="INFO")
