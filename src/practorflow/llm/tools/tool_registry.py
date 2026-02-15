@@ -14,6 +14,27 @@ from practorflow.settings.app_settings import appConfiguration
 logger = get_logger("tool", level=appConfiguration.LoggerConfiguration.ToolLevel)
 
 
+# MCP imports - delayed to avoid circular dependency
+_MCPClient = None
+_MCPTool = None
+_MCPServerStore = None
+
+
+def _get_mcp_classes():
+    """Lazy import MCP classes to avoid circular dependencies."""
+    global _MCPClient, _MCPTool, _MCPServerStore
+    if _MCPClient is None:
+        from practorflow.llm.tools.mcp.client import MCPClient
+        from practorflow.llm.tools.mcp.tool import MCPTool
+        from practorflow.llm.tools.mcp.store import MCPServerStore
+
+        _MCPClient = MCPClient
+        _MCPTool = MCPTool
+        _MCPServerStore = MCPServerStore
+
+    return _MCPClient, _MCPTool, _MCPServerStore
+
+
 class ToolRegistry:
     """
     Registry for managing LLM tools.
@@ -28,6 +49,8 @@ class ToolRegistry:
         self._document_scope: Optional[set] = None
         self._last_result: Optional[ToolResult] = None
         self._loaded_user_id: Optional[str] = None
+        self._mcp_clients: Dict[str, Any] = {}  # server_id -> MCPClient
+        self._mcp_tools: Dict[str, Any] = {}  # tool_name -> MCPTool
 
     def load_api_tools_for_user(self, user_id: str) -> int:
         """
@@ -191,7 +214,12 @@ class ToolRegistry:
         Returns:
             ToolResult from execution
         """
+        # Check built-in and API tools first
         tool = self._tools.get(tool_name)
+
+        # If not found, check MCP tools
+        if not tool:
+            tool = self._mcp_tools.get(tool_name)
 
         if not tool:
             result = ToolResult(success=False, error=f"Tool not found: {tool_name}")
@@ -236,6 +264,126 @@ class ToolRegistry:
         context = self._last_result.to_context_string()
         self._last_result = None
         return context
+
+    async def load_mcp_tools(self, server_store: Optional[Any] = None) -> int:
+        """
+        Load MCP tools from all configured servers into the registry.
+
+        Reads server configs from store, connects to each server,
+        and registers all discovered tools globally.
+
+        Args:
+            server_store: MCPServerStore instance. If None, no MCP tools loaded.
+
+        Returns:
+            Number of MCP tools loaded.
+        """
+        if server_store is None:
+            logger.debug("[ToolRegistry] No MCP server store provided, skipping MCP tools")
+            return 0
+
+        MCPClient, MCPTool, _ = _get_mcp_classes()
+
+        # Unregister any existing MCP tools first
+        await self.unregister_mcp_tools()
+
+        server_configs = server_store.list()
+        if not server_configs:
+            logger.debug("[ToolRegistry] No MCP servers configured")
+            return 0
+
+        total_tools_loaded = 0
+
+        for config in server_configs:
+            try:
+                # Create and connect client
+                client = MCPClient(config)
+                await client.connect()
+
+                # Store client reference
+                self._mcp_clients[config.server_id] = client
+
+                # List available tools from server
+                available_tools = await client.list_available_tools()
+
+                # Create MCPTool instance for each tool
+                for tool_info in available_tools:
+                    tool_name = tool_info["name"]
+                    description = tool_info["description"]
+                    input_schema = tool_info["inputSchema"]
+
+                    # Get override config if exists
+                    override = None
+                    if config.tool_overrides and tool_name in config.tool_overrides:
+                        override = config.tool_overrides[tool_name]
+
+                    # Create MCPTool wrapper
+                    mcp_tool = MCPTool(
+                        tool_name=tool_name,
+                        server_name=config.name,
+                        server_description=description,
+                        input_schema=input_schema,
+                        client=client,
+                        override=override,
+                    )
+
+                    # Store in MCP-specific registry
+                    self._mcp_tools[tool_name] = mcp_tool
+                    total_tools_loaded += 1
+                    logger.info(
+                        f"[ToolRegistry] Loaded MCP tool '{tool_name}' "
+                        f"from server '{config.name}'"
+                    )
+
+            except Exception as e:
+                logger.error(
+                    f"[ToolRegistry] Failed to load tools from MCP server "
+                    f"'{config.name}': {e}"
+                )
+                # Continue with other servers
+                continue
+
+        logger.info(
+            f"[ToolRegistry] Loaded {total_tools_loaded} MCP tools "
+            f"from {len(self._mcp_clients)} servers"
+        )
+        return total_tools_loaded
+
+    async def unregister_mcp_tools(self) -> int:
+        """
+        Unregister all MCP tools and disconnect from servers.
+
+        Returns:
+            Number of tools unregistered.
+        """
+        # Disconnect all MCP clients
+        for server_id, client in self._mcp_clients.items():
+            try:
+                await client.disconnect()
+                logger.debug(f"[ToolRegistry] Disconnected MCP server: {server_id}")
+            except Exception as e:
+                logger.error(
+                    f"[ToolRegistry] Error disconnecting MCP server {server_id}: {e}"
+                )
+
+        # Clear registries
+        tool_count = len(self._mcp_tools)
+        self._mcp_clients.clear()
+        self._mcp_tools.clear()
+
+        if tool_count > 0:
+            logger.info(f"[ToolRegistry] Unregistered {tool_count} MCP tools")
+
+        return tool_count
+
+    def get_mcp_tools(self) -> Dict[str, Any]:
+        """
+        Get all registered MCP tools.
+
+        Returns:
+            Dict mapping tool name to MCPTool instance.
+        """
+        return self._mcp_tools.copy()
 
     def __contains__(self, tool_name: str) -> bool:
         """Check if tool is registered."""
