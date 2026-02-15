@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from practorflow.llm.tools.async_tool import AsyncBaseTool
 from practorflow.llm.tools.base import ToolParameter, ToolResult
 from practorflow.llm.tools.mcp.client import MCPClient
-from practorflow.llm.tools.mcp.types import ToolOverride
+from practorflow.llm.tools.mcp.types import MCPToolConfig
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class MCPTool(AsyncBaseTool):
         server_description: str,
         input_schema: Dict[str, Any],
         client: MCPClient,
-        override: Optional[ToolOverride] = None,
+        override: Optional[MCPToolConfig] = None,
     ):
         """
         Initialize MCP tool wrapper.
@@ -49,7 +49,7 @@ class MCPTool(AsyncBaseTool):
         self._server_description = server_description
         self._input_schema = input_schema
         self._client = client
-        self._override = override or ToolOverride()
+        self._override = override or MCPToolConfig()
 
         # Parse parameters from input schema
         self._parameters = self._parse_parameters(input_schema)
@@ -200,7 +200,7 @@ class MCPTool(AsyncBaseTool):
         return self._server_name
 
     @property
-    def override(self) -> ToolOverride:
+    def override(self) -> MCPToolConfig:
         """Admin override configuration."""
         return self._override
 

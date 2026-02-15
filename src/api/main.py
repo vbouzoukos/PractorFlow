@@ -50,6 +50,8 @@ from api.routes.chat import router as chat_router
 from api.routes.agent import router as agent_router
 from api.routes.session import router as session_router
 from api.routes.api_tools import router as api_tools_router
+from api.routes.mcp import router as mcp_router
+from api.routes.tools import router as tools_router
 from api.services.maintenance.orphan_cleanup_service import OrphanCleanupService
 from api.scheduler.cleanup_scheduler import CleanupScheduler
 
@@ -66,6 +68,8 @@ from practorflow.session_store.factory import (
 from practorflow.llm.tools.api.encryption import EncryptionService
 from practorflow.tool_store.tinydb_api_store import TinyDBApiToolStore
 from practorflow.llm.tools.api.factory import initialize_factory
+from practorflow.tool_store.tinydb_mcp_server_store import TinyDBMCPServerStore
+from practorflow.tool_store.tinydb_user_preferences import TinyDBUserToolPreferencesStore
 
 logger = get_logger("agent-api", level="INFO")
 
@@ -117,6 +121,18 @@ async def lifespan(app: FastAPI):
     # Initialize API tool factory
     initialize_factory(api_tool_store)
     logger.info("[API] API tool factory initialized")
+
+    # Initialize MCP server store
+    mcp_servers_db_path = os.getenv("MCP_SERVERS_DB_PATH")
+    mcp_server_store = TinyDBMCPServerStore(db_path=mcp_servers_db_path)
+    container.mcp_server_store = mcp_server_store
+    logger.info(f"[API] MCP server store initialized: {mcp_servers_db_path}")
+
+    # Initialize user tool preferences store
+    tool_prefs_db_path = os.getenv("TOOL_PREFS_DB_PATH")
+    tool_prefs_store = TinyDBUserToolPreferencesStore(db_path=tool_prefs_db_path)
+    container.tool_preferences_store = tool_prefs_store
+    logger.info(f"[API] Tool preferences store initialized: {tool_prefs_db_path}")
 
     # Initialize configuration
     model_config = appConfiguration.ModelConfiguration
@@ -199,9 +215,15 @@ async def lifespan(app: FastAPI):
         await _cleanup_scheduler.stop()
         logger.info("[API] Cleanup scheduler stopped")
 
-    # Close API tool store
+    # Close stores
     api_tool_store.close()
     logger.info("[API] API tool store closed")
+
+    mcp_server_store.close()
+    logger.info("[API] MCP server store closed")
+
+    tool_prefs_store.close()
+    logger.info("[API] Tool preferences store closed")
 
     # Unload all models
     await model_pool.unload_all()
@@ -232,6 +254,8 @@ app.include_router(chat_router)
 app.include_router(agent_router)
 app.include_router(session_router)
 app.include_router(api_tools_router)
+app.include_router(mcp_router)
+app.include_router(tools_router)
 
 
 @app.get("/health", tags=["health"])

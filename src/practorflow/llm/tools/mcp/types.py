@@ -43,9 +43,11 @@ class HttpConfig(BaseModel):
     timeout_seconds: int = Field(default=30, description="Request timeout in seconds")
 
 
-class ToolOverride(BaseModel):
-    """Admin overrides for an MCP tool's metadata."""
+class MCPToolConfig(BaseModel):
+    """Per-tool configuration within an MCP server."""
 
+    tool_id: str = Field(default_factory=lambda: str(uuid4()), description="Unique tool ID")
+    name: str = Field(..., description="Tool name from MCP server")
     enabled: bool = Field(default=True, description="Whether the tool is enabled")
     description: Optional[str] = Field(
         default=None, description="Override server-provided description"
@@ -80,7 +82,7 @@ class MCPServerConfig(BaseModel):
         default=None, description="SSE / Streamable HTTP transport configuration"
     )
 
-    tool_overrides: Dict[str, ToolOverride] = Field(
-        default_factory=dict,
-        description="Per-tool admin overrides keyed by tool name",
+    tools: List[MCPToolConfig] = Field(
+        default_factory=list,
+        description="MCP tool configurations",
     )

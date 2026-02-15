@@ -16,6 +16,8 @@ from api.auth.schemas import UserContext
 from practorflow.llm.tools.api.store.base_store import ApiToolStore
 from practorflow.llm.tools.api.encryption import EncryptionService
 from practorflow.llm.tools.api.models.models import ApiToolConfig
+from practorflow.llm.tools.mcp.store import MCPServerStore
+from practorflow.llm.tools.user_preferences import UserToolPreferencesStore
 
 
 # System tools use empty string as user_id
@@ -36,6 +38,8 @@ class ServiceContainer:
     delete_session_service: Optional[DeleteSessionService] = None
     api_tool_store: Optional[ApiToolStore] = None
     encryption_service: Optional[EncryptionService] = None
+    mcp_server_store: Optional[MCPServerStore] = None
+    tool_preferences_store: Optional[UserToolPreferencesStore] = None
 
 
 # Global service container instance
@@ -144,6 +148,36 @@ def get_encryption_service() -> EncryptionService:
     if container.encryption_service is None:
         raise RuntimeError("EncryptionService not initialized. Application not started properly.")
     return container.encryption_service
+
+
+def get_mcp_server_store() -> MCPServerStore:
+    """
+    Dependency to get MCPServerStore instance.
+
+    Returns:
+        MCPServerStore instance.
+
+    Raises:
+        RuntimeError: If MCPServerStore is not initialized.
+    """
+    if container.mcp_server_store is None:
+        raise RuntimeError("MCPServerStore not initialized. Application not started properly.")
+    return container.mcp_server_store
+
+
+def get_tool_preferences_store() -> UserToolPreferencesStore:
+    """
+    Dependency to get UserToolPreferencesStore instance.
+
+    Returns:
+        UserToolPreferencesStore instance.
+
+    Raises:
+        RuntimeError: If UserToolPreferencesStore is not initialized.
+    """
+    if container.tool_preferences_store is None:
+        raise RuntimeError("UserToolPreferencesStore not initialized. Application not started properly.")
+    return container.tool_preferences_store
 
 
 async def resolve_tool(

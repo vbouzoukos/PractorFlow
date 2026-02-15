@@ -312,10 +312,12 @@ class ToolRegistry:
                     description = tool_info["description"]
                     input_schema = tool_info["inputSchema"]
 
-                    # Get override config if exists
+                    # Get tool config if exists
                     override = None
-                    if config.tool_overrides and tool_name in config.tool_overrides:
-                        override = config.tool_overrides[tool_name]
+                    for tool_cfg in config.tools:
+                        if tool_cfg.name == tool_name:
+                            override = tool_cfg
+                            break
 
                     # Create MCPTool wrapper
                     mcp_tool = MCPTool(

@@ -14,7 +14,7 @@ from practorflow.llm.tools.mcp.types import (
     HttpConfig,
     MCPServerConfig,
     StdioConfig,
-    ToolOverride,
+    MCPToolConfig,
     TransportType,
 )
 from practorflow.llm.tools.mcp.store import MCPServerStore
@@ -116,10 +116,10 @@ class TinyDBMCPServerStore(MCPServerStore):
             "transport": config.transport.value,
             "stdio_config": config.stdio_config.model_dump() if config.stdio_config else None,
             "http_config": config.http_config.model_dump() if config.http_config else None,
-            "tool_overrides": {
-                name: override.model_dump()
-                for name, override in config.tool_overrides.items()
-            },
+            "tools": [
+                tool.model_dump()
+                for tool in config.tools
+            ],
         }
         return data
 
@@ -133,8 +133,8 @@ class TinyDBMCPServerStore(MCPServerStore):
             transport=TransportType(data["transport"]),
             stdio_config=StdioConfig(**data["stdio_config"]) if data.get("stdio_config") else None,
             http_config=HttpConfig(**data["http_config"]) if data.get("http_config") else None,
-            tool_overrides={
-                name: ToolOverride(**override)
-                for name, override in data.get("tool_overrides", {}).items()
-            },
+            tools=[
+                MCPToolConfig(**tool)
+                for tool in data.get("tools", [])
+            ],
         )
