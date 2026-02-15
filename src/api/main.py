@@ -129,7 +129,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"[API] MCP server store initialized: {mcp_servers_db_path}")
 
     # Initialize user tool preferences store
-    tool_prefs_db_path = os.getenv("TOOL_PREFS_DB_PATH")
+    tool_prefs_db_path = os.getenv("USER_TOOL_DB_PATH")
     tool_prefs_store = TinyDBUserToolPreferencesStore(db_path=tool_prefs_db_path)
     container.tool_preferences_store = tool_prefs_store
     logger.info(f"[API] Tool preferences store initialized: {tool_prefs_db_path}")
