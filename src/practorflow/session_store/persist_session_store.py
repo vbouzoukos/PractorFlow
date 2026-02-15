@@ -271,6 +271,3 @@ class TinyDBSessionStore(SessionStore):
             return datetime.fromisoformat(value)
         except (ValueError, TypeError):
             return datetime.now()
-
-    def __repr__(self) -> str:
-        return f"TinyDBSessionStore(sessions={len(self._sessions)})"

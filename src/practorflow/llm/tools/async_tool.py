@@ -119,6 +119,3 @@ class AsyncBaseTool(ABC):
             return ToolResult(success=False, error=validation_error)
         
         return await self.execute(**kwargs)
-    
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name='{self.name}')"

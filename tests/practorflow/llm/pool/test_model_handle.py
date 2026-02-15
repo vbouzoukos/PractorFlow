@@ -167,17 +167,3 @@ class TestModelHandleTimestamps:
 
         assert handle.created_at == created_at
         assert handle.last_used_at > last_used
-
-
-class TestModelHandleRepr:
-    """Tests __repr__ formatting."""
-
-    def test_repr_contains_backend_ref_and_hash(self):
-        handle = create_mock_model_handle(config_hash="1234567890abcdef")
-        handle.acquire()
-
-        rep = repr(handle)
-
-        assert "backend=llama_cpp" in rep
-        assert "ref_count=1" in rep
-        assert "12345678" in rep

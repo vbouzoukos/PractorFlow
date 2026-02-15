@@ -1,7 +1,7 @@
 """
 MCP (Model Context Protocol) tools module.
 
-Provides MCP server configuration types and storage interface.
+Provides MCP server configuration types, storage interface, and client.
 """
 
 from practorflow.llm.tools.mcp.types import (
@@ -12,6 +12,7 @@ from practorflow.llm.tools.mcp.types import (
     MCPServerConfig,
 )
 from practorflow.llm.tools.mcp.store import MCPServerStore
+from practorflow.llm.tools.mcp.client import MCPClient
 
 __all__ = [
     "TransportType",
@@ -20,4 +21,5 @@ __all__ = [
     "ToolOverride",
     "MCPServerConfig",
     "MCPServerStore",
+    "MCPClient",
 ]

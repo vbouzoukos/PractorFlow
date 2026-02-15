@@ -423,15 +423,3 @@ class TestBaseToolCall:
 
         assert result.success is False
         assert "Unknown parameters" in result.error
-
-
-class TestBaseToolRepr:
-    """Tests for AsyncBaseTool.__repr__()"""
-
-    def test_repr_format(self):
-        """__repr__ returns expected format."""
-        tool = ConcreteTool()
-
-        repr_str = repr(tool)
-
-        assert repr_str == "ConcreteTool(name='concrete_tool')"

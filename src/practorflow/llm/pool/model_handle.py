@@ -77,10 +77,4 @@ class ModelHandle:
             except Exception:
                 pass  # pragma: no cover
         return None
-    
-    def __repr__(self) -> str:
-        return (
-            f"ModelHandle(backend={self.backend}, "
-            f"ref_count={self.ref_count}, "
-            f"config_hash={self.config_hash[:8]}...)"
-        )
+

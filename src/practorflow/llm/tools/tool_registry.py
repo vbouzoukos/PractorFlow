@@ -244,7 +244,3 @@ class ToolRegistry:
     def __len__(self) -> int:
         """Get number of registered tools."""
         return len(self._tools)
-
-    def __repr__(self) -> str:
-        tools = ", ".join(self._tools.keys())
-        return f"ToolRegistry(tools=[{tools}])"

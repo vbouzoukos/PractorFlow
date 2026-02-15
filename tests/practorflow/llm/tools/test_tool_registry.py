@@ -484,23 +484,3 @@ class TestToolRegistryDunderMethods:
         registry.register(create_mock_tool(name="three"))
 
         assert len(registry) == 3
-
-    def test_repr_empty_registry(self):
-        """__repr__ shows empty tools list for empty registry."""
-        registry = ToolRegistry()
-
-        result = repr(registry)
-
-        assert result == "ToolRegistry(tools=[])"
-
-    def test_repr_with_tools(self):
-        """__repr__ shows registered tool names."""
-        registry = ToolRegistry()
-        registry.register(create_mock_tool(name="alpha"))
-        registry.register(create_mock_tool(name="beta"))
-
-        result = repr(registry)
-
-        assert "ToolRegistry(tools=[" in result
-        assert "alpha" in result
-        assert "beta" in result

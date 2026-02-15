@@ -590,6 +590,3 @@ class ModelPool:
                 for h in self._models.values()
             ],
         }
-
-    def __repr__(self) -> str:
-        return f"ModelPool(max_models={self.max_models}, loaded={len(self._models)})"

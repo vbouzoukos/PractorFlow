@@ -793,9 +793,3 @@ class ChromaKnowledgeStore(KnowledgeStore):
             logger.error(f"[ChromaKnowledgeStore] Error clearing: {e}")
             raise
 
-    def __repr__(self) -> str:
-        return (
-            f"ChromaKnowledgeStore(documents={self.count_documents()}, "
-            f"chunks={self.count_chunks()}, "
-            f"path='{self.config.persist_directory}')"
-        )

@@ -645,19 +645,6 @@ class TestChromaKnowledgeStoreSearchScopedExceptions:
         assert isinstance(result, list)
 
 
-class TestChromaKnowledgeStoreRepr:
-    """Tests for __repr__ method."""
-
-    def test_repr_format(self, chroma_store):
-        """__repr__ returns expected format."""
-        result = repr(chroma_store)
-
-        assert "ChromaKnowledgeStore" in result
-        assert "documents=" in result
-        assert "chunks=" in result
-        assert "path=" in result
-
-
 class TestChromaKnowledgeStoreTimestamp:
     """Tests for _get_current_timestamp method."""
 

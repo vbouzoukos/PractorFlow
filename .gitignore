@@ -197,3 +197,7 @@ data/session/session.json
 sessions.json
 /.VSCodeCounter
 /=data
+
+# AI tools
+CLAUDE.MD
+.claude

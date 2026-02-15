@@ -181,6 +181,3 @@ class PersistSessionHistory(SessionHistory):
         """Close the database connection if owned by this instance."""
         if self._owns_db:
             self._db.close()
-
-    def __repr__(self) -> str:
-        return f"PersistSessionHistory(sessions={len(self._sessions)})"

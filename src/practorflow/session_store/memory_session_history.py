@@ -91,6 +91,3 @@ class InMemorySessionHistory(SessionHistory):
         )
 
         return matching
-
-    def __repr__(self) -> str:
-        return f"InMemorySessionHistory(sessions={len(self._sessions)})"
