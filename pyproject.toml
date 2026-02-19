@@ -39,7 +39,8 @@ dependencies = [
     "pydantic-ai",
     "python-dotenv",
     "tinydb",
-    "pycryptodome"
+    "pycryptodome",
+    "mcp"
 ]
 
 [project.optional-dependencies]

@@ -106,8 +106,8 @@ class MCPServerListResponse(BaseModel):
     count: int = Field(..., description="Total number of servers")
 
 
-class MCPServerTestResponse(BaseModel):
-    """Response model for testing MCP server connection."""
+class MCPServerToolsResponse(BaseModel):
+    """Response model for listing available tools from an MCP server."""
 
     server_id: str = Field(..., description="Server ID")
     connected: bool = Field(..., description="Connection status")

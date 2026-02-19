@@ -17,7 +17,6 @@ from practorflow.settings.app_settings import appConfiguration
 
 from practorflow.services.tools.builders import (
     build_api_tools,
-    build_mcp_tools,
     build_builtin_tools,
 )
 
@@ -88,9 +87,10 @@ def load_api_tools_for_user(
     1. Loads API tools from the factory into the registry
     2. Builds built-in executor tools as Tool objects
     3. Builds API tools as Tool objects using Tool.from_schema()
-    4. Builds MCP tools based on user preferences
+    4. Loads MCP toolsets into registry based on user preferences
 
     The returned list can be passed directly to Agent(tools=...).
+    MCP toolsets are separate, retrieved via tool_registry.get_mcp_toolsets().
 
     Args:
         tool_registry: Registry to load tools into.
@@ -107,12 +107,11 @@ def load_api_tools_for_user(
     api_tools = build_api_tools(tool_registry)
     tools.extend(api_tools)
 
-    mcp_tools = build_mcp_tools(tool_registry, user_preferences)
-    tools.extend(mcp_tools)
+    tool_registry.load_mcp_toolsets(user_preferences)
 
     logger.info(
         f"Prepared {len(tools)} tools for agent "
-        f"({len(api_tools)} API tools, {len(mcp_tools)} MCP tools)"
+        f"({len(api_tools)} API tools)"
     )
 
     return tools
@@ -140,7 +139,7 @@ def build_tools_for_registry(
     api_tools = build_api_tools(tool_registry)
     tools.extend(api_tools)
 
-    mcp_tools = build_mcp_tools(tool_registry, user_preferences)
-    tools.extend(mcp_tools)
+    if user_preferences is not None:
+        tool_registry.load_mcp_toolsets(user_preferences)
 
     return tools

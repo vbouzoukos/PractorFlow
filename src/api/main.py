@@ -173,6 +173,7 @@ async def lifespan(app: FastAPI):
         model_config=model_config,
         knowledge_store=knowledge_store,
         session_store=session_store,
+        mcp_server_store=mcp_server_store,
     )
     # Initialize delete session service
     delete_session_service = DeleteSessionService(

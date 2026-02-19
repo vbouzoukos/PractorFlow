@@ -76,6 +76,7 @@ class AgentService:
         session_store: SessionStore,
         tool_registry: Optional[ToolRegistry] = None,
         user_instructions: Optional[str] = None,
+        mcp_server_store=None,
     ):
         """
         Initialize agent service.
@@ -94,6 +95,9 @@ class AgentService:
         self._session_store = session_store
         self._tool_registry = tool_registry or ToolRegistry()
         self._user_instructions = user_instructions
+
+        if mcp_server_store is not None:
+            self._tool_registry.set_mcp_server_store(mcp_server_store)
 
         register_default_tools(self._tool_registry, self._knowledge_store)
 

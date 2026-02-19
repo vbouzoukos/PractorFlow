@@ -85,6 +85,7 @@ async def run_executor(
     )
 
     tools = build_tools_for_registry(tool_registry)
+    mcp_toolsets = tool_registry.get_mcp_toolsets()
 
     async with model_pool.acquire_context(model_config) as handle:
         runner = create_runner(handle, knowledge_store=knowledge_store)
@@ -95,6 +96,7 @@ async def run_executor(
             deps_type=AgentDeps,
             system_prompt=EXECUTOR_SYSTEM_PROMPT,
             tools=tools,
+            toolsets=mcp_toolsets,
         )
 
         async with agent.iter(

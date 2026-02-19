@@ -3,7 +3,7 @@ MCP Server CRUD endpoints.
 
 Admin-only endpoints for managing MCP server configurations:
 - Creating, listing, getting, updating, deleting servers
-- Testing server connections
+- Listing available tools from a server
 - Reloading server tools
 """
 
@@ -21,11 +21,10 @@ from api.routes.mcp.schemas import (
     MCPServerListResponse,
     MCPServerReloadResponse,
     MCPServerResponse,
-    MCPServerTestResponse,
+    MCPServerToolsResponse,
     MCPServerUpdateRequest,
     MCPToolInfo,
 )
-from practorflow.llm.tools.mcp.client import MCPClient
 from practorflow.llm.tools.mcp.store import MCPServerStore
 from practorflow.llm.tools.mcp.types import MCPServerConfig
 from practorflow.logger.logger import get_logger
@@ -294,22 +293,22 @@ async def delete_server(
     )
 
 
-@router.post(
-    "/{server_id}/test",
-    response_model=MCPServerTestResponse,
-    summary="Test MCP server connection",
+@router.get(
+    "/{server_id}/tools",
+    response_model=MCPServerToolsResponse,
+    summary="List MCP server tools",
     description=(
-        "Test connection to an MCP server and list available tools. "
+        "Connect to an MCP server and list available tools. "
         "Requires llm_admin permission."
     ),
 )
-async def test_server(
+async def list_server_tools(
     server_id: str,
     current_user: UserContext = Depends(require_llm_admin),
     store: MCPServerStore = Depends(get_mcp_server_store),
-) -> MCPServerTestResponse:
+) -> MCPServerToolsResponse:
     """
-    Test MCP server connection and list available tools.
+    List available tools from an MCP server.
 
     Admin uses this to see what tools a server offers before creating them.
 
@@ -319,7 +318,7 @@ async def test_server(
         store: MCP server store instance.
 
     Returns:
-        MCPServerTestResponse with connection status and tools.
+        MCPServerToolsResponse with connection status and tools.
 
     Raises:
         HTTPException: 404 if server not found.
@@ -331,29 +330,48 @@ async def test_server(
             detail=f"Server '{server_id}' not found",
         )
 
-    client = MCPClient(config)
+    from pydantic_ai.mcp import MCPServerStdio, MCPServerSSE, MCPServerStreamableHTTP
+    from practorflow.llm.tools.mcp.types import TransportType
+
     tools: List[MCPToolInfo] = []
     error_msg: str = None
     connected = False
 
     try:
-        # Attempt connection
-        await client.connect()
-        connected = True
-
-        # List available tools
-        tools_data = await client.list_available_tools()
-        tools = [
-            MCPToolInfo(
-                name=t["name"],
-                description=t["description"],
-                input_schema=t["inputSchema"],
+        # Create native Pydantic AI MCP server instance
+        if config.transport == TransportType.STDIO:
+            server = MCPServerStdio(
+                command=config.stdio_config.command,
+                args=config.stdio_config.args,
+                env=config.stdio_config.env if config.stdio_config.env else None,
             )
-            for t in tools_data
-        ]
+        elif config.transport == TransportType.SSE:
+            server = MCPServerSSE(
+                url=config.http_config.url,
+                headers=config.http_config.headers if config.http_config.headers else None,
+                timeout=config.http_config.timeout_seconds,
+            )
+        else:
+            server = MCPServerStreamableHTTP(
+                url=config.http_config.url,
+                headers=config.http_config.headers if config.http_config.headers else None,
+                timeout=config.http_config.timeout_seconds,
+            )
+
+        async with server:
+            connected = True
+            discovered_tools = await server.list_tools()
+            tools = [
+                MCPToolInfo(
+                    name=t.name,
+                    description=t.description or "",
+                    input_schema=t.parameters_json_schema,
+                )
+                for t in discovered_tools
+            ]
 
         logger.info(
-            f"[MCP] Tested server '{config.name}' (id={server_id}): "
+            f"[MCP] Listed tools for server '{config.name}' (id={server_id}): "
             f"connected={connected}, tools={len(tools)} "
             f"by user: {current_user.user_id}"
         )
@@ -361,17 +379,10 @@ async def test_server(
     except Exception as e:
         error_msg = str(e)
         logger.error(
-            f"[MCP] Test failed for server '{config.name}' (id={server_id}): {e}"
+            f"[MCP] Failed to list tools for server '{config.name}' (id={server_id}): {e}"
         )
 
-    finally:
-        # Always disconnect
-        try:
-            await client.disconnect()
-        except Exception as e:
-            logger.warning(f"[MCP] Error during test cleanup: {e}")
-
-    return MCPServerTestResponse(
+    return MCPServerToolsResponse(
         server_id=server_id,
         connected=connected,
         tools=tools,

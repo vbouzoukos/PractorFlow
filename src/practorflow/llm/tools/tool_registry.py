@@ -8,31 +8,13 @@ Supports dynamic loading of user-defined API tools via ApiToolFactory.
 from typing import Dict, List, Optional, Any
 from practorflow.llm.tools.async_tool import AsyncBaseTool
 from practorflow.llm.tools.base import ToolResult
+from practorflow.llm.tools.mcp.store import MCPServerStore
+from practorflow.llm.tools.mcp.types import TransportType
+from practorflow.llm.tools.user_preferences import UserToolPreferences
 from practorflow.logger.logger import get_logger
 from practorflow.settings.app_settings import appConfiguration
 
 logger = get_logger("tool", level=appConfiguration.LoggerConfiguration.ToolLevel)
-
-
-# MCP imports - delayed to avoid circular dependency
-_MCPClient = None
-_MCPTool = None
-_MCPServerStore = None
-
-
-def _get_mcp_classes():
-    """Lazy import MCP classes to avoid circular dependencies."""
-    global _MCPClient, _MCPTool, _MCPServerStore
-    if _MCPClient is None:
-        from practorflow.llm.tools.mcp.client import MCPClient
-        from practorflow.llm.tools.mcp.tool import MCPTool
-        from practorflow.llm.tools.mcp.store import MCPServerStore
-
-        _MCPClient = MCPClient
-        _MCPTool = MCPTool
-        _MCPServerStore = MCPServerStore
-
-    return _MCPClient, _MCPTool, _MCPServerStore
 
 
 class ToolRegistry:
@@ -49,54 +31,54 @@ class ToolRegistry:
         self._document_scope: Optional[set] = None
         self._last_result: Optional[ToolResult] = None
         self._loaded_user_id: Optional[str] = None
-        self._mcp_clients: Dict[str, Any] = {}  # server_id -> MCPClient
-        self._mcp_tools: Dict[str, Any] = {}  # tool_name -> MCPTool
+        self._mcp_server_store: Optional[MCPServerStore] = None
+        self._mcp_toolsets: List[Any] = []
 
     def load_api_tools_for_user(self, user_id: str) -> int:
         """
         Load user-defined API tools from the factory.
-        
+
         Clears previously loaded API tools for different user and loads
         new tools for the specified user. Skips expired tools.
-        
+
         Args:
             user_id: User ID to load tools for.
-        
+
         Returns:
             Number of tools loaded.
         """
         from practorflow.llm.tools.api.factory import is_factory_initialized, get_factory
-        
+
         if not is_factory_initialized():
             logger.debug("[ToolRegistry] API tool factory not initialized, skipping")
             return 0
-        
+
         # Clear previously loaded user tools if switching users
         if self._loaded_user_id and self._loaded_user_id != user_id:
             self._unregister_api_tools()
-        
+
         factory = get_factory()
         tools = factory.create_tools_for_user(user_id)
-        
+
         registered_count = 0
         for tool in tools:
             if tool.name in self._tools:
                 logger.debug(f"[ToolRegistry] Tool '{tool.name}' already registered, skipping")
                 continue
-            
+
             self._tools[tool.name] = tool
             registered_count += 1
             logger.info(f"[ToolRegistry] Registered API tool: {tool.name}")
-        
+
         self._loaded_user_id = user_id
         logger.info(f"[ToolRegistry] Loaded {registered_count} API tools for user '{user_id}'")
-        
+
         return registered_count
 
     def _unregister_api_tools(self) -> int:
         """
         Unregister all API tools (tools with user_id attribute).
-        
+
         Returns:
             Number of tools unregistered.
         """
@@ -104,16 +86,16 @@ class ToolRegistry:
             name for name, tool in self._tools.items()
             if hasattr(tool, 'user_id')
         ]
-        
+
         for name in to_remove:
             del self._tools[name]
             logger.debug(f"[ToolRegistry] Unregistered API tool: {name}")
-        
+
         self._loaded_user_id = None
-        
+
         if to_remove:
             logger.info(f"[ToolRegistry] Unregistered {len(to_remove)} API tools")
-        
+
         return len(to_remove)
 
     def register(self, tool: AsyncBaseTool) -> None:
@@ -214,12 +196,8 @@ class ToolRegistry:
         Returns:
             ToolResult from execution
         """
-        # Check built-in and API tools first
+        # Check built-in and API tools
         tool = self._tools.get(tool_name)
-
-        # If not found, check MCP tools
-        if not tool:
-            tool = self._mcp_tools.get(tool_name)
 
         if not tool:
             result = ToolResult(success=False, error=f"Tool not found: {tool_name}")
@@ -265,127 +243,190 @@ class ToolRegistry:
         self._last_result = None
         return context
 
-    async def load_mcp_tools(self, server_store: Optional[Any] = None) -> int:
+    def set_mcp_server_store(self, store: MCPServerStore) -> None:
         """
-        Load MCP tools from all configured servers into the registry.
-
-        Reads server configs from store, connects to each server,
-        and registers all discovered tools globally.
+        Store the MCP server store reference for later use.
 
         Args:
-            server_store: MCPServerStore instance. If None, no MCP tools loaded.
+            store: MCPServerStore instance.
+        """
+        self._mcp_server_store = store
+
+    def load_mcp_toolsets(
+        self, user_preferences: Optional[UserToolPreferences] = None
+    ) -> int:
+        """
+        Load native Pydantic AI MCP toolsets from configured servers.
+
+        Reads all MCPServerConfig from the store and creates native
+        MCPServer* instances based on transport type. Applies user
+        preference filtering and tool description enrichment via
+        .filtered() and .prepared() when applicable.
+
+        Args:
+            user_preferences: Optional user preferences for filtering servers
+                and tools.
 
         Returns:
-            Number of MCP tools loaded.
+            Number of toolsets created.
         """
-        if server_store is None:
-            logger.debug("[ToolRegistry] No MCP server store provided, skipping MCP tools")
+        from pydantic_ai.mcp import MCPServerStdio, MCPServerSSE, MCPServerStreamableHTTP
+
+        # Clear any existing toolsets
+        self.unload_mcp_toolsets()
+
+        if self._mcp_server_store is None:
+            logger.debug("[ToolRegistry] No MCP server store set, skipping MCP toolsets")
             return 0
 
-        MCPClient, MCPTool, _ = _get_mcp_classes()
-
-        # Unregister any existing MCP tools first
-        await self.unregister_mcp_tools()
-
-        server_configs = server_store.list()
+        server_configs = self._mcp_server_store.list()
         if not server_configs:
             logger.debug("[ToolRegistry] No MCP servers configured")
             return 0
 
-        total_tools_loaded = 0
+        # Build preference lookup sets
+        enabled_server_names = None
+        enabled_mcp_tool_ids = None
+        if user_preferences is not None:
+            enabled_server_names = set(user_preferences.enabled_mcp_servers)
+            enabled_mcp_tool_ids = {
+                entry.id
+                for entry in user_preferences.enabled_tools
+                if entry.type == "mcp"
+            }
 
         for config in server_configs:
+            # Filter by enabled servers when preferences provided
+            if enabled_server_names is not None:
+                if config.name not in enabled_server_names:
+                    logger.debug(
+                        f"[ToolRegistry] MCP server '{config.name}' not in user's "
+                        f"enabled list, skipping"
+                    )
+                    continue
+
             try:
-                # Create and connect client
-                client = MCPClient(config)
-                await client.connect()
+                # Create native Pydantic AI MCP server instance
+                if config.transport == TransportType.STDIO:
+                    if not config.stdio_config:
+                        logger.error(
+                            f"[ToolRegistry] stdio_config missing for server '{config.name}'"
+                        )
+                        continue
+                    server = MCPServerStdio(
+                        command=config.stdio_config.command,
+                        args=config.stdio_config.args,
+                        env=config.stdio_config.env if config.stdio_config.env else None,
+                    )
+                elif config.transport == TransportType.SSE:
+                    if not config.http_config:
+                        logger.error(
+                            f"[ToolRegistry] http_config missing for server '{config.name}'"
+                        )
+                        continue
+                    server = MCPServerSSE(
+                        url=config.http_config.url,
+                        headers=config.http_config.headers if config.http_config.headers else None,
+                        timeout=config.http_config.timeout_seconds,
+                    )
+                elif config.transport == TransportType.STREAMABLE_HTTP:
+                    if not config.http_config:
+                        logger.error(
+                            f"[ToolRegistry] http_config missing for server '{config.name}'"
+                        )
+                        continue
+                    server = MCPServerStreamableHTTP(
+                        url=config.http_config.url,
+                        headers=config.http_config.headers if config.http_config.headers else None,
+                        timeout=config.http_config.timeout_seconds,
+                    )
+                else:
+                    logger.error(
+                        f"[ToolRegistry] Unsupported transport '{config.transport}' "
+                        f"for server '{config.name}'"
+                    )
+                    continue
 
-                # Store client reference
-                self._mcp_clients[config.server_id] = client
-
-                # List available tools from server
-                available_tools = await client.list_available_tools()
-
-                # Create MCPTool instance for each tool
-                for tool_info in available_tools:
-                    tool_name = tool_info["name"]
-                    description = tool_info["description"]
-                    input_schema = tool_info["inputSchema"]
-
-                    # Get tool config if exists
-                    override = None
-                    for tool_cfg in config.tools:
-                        if tool_cfg.name == tool_name:
-                            override = tool_cfg
-                            break
-
-                    # Create MCPTool wrapper
-                    mcp_tool = MCPTool(
-                        tool_name=tool_name,
-                        server_name=config.name,
-                        server_description=description,
-                        input_schema=input_schema,
-                        client=client,
-                        override=override,
+                # Apply tool filtering via .filtered() when preferences provided
+                if enabled_mcp_tool_ids is not None:
+                    server = server.filtered(
+                        allowed_tools=list(enabled_mcp_tool_ids)
                     )
 
-                    # Store in MCP-specific registry
-                    self._mcp_tools[tool_name] = mcp_tool
-                    total_tools_loaded += 1
-                    logger.info(
-                        f"[ToolRegistry] Loaded MCP tool '{tool_name}' "
-                        f"from server '{config.name}'"
-                    )
+                # Apply description enrichment via .prepared() for tools with overrides
+                if config.tools:
+                    async def _prepare_tools(ctx, tools, tool_configs=config.tools):
+                        for tool in tools:
+                            for tool_cfg in tool_configs:
+                                if tool_cfg.name != tool.name:
+                                    continue
+                                # Build enriched description
+                                base_description = (
+                                    tool_cfg.description
+                                    if tool_cfg.description
+                                    else tool.description
+                                )
+                                enrichments = []
+                                if tool_cfg.purpose:
+                                    enrichments.append(f"Purpose: {tool_cfg.purpose}")
+                                if tool_cfg.use_when:
+                                    use_when_str = ", ".join(tool_cfg.use_when)
+                                    enrichments.append(f"Use when: {use_when_str}")
+                                if tool_cfg.do_not_use_when:
+                                    do_not_use_str = ", ".join(tool_cfg.do_not_use_when)
+                                    enrichments.append(f"Do not use when: {do_not_use_str}")
+                                if tool_cfg.category:
+                                    enrichments.append(f"Category: {tool_cfg.category}")
+                                if tool_cfg.tags:
+                                    enrichments.append(f"Tags: {', '.join(tool_cfg.tags)}")
+                                if tool_cfg.keywords:
+                                    enrichments.append(f"Keywords: {', '.join(tool_cfg.keywords)}")
+                                if enrichments:
+                                    tool.description = (
+                                        f"{base_description}\n"
+                                        + "\n".join(enrichments)
+                                    )
+                                else:
+                                    tool.description = base_description
+                                break
+                        return tools
+
+                    server = server.prepared(_prepare_tools)
+
+                self._mcp_toolsets.append(server)
+                logger.info(f"[ToolRegistry] Loaded MCP toolset for server '{config.name}'")
 
             except Exception as e:
                 logger.error(
-                    f"[ToolRegistry] Failed to load tools from MCP server "
+                    f"[ToolRegistry] Failed to create toolset for MCP server "
                     f"'{config.name}': {e}"
                 )
-                # Continue with other servers
                 continue
 
-        logger.info(
-            f"[ToolRegistry] Loaded {total_tools_loaded} MCP tools "
-            f"from {len(self._mcp_clients)} servers"
-        )
-        return total_tools_loaded
+        logger.info(f"[ToolRegistry] Loaded {len(self._mcp_toolsets)} MCP toolsets")
+        return len(self._mcp_toolsets)
 
-    async def unregister_mcp_tools(self) -> int:
+    def unload_mcp_toolsets(self) -> int:
         """
-        Unregister all MCP tools and disconnect from servers.
+        Clear all MCP toolsets.
 
         Returns:
-            Number of tools unregistered.
+            Number of toolsets removed.
         """
-        # Disconnect all MCP clients
-        for server_id, client in self._mcp_clients.items():
-            try:
-                await client.disconnect()
-                logger.debug(f"[ToolRegistry] Disconnected MCP server: {server_id}")
-            except Exception as e:
-                logger.error(
-                    f"[ToolRegistry] Error disconnecting MCP server {server_id}: {e}"
-                )
+        count = len(self._mcp_toolsets)
+        self._mcp_toolsets.clear()
+        if count > 0:
+            logger.info(f"[ToolRegistry] Unloaded {count} MCP toolsets")
+        return count
 
-        # Clear registries
-        tool_count = len(self._mcp_tools)
-        self._mcp_clients.clear()
-        self._mcp_tools.clear()
-
-        if tool_count > 0:
-            logger.info(f"[ToolRegistry] Unregistered {tool_count} MCP tools")
-
-        return tool_count
-
-    def get_mcp_tools(self) -> Dict[str, Any]:
+    def get_mcp_toolsets(self) -> List[Any]:
         """
-        Get all registered MCP tools.
+        Get all loaded MCP toolsets.
 
         Returns:
-            Dict mapping tool name to MCPTool instance.
+            List of native Pydantic AI MCPServer* instances.
         """
-        return self._mcp_tools.copy()
+        return self._mcp_toolsets
 
     def __contains__(self, tool_name: str) -> bool:
         """Check if tool is registered."""
