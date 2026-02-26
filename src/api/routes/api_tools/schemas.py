@@ -216,7 +216,6 @@ class ApiToolResponse(BaseModel):
 
     # Basic info
     name: str = Field(..., description="Tool name identifier")
-    enabled: bool = Field(..., description="Whether tool is active")
 
     # HTTP configuration
     base_url: str = Field(..., description="Base URL for API")
@@ -284,7 +283,6 @@ class ApiToolResponse(BaseModel):
             created_at=config.created_at,
             updated_at=config.updated_at,
             name=config.name,
-            enabled=config.enabled,
             base_url=config.base_url,
             method=config.method,
             path=config.path,

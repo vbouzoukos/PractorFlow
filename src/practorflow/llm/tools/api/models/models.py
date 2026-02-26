@@ -57,8 +57,7 @@ class ApiToolConfig(BaseModel):
     
     # Basic info
     name: str = Field(..., description="Tool name identifier")
-    enabled: bool = Field(default=True, description="Whether tool is active")
-    
+        
     # HTTP configuration
     base_url: str = Field(..., description="Base URL for API")
     method: HttpMethod = Field(default=HttpMethod.GET, description="HTTP method")

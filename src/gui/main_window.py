@@ -1,7 +1,7 @@
 """
 Main window container for PractorFlow GUI.
 
-Provides menu navigation between different views (Chat, Settings).
+Provides menu navigation between different views (Chat, Settings, API Tools).
 """
 
 from PySide6.QtWidgets import (
@@ -26,14 +26,16 @@ from gui.chat.chat_window import ChatWindow
 class MainWindow(QMainWindow):
     """
     Main application window with menu navigation.
-    
-    Contains a stacked widget to switch between Chat and Settings views.
+
+    Contains a stacked widget to switch between Chat, Settings, and API Tools views.
     Opens Settings view if no settings.json exists, otherwise Chat view.
     """
     
     def __init__(self, parent=None):
         super().__init__(parent)
         
+        self._api_tools_panel = None      # lazy placeholder
+
         try:
             self._setup_ui()
             self._setup_menu()
@@ -88,7 +90,12 @@ class MainWindow(QMainWindow):
         self._settings_action.setShortcut("Ctrl+,")
         self._settings_action.setStatusTip("Open settings")
         view_menu.addAction(self._settings_action)
-        
+
+        self._api_tools_action = QAction("API &Tools", self)
+        self._api_tools_action.setShortcut("Ctrl+2")
+        self._api_tools_action.setStatusTip("Manage API tool configurations")
+        view_menu.addAction(self._api_tools_action)
+
         view_menu.addSeparator()
         
         self._exit_action = QAction("E&xit", self)
@@ -107,6 +114,7 @@ class MainWindow(QMainWindow):
         """Connect signals to slots."""
         self._chat_action.triggered.connect(self._show_chat)
         self._settings_action.triggered.connect(self._show_settings)
+        self._api_tools_action.triggered.connect(self._show_api_tools)
         self._exit_action.triggered.connect(self.close)
         self._about_action.triggered.connect(self._show_about)
     
@@ -130,6 +138,28 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Error switching to Settings view: {e}")
     
+    @Slot()
+    def _show_api_tools(self):
+        """Switch to API Tools view, lazy-initializing on first use."""
+        try:
+            if self._api_tools_panel is None:
+                from gui.widgets.api_tools_panel import ApiToolsPanel
+                from gui.api.api_tools_client import ApiToolsClient
+                from gui.settings.settings import load_settings
+
+                settings = load_settings()
+                client = ApiToolsClient(
+                    base_url=settings.api_url,
+                    username=settings.username,
+                )
+                self._api_tools_panel = ApiToolsPanel(client)
+                self._stack.addWidget(self._api_tools_panel)  # index 2
+            self._stack.setCurrentIndex(2)
+            self._status_bar.showMessage("API Tools", 2000)
+            logger.debug("Switched to API Tools view")
+        except Exception as e:
+            logger.error(f"Error switching to API Tools view: {e}")
+
     @Slot()
     def _show_about(self):
         """Show about dialog."""
