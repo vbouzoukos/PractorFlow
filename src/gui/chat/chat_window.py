@@ -25,6 +25,7 @@ from gui.settings.settings import AppSettings, load_settings
 from gui.api.chat_client import ChatClient
 from gui.api.agent_client import AgentClient, AgentTaskResult
 from gui.api.session_client import SessionClient
+from gui.api.tools_client import ToolsClient
 from gui.api.client_data import SessionHistory
 from gui.chat.chat_ui import ChatUI
 from gui.chat.worker_manager import WorkerManager
@@ -48,6 +49,8 @@ class ChatWindow(QWidget):
             self._client: ChatClient = None
             self._agent_client: AgentClient = None
             self._session_client: SessionClient = None
+            self._tools_client: ToolsClient = None
+            self._ui: ChatUI = None
             self._session_id: str = None
             self._agent_mode: bool = False
             self._connected: bool = False
@@ -57,6 +60,7 @@ class ChatWindow(QWidget):
 
             # Initialize UI
             self._ui = ChatUI(self, self._session_client)
+            self._ui.input_widget.set_tools_client(self._tools_client)
 
             # Initialize worker manager
             self._workers = WorkerManager(self)
@@ -81,6 +85,9 @@ class ChatWindow(QWidget):
             self._client = ChatClient(base_url=api_url, username=username)
             self._agent_client = AgentClient(base_url=api_url, username=username)
             self._session_client = SessionClient(base_url=api_url, username=username)
+            self._tools_client = ToolsClient(base_url=api_url, username=username)
+            if self._ui is not None:
+                self._ui.input_widget.set_tools_client(self._tools_client)
 
             logger.info(f"Settings loaded: api_url={api_url}, username={username}")
 

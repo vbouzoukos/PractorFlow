@@ -5,6 +5,8 @@ Provides a text input area with send button and file attachment
 functionality.
 """
 
+from typing import Optional
+
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -16,6 +18,8 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 from PySide6.QtCore import Qt, Signal
+
+from gui.api.tools_client import ToolsClient
 
 
 class MessageInput(QTextEdit):
@@ -36,16 +40,18 @@ class MessageInput(QTextEdit):
 class InputWidget(QWidget):
     """
     Message input widget with file attachment support.
-    
+
     Emits message_submitted signal with message text and file paths.
     """
-    
+
     message_submitted = Signal(str, list)  # message, file_paths
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        
+
         self._file_paths = []
+        self._tools_client: Optional[ToolsClient] = None
+        self._tools_popup = None
         
         self._setup_ui()
         self._connect_signals()
@@ -82,7 +88,13 @@ class InputWidget(QWidget):
         self._attach_btn.setFixedSize(36, 36)
         self._attach_btn.setToolTip("Attach files")
         input_layout.addWidget(self._attach_btn)
-        
+
+        # Tools button
+        self._tools_btn = QPushButton("🔧")
+        self._tools_btn.setFixedSize(36, 36)
+        self._tools_btn.setToolTip("Select tools")
+        input_layout.addWidget(self._tools_btn)
+
         # Text input
         self._text_input = MessageInput()
         input_layout.addWidget(self._text_input)
@@ -98,10 +110,28 @@ class InputWidget(QWidget):
     def _connect_signals(self):
         """Connect widget signals."""
         self._attach_btn.clicked.connect(self._on_attach_clicked)
+        self._tools_btn.clicked.connect(self._on_tools_btn_clicked)
         self._send_btn.clicked.connect(self._on_send_clicked)
         self._text_input.submit_requested.connect(self._on_send_clicked)
         self._clear_files_btn.clicked.connect(self._clear_files)
     
+    def set_tools_client(self, client: Optional[ToolsClient]):
+        """Set the tools client used by the tools popup."""
+        self._tools_client = client
+
+    def _on_tools_btn_clicked(self):
+        """Handle tools button click - show tool selection popup."""
+        try:
+            from gui.widgets.tools_popup import ToolsPopup
+            self._tools_popup = ToolsPopup(
+                client=self._tools_client,
+                anchor_widget=self._tools_btn,
+                parent=self,
+            )
+            self._tools_popup.show()
+        except Exception:
+            pass  # pragma: no cover
+
     def _on_attach_clicked(self):
         """Handle attach button click."""
         try:
@@ -177,6 +207,7 @@ class InputWidget(QWidget):
             self._text_input.setEnabled(enabled)
             self._send_btn.setEnabled(enabled)
             self._attach_btn.setEnabled(enabled)
+            self._tools_btn.setEnabled(enabled)
         except Exception:
             pass  # pragma: no cover
     
