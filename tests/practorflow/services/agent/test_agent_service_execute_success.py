@@ -292,22 +292,22 @@ async def test_run_executor_logs_each_node():
 
     with (
         patch(
-            "practorflow.services.agent.runners.create_runner",
+            "practorflow.services.agent.runners.executor.create_runner",
             return_value=MagicMock(),
         ),
         patch(
-            "practorflow.services.agent.runners.Agent",
+            "practorflow.services.agent.runners.executor.Agent",
             return_value=agent,
         ),
         patch(
-            "practorflow.services.agent.runners.parse_executor_results",
+            "practorflow.services.agent.runners.executor.parse_executor_results",
             return_value=make_execution_result(plan).step_results,
         ),
         patch(
-            "practorflow.services.agent.runners.build_execution_log",
+            "practorflow.services.agent.runners.executor.build_execution_log",
             return_value="log",
         ),
-        patch("practorflow.services.agent.runners.logger") as mock_logger,
+        patch("practorflow.services.agent.runners.executor.logger") as mock_logger,
     ):
         await run_executor(
             plan=plan,

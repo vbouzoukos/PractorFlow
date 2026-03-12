@@ -79,15 +79,15 @@ async def test_run_planner_json_parse_failure_raises_value_error():
 
     with (
         patch(
-            "practorflow.services.agent.runners.create_runner",
+            "practorflow.services.agent.runners.planner.create_runner",
             return_value=MagicMock(),
         ),
         patch(
-            "practorflow.services.agent.runners.Agent",
+            "practorflow.services.agent.runners.planner.Agent",
             return_value=agent,
         ),
         patch(
-            "practorflow.services.agent.runners.parse_json_from_response",
+            "practorflow.services.agent.runners.planner.parse_json_from_response",
             return_value=None,
         ),
     ):
@@ -116,19 +116,19 @@ async def test_run_verifier_heuristic_fallback_on_invalid_json():
 
     with (
         patch(
-            "practorflow.services.agent.runners.create_runner",
+            "practorflow.services.agent.runners.verifier.create_runner",
             return_value=MagicMock(),
         ),
         patch(
-            "practorflow.services.agent.runners.Agent",
+            "practorflow.services.agent.runners.verifier.Agent",
             return_value=agent,
         ),
         patch(
-            "practorflow.services.agent.runners.parse_json_from_response",
+            "practorflow.services.agent.runners.verifier.parse_json_from_response",
             return_value=invalid_verification,
         ),
         patch(
-            "practorflow.services.agent.runners.heuristic_verification",
+            "practorflow.services.agent.runners.verifier.heuristic_verification",
             return_value=make_verification_result(VerificationStatus.PASSED),
         ),
     ):
@@ -170,19 +170,19 @@ async def test_run_executor_happy_path():
 
     with (
         patch(
-            "practorflow.services.agent.runners.create_runner",
+            "practorflow.services.agent.runners.executor.create_runner",
             return_value=MagicMock(),
         ),
         patch(
-            "practorflow.services.agent.runners.Agent",
+            "practorflow.services.agent.runners.executor.Agent",
             return_value=agent,
         ),
         patch(
-            "practorflow.services.agent.runners.parse_executor_results",
+            "practorflow.services.agent.runners.executor.parse_executor_results",
             return_value=make_execution_result(plan).step_results,
         ),
         patch(
-            "practorflow.services.agent.runners.build_execution_log",
+            "practorflow.services.agent.runners.executor.build_execution_log",
             return_value="log",
         ),
     ):
@@ -231,15 +231,15 @@ async def test_run_planner_success_hits_return_path():
 
     with (
         patch(
-            "practorflow.services.agent.runners.create_runner",
+            "practorflow.services.agent.runners.planner.create_runner",
             return_value=MagicMock(),
         ),
         patch(
-            "practorflow.services.agent.runners.Agent",
+            "practorflow.services.agent.runners.planner.Agent",
             return_value=agent,
         ),
         patch(
-            "practorflow.services.agent.runners.parse_json_from_response",
+            "practorflow.services.agent.runners.planner.parse_json_from_response",
             return_value=parsed,
         ),
     ):

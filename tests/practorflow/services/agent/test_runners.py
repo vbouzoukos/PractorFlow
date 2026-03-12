@@ -3,13 +3,15 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from practorflow.services.agent.runners import (
-    _build_context_enhanced_prompt,
-    _extract_context,
-    _prepare_history,
     run_planner,
     run_executor,
     run_synthesizer,
     run_verifier,
+)
+from practorflow.services.agent.runners.agent_context import (
+    build_context_enhanced_prompt as _build_context_enhanced_prompt,
+    extract_context as _extract_context,
+    prepare_agent_history as _prepare_history,
 )
 from practorflow.services.agent.context import ExecutionContext
 from practorflow.services.history.estimator import estimate_tokens
@@ -85,7 +87,7 @@ async def test_prepare_history_exceeds_context_no_memory():
     model_config = MagicMock(n_ctx=1)
 
     with patch(
-        "practorflow.services.history.preparer.prepare_history",
+        "practorflow.services.agent.runners.agent_context.prepare_history",
         AsyncMock(
             return_value=MagicMock(
                 messages=msgs[-1:],
@@ -164,16 +166,16 @@ async def test_run_planner_success():
 
     with (
         patch(
-            "practorflow.services.agent.runners._prepare_history",
+            "practorflow.services.agent.runners.planner.prepare_agent_history",
             AsyncMock(return_value=prepared_history),
         ),
-        patch("practorflow.services.agent.runners.Agent", return_value=agent),
-        patch("practorflow.services.agent.runners.create_runner"),
+        patch("practorflow.services.agent.runners.planner.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.planner.create_runner"),
         patch(
-            "practorflow.services.agent.runners.parse_json_from_response",
+            "practorflow.services.agent.runners.planner.parse_json_from_response",
             return_value=plan_dict,
         ),
-        patch("practorflow.services.agent.runners.logger.debug") as debug_logger,
+        patch("practorflow.services.agent.runners.planner.logger.debug") as debug_logger,
     ):
         plan = await run_planner(
             task="t",
@@ -197,13 +199,13 @@ async def test_run_planner_parse_failure_raises():
     agent.run = AsyncMock(return_value=MagicMock(output="bad"))
 
     with (
-        patch("practorflow.services.agent.runners.Agent", return_value=agent),
-        patch("practorflow.services.agent.runners.create_runner"),
+        patch("practorflow.services.agent.runners.planner.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.planner.create_runner"),
         patch(
-            "practorflow.services.agent.runners.parse_json_from_response",
+            "practorflow.services.agent.runners.planner.parse_json_from_response",
             return_value=None,
         ),
-        patch("practorflow.services.agent.runners.repair_plan_json", return_value=None),
+        patch("practorflow.services.agent.runners.planner.repair_plan_json", return_value=None),
     ):
         with pytest.raises(ValueError):
             await run_planner(
@@ -230,13 +232,13 @@ async def test_run_planner_invalid_plan_structure_raises_value_error():
     }
 
     with (
-        patch("practorflow.services.agent.runners.Agent", return_value=agent),
-        patch("practorflow.services.agent.runners.create_runner"),
+        patch("practorflow.services.agent.runners.planner.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.planner.create_runner"),
         patch(
-            "practorflow.services.agent.runners.parse_json_from_response",
+            "practorflow.services.agent.runners.planner.parse_json_from_response",
             return_value=invalid_plan,
         ),
-        patch("practorflow.services.agent.runners.logger.error") as error_logger,
+        patch("practorflow.services.agent.runners.planner.logger.error") as error_logger,
     ):
         with pytest.raises(ValueError):
             await run_planner(
@@ -283,20 +285,20 @@ async def test_run_executor_success():
 
     with (
         patch(
-            "practorflow.services.agent.runners._prepare_history",
+            "practorflow.services.agent.runners.executor.prepare_agent_history",
             AsyncMock(return_value=[MagicMock()]),
         ),
-        patch("practorflow.services.agent.runners.Agent", return_value=agent),
-        patch("practorflow.services.agent.runners.create_runner"),
+        patch("practorflow.services.agent.runners.executor.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.executor.create_runner"),
         patch(
-            "practorflow.services.agent.runners.parse_executor_results",
+            "practorflow.services.agent.runners.executor.parse_executor_results",
             return_value=[],
         ),
         patch(
-            "practorflow.services.agent.runners.build_execution_log",
+            "practorflow.services.agent.runners.executor.build_execution_log",
             return_value="log",
         ),
-        patch("practorflow.services.agent.runners.logger.debug") as debug_logger,
+        patch("practorflow.services.agent.runners.executor.logger.debug") as debug_logger,
     ):
         result = await run_executor(
             plan=plan,
@@ -336,13 +338,13 @@ async def test_run_synthesizer_success():
 
     with (
         patch(
-            "practorflow.services.agent.runners._prepare_history",
+            "practorflow.services.agent.runners.synthesizer.prepare_agent_history",
             AsyncMock(return_value=[MagicMock()]),
         ),
-        patch("practorflow.services.agent.runners.Agent", return_value=agent),
-        patch("practorflow.services.agent.runners.create_runner"),
+        patch("practorflow.services.agent.runners.synthesizer.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.synthesizer.create_runner"),
         patch(
-            "practorflow.services.agent.runners._extract_context",
+            "practorflow.services.agent.runners.synthesizer.extract_context",
             AsyncMock(return_value=(None, None)),
         ),
     ):
@@ -378,13 +380,13 @@ async def test_run_synthesizer_with_instructions_success():
 
     with (
         patch(
-            "practorflow.services.agent.runners._prepare_history",
+            "practorflow.services.agent.runners.synthesizer.prepare_agent_history",
             AsyncMock(return_value=[MagicMock()]),
         ),
-        patch("practorflow.services.agent.runners.Agent", return_value=agent),
-        patch("practorflow.services.agent.runners.create_runner"),
+        patch("practorflow.services.agent.runners.synthesizer.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.synthesizer.create_runner"),
         patch(
-            "practorflow.services.agent.runners._extract_context",
+            "practorflow.services.agent.runners.synthesizer.extract_context",
             AsyncMock(return_value=(None, None)),
         ),
     ):
@@ -416,13 +418,13 @@ async def test_run_verifier_heuristic_fallback():
     agent.run = AsyncMock(return_value=MagicMock(output="bad"))
 
     with (
-        patch("practorflow.services.agent.runners.Agent", return_value=agent),
-        patch("practorflow.services.agent.runners.create_runner"),
+        patch("practorflow.services.agent.runners.verifier.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.verifier.create_runner"),
         patch(
-            "practorflow.services.agent.runners.parse_json_from_response",
+            "practorflow.services.agent.runners.verifier.parse_json_from_response",
             return_value=None,
         ),
-        patch("practorflow.services.agent.runners.heuristic_verification") as hv,
+        patch("practorflow.services.agent.runners.verifier.heuristic_verification") as hv,
     ):
         await run_verifier(
             plan=plan,
@@ -462,14 +464,14 @@ async def test_run_verifier_success_path():
     model_pool.acquire_context.return_value = handle
 
     with (
-        patch("practorflow.services.agent.runners.Agent", return_value=agent),
-        patch("practorflow.services.agent.runners.create_runner"),
+        patch("practorflow.services.agent.runners.verifier.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.verifier.create_runner"),
         patch(
-            "practorflow.services.agent.runners.parse_json_from_response",
+            "practorflow.services.agent.runners.verifier.parse_json_from_response",
             return_value=valid_verification,
         ),
-        patch("practorflow.services.agent.runners.logger.warning") as warning_logger,
-        patch("practorflow.services.agent.runners.logger.info") as info_logger,
+        patch("practorflow.services.agent.runners.verifier.logger.warning") as warning_logger,
+        patch("practorflow.services.agent.runners.verifier.logger.info") as info_logger,
     ):
         result = await run_verifier(
             plan=plan,
@@ -513,17 +515,17 @@ async def test_run_verifier_invalid_structure_uses_heuristic():
     model_pool.acquire_context.return_value = handle
 
     with (
-        patch("practorflow.services.agent.runners.Agent", return_value=agent),
-        patch("practorflow.services.agent.runners.create_runner"),
+        patch("practorflow.services.agent.runners.verifier.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.verifier.create_runner"),
         patch(
-            "practorflow.services.agent.runners.parse_json_from_response",
+            "practorflow.services.agent.runners.verifier.parse_json_from_response",
             return_value=invalid_verification,
         ),
         patch(
-            "practorflow.services.agent.runners.heuristic_verification",
+            "practorflow.services.agent.runners.verifier.heuristic_verification",
             return_value="heuristic-result",
         ) as heuristic,
-        patch("practorflow.services.agent.runners.logger.warning") as warning_logger,
+        patch("practorflow.services.agent.runners.verifier.logger.warning") as warning_logger,
     ):
         result = await run_verifier(
             plan=plan,
@@ -562,7 +564,7 @@ async def test_extract_context_persona_only():
     agent.iter.return_value.__aenter__.return_value = agent_run
     agent.iter.return_value.__aexit__.return_value = False
 
-    with patch("practorflow.services.agent.runners.Agent", return_value=agent):
+    with patch("practorflow.services.agent.runners.agent_context.Agent", return_value=agent):
         persona, instructions = await _extract_context(
             message_history=[MagicMock()],
             model=MagicMock(),
@@ -591,7 +593,7 @@ INSTRUCTIONS_END
     agent.iter.return_value.__aenter__.return_value = agent_run
     agent.iter.return_value.__aexit__.return_value = False
 
-    with patch("practorflow.services.agent.runners.Agent", return_value=agent):
+    with patch("practorflow.services.agent.runners.agent_context.Agent", return_value=agent):
         persona, instructions = await _extract_context(
             message_history=[MagicMock()],
             model=MagicMock(),
@@ -620,7 +622,7 @@ INSTRUCTIONS_END
     agent.iter.return_value.__aenter__.return_value = agent_run
     agent.iter.return_value.__aexit__.return_value = False
 
-    with patch("practorflow.services.agent.runners.Agent", return_value=agent):
+    with patch("practorflow.services.agent.runners.agent_context.Agent", return_value=agent):
         persona, instructions = await _extract_context(
             message_history=[MagicMock()],
             model=MagicMock(),
@@ -649,7 +651,7 @@ INSTRUCTIONS_END
     agent.iter.return_value.__aenter__.return_value = agent_run
     agent.iter.return_value.__aexit__.return_value = False
 
-    with patch("practorflow.services.agent.runners.Agent", return_value=agent):
+    with patch("practorflow.services.agent.runners.agent_context.Agent", return_value=agent):
         persona, instructions = await _extract_context(
             message_history=[MagicMock()],
             model=MagicMock(),
@@ -666,7 +668,7 @@ async def test_extract_context_exception_returns_none():
     agent = MagicMock()
     agent.iter.side_effect = RuntimeError("boom")
 
-    with patch("practorflow.services.agent.runners.Agent", return_value=agent):
+    with patch("practorflow.services.agent.runners.agent_context.Agent", return_value=agent):
         persona, instructions = await _extract_context(
             message_history=[MagicMock()],
             model=MagicMock(),
@@ -687,9 +689,9 @@ async def test_extract_context_no_result_falls_through_final_return():
     agent.iter.return_value.__aenter__.return_value = agent_run
     agent.iter.return_value.__aexit__.return_value = False
 
-    with patch("practorflow.services.agent.runners.Agent", return_value=agent):
+    with patch("practorflow.services.agent.runners.agent_context.Agent", return_value=agent):
         persona, instructions = await _extract_context(
-            message_history=[MagicMock()], 
+            message_history=[MagicMock()],
             model=MagicMock(),
             knowledge_store=MagicMock(),
             tool_registry=MagicMock(),
@@ -786,20 +788,20 @@ async def test_run_synthesizer_applies_persona_and_instructions():
 
     with (
         patch(
-            "practorflow.services.agent.runners._prepare_history",
+            "practorflow.services.agent.runners.synthesizer.prepare_agent_history",
             AsyncMock(return_value=[MagicMock()]),  # ensures prepared_history truthy
         ),
         patch(
-            "practorflow.services.agent.runners._extract_context",
+            "practorflow.services.agent.runners.synthesizer.extract_context",
             AsyncMock(return_value=("pirate", "Use short sentences")),
         ),
         patch(
-            "practorflow.services.agent.runners._build_context_enhanced_prompt",
+            "practorflow.services.agent.runners.synthesizer.build_context_enhanced_prompt",
             side_effect=lambda p, i, pr: f"ENHANCED\n{pr}",
         ) as build_ctx,
-        patch("practorflow.services.agent.runners.Agent", return_value=agent),
-        patch("practorflow.services.agent.runners.create_runner"),
-        patch("practorflow.services.agent.runners.logger.debug") as debug_logger,
+        patch("practorflow.services.agent.runners.synthesizer.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.synthesizer.create_runner"),
+        patch("practorflow.services.agent.runners.synthesizer.logger.debug") as debug_logger,
     ):
         result = await run_synthesizer(
             plan=plan,

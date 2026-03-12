@@ -95,15 +95,15 @@ async def test_run_planner_invalid_plan_structure_raises_value_error():
 
     with (
         patch(
-            "practorflow.services.agent.runners.create_runner",
+            "practorflow.services.agent.runners.planner.create_runner",
             return_value=MagicMock(),
         ),
         patch(
-            "practorflow.services.agent.runners.Agent",
+            "practorflow.services.agent.runners.planner.Agent",
             return_value=agent,
         ),
         patch(
-            "practorflow.services.agent.runners.parse_json_from_response",
+            "practorflow.services.agent.runners.planner.parse_json_from_response",
             return_value=invalid_plan,
         ),
     ):

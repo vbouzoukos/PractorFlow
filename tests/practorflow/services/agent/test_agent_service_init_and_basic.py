@@ -130,3 +130,27 @@ def test_get_session_returns_session_when_exists(
 
     assert session is not None
     assert session.session_id == "sess-1"
+
+
+def test_init_with_mcp_server_store_sets_it_on_registry(
+    mock_model_pool,
+    mock_llm_config,
+    mock_knowledge_store,
+    mock_session_store,
+):
+    mock_mcp_store = MagicMock()
+    mock_registry = MagicMock()
+
+    with patch(
+        "practorflow.services.agent.agent_service.register_default_tools"
+    ):
+        service = AgentService(
+            model_pool=mock_model_pool,
+            model_config=mock_llm_config,
+            knowledge_store=mock_knowledge_store,
+            session_store=mock_session_store,
+            tool_registry=mock_registry,
+            mcp_server_store=mock_mcp_store,
+        )
+
+    mock_registry.set_mcp_server_store.assert_called_once_with(mock_mcp_store)

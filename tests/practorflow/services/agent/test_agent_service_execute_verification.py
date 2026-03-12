@@ -239,15 +239,15 @@ async def test_run_verifier_successful_json_parsing():
 
     with (
         patch(
-            "practorflow.services.agent.runners.create_runner",
+            "practorflow.services.agent.runners.verifier.create_runner",
             return_value=MagicMock(),
         ),
         patch(
-            "practorflow.services.agent.runners.Agent",
+            "practorflow.services.agent.runners.verifier.Agent",
             return_value=agent,
         ),
         patch(
-            "practorflow.services.agent.runners.parse_json_from_response",
+            "practorflow.services.agent.runners.verifier.parse_json_from_response",
             return_value=parsed,
         ),
     ):

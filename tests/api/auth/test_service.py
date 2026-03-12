@@ -92,7 +92,7 @@ def test_create_local_provider(config_local, jwt_handler):
     with patch("api.auth.service.JWTHandler", return_value=jwt_handler):
         with patch("api.auth.service.LocalAuthProvider") as provider_cls:
             AuthService(config_local)
-            provider_cls.assert_called_once_with("secret")
+            provider_cls.assert_called_once_with(config_local)
 
 
 def test_create_oidc_provider(config_oidc, jwt_handler):

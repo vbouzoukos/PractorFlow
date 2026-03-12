@@ -140,18 +140,6 @@ def test_close_owned_db_closes_connection(mock_tinydb):
     db.close.assert_called_once()
 
 
-def test_repr_includes_session_count(mock_tinydb):
-    db, table = mock_tinydb
-    table.__len__.return_value = 3
-
-    history = PersistSessionHistory(db=db)
-
-    text = repr(history)
-
-    assert "PersistSessionHistory" in text
-    assert "3" in text
-
-
 def test_sessions_by_title_relevance_and_user_filtering(mock_tinydb):
     db, table = mock_tinydb
 

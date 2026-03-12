@@ -5,8 +5,16 @@ Tests cover all ToolRegistry methods for 100% code coverage.
 """
 
 import pytest
+from unittest.mock import MagicMock, patch, AsyncMock
 
 from practorflow.llm.tools.tool_registry import ToolRegistry
+from practorflow.llm.tools.mcp.types import (
+    MCPServerConfig,
+    TransportType,
+    StdioConfig,
+    HttpConfig,
+)
+from practorflow.llm.tools.user_preferences import UserToolPreferences, EnabledToolEntry
 from tests.practorflow.llm.tools.tools_common import create_mock_tool
 
 
@@ -484,3 +492,499 @@ class TestToolRegistryDunderMethods:
         registry.register(create_mock_tool(name="three"))
 
         assert len(registry) == 3
+
+
+class TestLoadApiToolsForUser:
+    """Tests for ToolRegistry.load_api_tools_for_user()"""
+
+    def test_returns_zero_when_factory_not_initialized(self):
+        """load_api_tools_for_user() returns 0 when factory is not initialized."""
+        registry = ToolRegistry()
+
+        with patch(
+            "practorflow.llm.tools.tool_registry.ToolRegistry.load_api_tools_for_user",
+            wraps=None,
+        ):
+            pass
+
+        with patch(
+            "practorflow.llm.tools.api.factory.is_factory_initialized",
+            return_value=False,
+        ):
+            result = registry.load_api_tools_for_user("user-1")
+
+        assert result == 0
+
+    def test_loads_tools_for_user(self):
+        """load_api_tools_for_user() loads and registers tools from factory."""
+        registry = ToolRegistry()
+        mock_tool = create_mock_tool(name="api_tool_1")
+        mock_factory = MagicMock()
+        mock_factory.create_tools_for_user.return_value = [mock_tool]
+
+        with (
+            patch(
+                "practorflow.llm.tools.api.factory.is_factory_initialized",
+                return_value=True,
+            ),
+            patch(
+                "practorflow.llm.tools.api.factory.get_factory",
+                return_value=mock_factory,
+            ),
+        ):
+            result = registry.load_api_tools_for_user("user-1")
+
+        assert result == 1
+        assert "api_tool_1" in registry
+
+    def test_skips_already_registered_tool(self):
+        """load_api_tools_for_user() skips tools already in registry."""
+        registry = ToolRegistry()
+        existing_tool = create_mock_tool(name="existing")
+        registry.register(existing_tool)
+
+        duplicate_tool = create_mock_tool(name="existing")
+        mock_factory = MagicMock()
+        mock_factory.create_tools_for_user.return_value = [duplicate_tool]
+
+        with (
+            patch(
+                "practorflow.llm.tools.api.factory.is_factory_initialized",
+                return_value=True,
+            ),
+            patch(
+                "practorflow.llm.tools.api.factory.get_factory",
+                return_value=mock_factory,
+            ),
+        ):
+            result = registry.load_api_tools_for_user("user-1")
+
+        assert result == 0
+        assert len(registry) == 1
+
+    def test_unregisters_previous_user_tools_when_switching_users(self):
+        """load_api_tools_for_user() clears tools when switching user."""
+        registry = ToolRegistry()
+
+        old_tool = MagicMock()
+        old_tool.name = "old_user_tool"
+        old_tool.user_id = "user-old"
+        registry._tools["old_user_tool"] = old_tool
+        registry._loaded_user_id = "user-old"
+
+        new_tool = create_mock_tool(name="new_user_tool")
+        mock_factory = MagicMock()
+        mock_factory.create_tools_for_user.return_value = [new_tool]
+
+        with (
+            patch(
+                "practorflow.llm.tools.api.factory.is_factory_initialized",
+                return_value=True,
+            ),
+            patch(
+                "practorflow.llm.tools.api.factory.get_factory",
+                return_value=mock_factory,
+            ),
+        ):
+            result = registry.load_api_tools_for_user("user-new")
+
+        assert "old_user_tool" not in registry
+        assert "new_user_tool" in registry
+        assert result == 1
+
+
+class TestUnregisterApiTools:
+    """Tests for ToolRegistry._unregister_api_tools()"""
+
+    def test_removes_tools_with_user_id(self):
+        """_unregister_api_tools() removes tools that have a user_id attribute."""
+        registry = ToolRegistry()
+
+        api_tool = MagicMock()
+        api_tool.name = "api_tool"
+        api_tool.user_id = "user-1"
+        registry._tools["api_tool"] = api_tool
+
+        regular_tool = create_mock_tool(name="regular")
+        registry.register(regular_tool)
+
+        count = registry._unregister_api_tools()
+
+        assert count == 1
+        assert "api_tool" not in registry
+        assert "regular" in registry
+
+    def test_returns_zero_when_no_api_tools(self):
+        """_unregister_api_tools() returns 0 when no api tools registered."""
+        registry = ToolRegistry()
+        registry.register(create_mock_tool(name="builtin"))
+
+        count = registry._unregister_api_tools()
+
+        assert count == 0
+        assert "builtin" in registry
+
+    def test_clears_loaded_user_id(self):
+        """_unregister_api_tools() clears _loaded_user_id."""
+        registry = ToolRegistry()
+        registry._loaded_user_id = "user-1"
+
+        registry._unregister_api_tools()
+
+        assert registry._loaded_user_id is None
+
+
+class TestMCPServerStore:
+    """Tests for set_mcp_server_store()."""
+
+    def test_set_mcp_server_store(self):
+        """set_mcp_server_store() stores the provided store."""
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        registry.set_mcp_server_store(mock_store)
+
+        assert registry._mcp_server_store is mock_store
+
+
+class TestUnloadMCPToolsets:
+    """Tests for unload_mcp_toolsets()."""
+
+    def test_unload_clears_toolsets(self):
+        """unload_mcp_toolsets() removes all toolsets and returns count."""
+        registry = ToolRegistry()
+        registry._mcp_toolsets = [MagicMock(), MagicMock()]
+
+        count = registry.unload_mcp_toolsets()
+
+        assert count == 2
+        assert registry._mcp_toolsets == []
+
+    def test_unload_returns_zero_when_empty(self):
+        """unload_mcp_toolsets() returns 0 when no toolsets loaded."""
+        registry = ToolRegistry()
+
+        count = registry.unload_mcp_toolsets()
+
+        assert count == 0
+
+
+class TestGetMCPToolsets:
+    """Tests for get_mcp_toolsets()."""
+
+    def test_returns_empty_list_initially(self):
+        """get_mcp_toolsets() returns empty list when no toolsets loaded."""
+        registry = ToolRegistry()
+
+        result = registry.get_mcp_toolsets()
+
+        assert result == []
+
+    def test_returns_loaded_toolsets(self):
+        """get_mcp_toolsets() returns the list of loaded toolsets."""
+        registry = ToolRegistry()
+        mock_toolset = MagicMock()
+        registry._mcp_toolsets = [mock_toolset]
+
+        result = registry.get_mcp_toolsets()
+
+        assert result == [mock_toolset]
+
+
+class TestLoadMCPToolsets:
+    """Tests for load_mcp_toolsets()."""
+
+    def test_returns_zero_when_no_store(self):
+        """load_mcp_toolsets() returns 0 when mcp_server_store is None."""
+        registry = ToolRegistry()
+
+        with patch(
+            "pydantic_ai.mcp.MCPServerStdio",
+            MagicMock(),
+        ):
+            result = registry.load_mcp_toolsets()
+
+        assert result == 0
+
+    def test_returns_zero_when_no_servers_configured(self):
+        """load_mcp_toolsets() returns 0 when store has no servers."""
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+        mock_store.list.return_value = []
+        registry.set_mcp_server_store(mock_store)
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
+            result = registry.load_mcp_toolsets()
+
+        assert result == 0
+
+    def test_loads_stdio_server(self):
+        """load_mcp_toolsets() creates MCPServerStdio for stdio transport."""
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        config = MCPServerConfig(
+            name="stdio-server",
+            transport=TransportType.STDIO,
+            stdio_config=StdioConfig(command="my-cmd", args=["--arg"]),
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        mock_server = MagicMock()
+        mock_stdio_cls = MagicMock(return_value=mock_server)
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    result = registry.load_mcp_toolsets()
+
+        assert result == 1
+        mock_stdio_cls.assert_called_once_with(
+            command="my-cmd",
+            args=["--arg"],
+            env=None,
+        )
+
+    def test_loads_sse_server(self):
+        """load_mcp_toolsets() creates MCPServerSSE for sse transport."""
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        config = MCPServerConfig(
+            name="sse-server",
+            transport=TransportType.SSE,
+            http_config=HttpConfig(url="http://localhost:8080"),
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        mock_server = MagicMock()
+        mock_sse_cls = MagicMock(return_value=mock_server)
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
+            with patch("pydantic_ai.mcp.MCPServerSSE", mock_sse_cls):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    result = registry.load_mcp_toolsets()
+
+        assert result == 1
+        mock_sse_cls.assert_called_once()
+
+    def test_loads_streamable_http_server(self):
+        """load_mcp_toolsets() creates MCPServerStreamableHTTP for streamable_http transport."""
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        config = MCPServerConfig(
+            name="http-server",
+            transport=TransportType.STREAMABLE_HTTP,
+            http_config=HttpConfig(url="http://localhost:9090"),
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        mock_server = MagicMock()
+        mock_http_cls = MagicMock(return_value=mock_server)
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", mock_http_cls):
+                    result = registry.load_mcp_toolsets()
+
+        assert result == 1
+        mock_http_cls.assert_called_once()
+
+    def test_skips_server_not_in_enabled_list(self):
+        """load_mcp_toolsets() skips servers not in user enabled list."""
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        config = MCPServerConfig(
+            name="disabled-server",
+            transport=TransportType.STDIO,
+            stdio_config=StdioConfig(command="cmd"),
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        prefs = UserToolPreferences(user_id="u1", enabled_mcp_servers=["other-server"])
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    result = registry.load_mcp_toolsets(user_preferences=prefs)
+
+        assert result == 0
+
+    def test_skips_stdio_server_missing_stdio_config(self):
+        """load_mcp_toolsets() skips stdio server when stdio_config is missing."""
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        config = MCPServerConfig(
+            name="bad-stdio",
+            transport=TransportType.STDIO,
+            stdio_config=None,
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    result = registry.load_mcp_toolsets()
+
+        assert result == 0
+
+    def test_skips_sse_server_missing_http_config(self):
+        """load_mcp_toolsets() skips sse server when http_config is missing."""
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        config = MCPServerConfig(
+            name="bad-sse",
+            transport=TransportType.SSE,
+            http_config=None,
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    result = registry.load_mcp_toolsets()
+
+        assert result == 0
+
+    def test_applies_tool_filtering_when_preferences_provided(self):
+        """load_mcp_toolsets() calls server.filtered() when user preferences specify mcp tools."""
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        config = MCPServerConfig(
+            name="filtered-server",
+            transport=TransportType.STDIO,
+            stdio_config=StdioConfig(command="cmd"),
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        mock_server = MagicMock()
+        mock_server.filtered.return_value = mock_server
+        mock_stdio_cls = MagicMock(return_value=mock_server)
+
+        prefs = UserToolPreferences(
+            user_id="u1",
+            enabled_mcp_servers=["filtered-server"],
+            enabled_tools=[EnabledToolEntry(type="mcp", id="tool-abc")],
+        )
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    result = registry.load_mcp_toolsets(user_preferences=prefs)
+
+        assert result == 1
+        mock_server.filtered.assert_called_once_with(allowed_tools=["tool-abc"])
+
+    def test_handles_exception_during_toolset_creation(self):
+        """load_mcp_toolsets() skips server and continues when creation fails."""
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        config = MCPServerConfig(
+            name="error-server",
+            transport=TransportType.STDIO,
+            stdio_config=StdioConfig(command="cmd"),
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        mock_stdio_cls = MagicMock(side_effect=RuntimeError("connection failed"))
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    result = registry.load_mcp_toolsets()
+
+        assert result == 0
+
+    def test_skips_streamable_http_server_missing_http_config(self):
+        """load_mcp_toolsets() skips streamable_http server when http_config is missing."""
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        config = MCPServerConfig(
+            name="bad-streamable",
+            transport=TransportType.STREAMABLE_HTTP,
+            http_config=None,
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    result = registry.load_mcp_toolsets()
+
+        assert result == 0
+
+    def test_skips_unsupported_transport(self):
+        """load_mcp_toolsets() skips server with unsupported transport type."""
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        config = MCPServerConfig(
+            name="unsupported-server",
+            transport=TransportType.STDIO,
+            stdio_config=StdioConfig(command="cmd"),
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        # Patch the transport check to simulate an unsupported transport
+        with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    with patch.object(config, "transport", "unknown_transport"):
+                        result = registry.load_mcp_toolsets()
+
+        assert result == 0
+
+    def test_applies_tool_description_enrichment(self):
+        """load_mcp_toolsets() calls server.prepared() when tools have config."""
+        from practorflow.llm.tools.mcp.types import MCPToolConfig
+
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        tool_cfg = MCPToolConfig(
+            name="my-tool",
+            description="base desc",
+            purpose="do something",
+            use_when=["condition A"],
+            do_not_use_when=["condition B"],
+            category="util",
+            tags=["tag1"],
+            keywords=["kw1"],
+        )
+        config = MCPServerConfig(
+            name="enriched-server",
+            transport=TransportType.STDIO,
+            stdio_config=StdioConfig(command="cmd"),
+            tools=[tool_cfg],
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        mock_server = MagicMock()
+        mock_server.prepared.return_value = mock_server
+        mock_stdio_cls = MagicMock(return_value=mock_server)
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    result = registry.load_mcp_toolsets()
+
+        assert result == 1
+        mock_server.prepared.assert_called_once()

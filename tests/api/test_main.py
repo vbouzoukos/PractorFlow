@@ -210,7 +210,15 @@ def main_module():
     )
     
     # api.routes
-    for route_name in ("api.routes.auth", "api.routes.chat", "api.routes.agent", "api.routes.session"):
+    for route_name in (
+        "api.routes.auth",
+        "api.routes.chat",
+        "api.routes.agent",
+        "api.routes.session",
+        "api.routes.api_tools",
+        "api.routes.mcp",
+        "api.routes.tools",
+    ):
         create_mock_module(route_name, router=MagicMock())
     create_mock_module("api.routes")
     
@@ -237,7 +245,34 @@ def main_module():
     # uvicorn
     uvicorn_run_mock = MagicMock()
     create_mock_module("uvicorn", run=uvicorn_run_mock)
-    
+
+    # practorflow.llm.tools.api submodules
+    create_mock_module(
+        "practorflow.llm.tools.api.encryption",
+        EncryptionService=MagicMock(return_value=MagicMock()),
+    )
+    create_mock_module(
+        "practorflow.llm.tools.api.factory",
+        initialize_factory=MagicMock(),
+    )
+    create_mock_module("practorflow.llm.tools.api")
+    create_mock_module("practorflow.llm.tools")
+
+    # practorflow.tool_store submodules
+    create_mock_module(
+        "practorflow.tool_store.tinydb_api_store",
+        TinyDBApiToolStore=MagicMock(return_value=MagicMock()),
+    )
+    create_mock_module(
+        "practorflow.tool_store.tinydb_mcp_server_store",
+        TinyDBMCPServerStore=MagicMock(return_value=MagicMock()),
+    )
+    create_mock_module(
+        "practorflow.tool_store.tinydb_user_preferences",
+        TinyDBUserToolPreferencesStore=MagicMock(return_value=MagicMock()),
+    )
+    create_mock_module("practorflow.tool_store")
+
     # practorflow root
     create_mock_module("practorflow")
     

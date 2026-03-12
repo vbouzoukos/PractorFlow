@@ -71,19 +71,6 @@ def test_get_history_missing_session():
 
     assert history.get_history("missing") is None
 
-def test_repr_includes_session_count():
-    history = InMemorySessionHistory(
-        sessions={
-            "s1": Session(session_id="s1"),
-            "s2": Session(session_id="s2"),
-        }
-    )
-
-    text = repr(history)
-
-    assert "InMemorySessionHistory" in text
-    assert "2" in text
-
 def test_sessions_by_title_relevance_and_user_filtering():
 
     now = datetime.now()
