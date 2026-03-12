@@ -69,6 +69,7 @@ def main_module():
         is_open_mode = True
         is_oidc_mode = False
         oidc = MagicMock(issuer_url="http://test-issuer")
+        jwt = MagicMock(secret_key="test-jwt-secret")
     
     class MockCleanupConfig:
         is_enabled = True
@@ -318,6 +319,7 @@ class TestLifespanAuthModes:
             is_open_mode = False
             is_oidc_mode = True
             oidc = type("OIDC", (), {"issuer_url": "http://oidc.example.com"})()
+            jwt = type("JWT", (), {"secret_key": "test-jwt-secret"})()
         
         class OIDCConfig:
             auth = OIDCAuth()
@@ -340,6 +342,7 @@ class TestLifespanAuthModes:
             is_open_mode = False
             is_oidc_mode = False
             oidc = type("OIDC", (), {"issuer_url": ""})()
+            jwt = type("JWT", (), {"secret_key": "test-jwt-secret"})()
         
         class LocalConfig:
             auth = LocalAuth()
@@ -366,6 +369,7 @@ class TestLifespanCleanupScheduler:
             is_open_mode = True
             is_oidc_mode = False
             oidc = type("OIDC", (), {"issuer_url": ""})()
+            jwt = type("JWT", (), {"secret_key": "test-jwt-secret"})()
         
         class DisabledCleanupConfig:
             auth = OpenAuth()
