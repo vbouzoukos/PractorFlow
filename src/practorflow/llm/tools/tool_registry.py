@@ -270,7 +270,7 @@ class ToolRegistry:
         Returns:
             Number of toolsets created.
         """
-        from pydantic_ai.mcp import MCPServerStdio, MCPServerSSE, MCPServerStreamableHTTP
+        from pydantic_ai.mcp import MCPServerStdio, MCPServerStreamableHTTP
 
         # Clear any existing toolsets
         self.unload_mcp_toolsets()
@@ -317,17 +317,6 @@ class ToolRegistry:
                         command=config.stdio_config.command,
                         args=config.stdio_config.args,
                         env=config.stdio_config.env if config.stdio_config.env else None,
-                    )
-                elif config.transport == TransportType.SSE:
-                    if not config.http_config:
-                        logger.error(
-                            f"[ToolRegistry] http_config missing for server '{config.name}'"
-                        )
-                        continue
-                    server = MCPServerSSE(
-                        url=config.http_config.url,
-                        headers=config.http_config.headers if config.http_config.headers else None,
-                        timeout=config.http_config.timeout_seconds,
                     )
                 elif config.transport == TransportType.STREAMABLE_HTTP:
                     if not config.http_config:

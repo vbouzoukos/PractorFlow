@@ -104,7 +104,7 @@ def test_create_server_missing_http_config_returns_400(client, mock_store):
 
     resp = client.post(
         "/mcp/servers",
-        json={"name": "bad-server", "transport": "sse"},
+        json={"name": "bad-server", "transport": "streamable_http"},
     )
 
     assert resp.status_code == 400
@@ -125,27 +125,6 @@ def test_create_server_duplicate_name_returns_409(client, mock_store):
 
     assert resp.status_code == 409
 
-
-def test_create_server_http_sse_success(client, mock_store):
-    created = _make_server(
-        name="sse-server",
-        transport=TransportType.SSE,
-        stdio_config=None,
-        http_config=HttpConfig(url="http://localhost:8080/sse"),
-    )
-    mock_store.list.return_value = []
-    mock_store.create.return_value = created
-
-    resp = client.post(
-        "/mcp/servers",
-        json={
-            "name": "sse-server",
-            "transport": "sse",
-            "http_config": {"url": "http://localhost:8080/sse"},
-        },
-    )
-
-    assert resp.status_code == 201
 
 
 # ---------------------------------------------------------------------------

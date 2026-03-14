@@ -735,9 +735,8 @@ class TestLoadMCPToolsets:
         mock_stdio_cls = MagicMock(return_value=mock_server)
 
         with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    result = registry.load_mcp_toolsets()
+            with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                result = registry.load_mcp_toolsets()
 
         assert result == 1
         mock_stdio_cls.assert_called_once_with(
@@ -745,30 +744,6 @@ class TestLoadMCPToolsets:
             args=["--arg"],
             env=None,
         )
-
-    def test_loads_sse_server(self):
-        """load_mcp_toolsets() creates MCPServerSSE for sse transport."""
-        registry = ToolRegistry()
-        mock_store = MagicMock()
-
-        config = MCPServerConfig(
-            name="sse-server",
-            transport=TransportType.SSE,
-            http_config=HttpConfig(url="http://localhost:8080"),
-        )
-        mock_store.list.return_value = [config]
-        registry.set_mcp_server_store(mock_store)
-
-        mock_server = MagicMock()
-        mock_sse_cls = MagicMock(return_value=mock_server)
-
-        with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
-            with patch("pydantic_ai.mcp.MCPServerSSE", mock_sse_cls):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    result = registry.load_mcp_toolsets()
-
-        assert result == 1
-        mock_sse_cls.assert_called_once()
 
     def test_loads_streamable_http_server(self):
         """load_mcp_toolsets() creates MCPServerStreamableHTTP for streamable_http transport."""
@@ -787,9 +762,8 @@ class TestLoadMCPToolsets:
         mock_http_cls = MagicMock(return_value=mock_server)
 
         with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", mock_http_cls):
-                    result = registry.load_mcp_toolsets()
+            with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", mock_http_cls):
+                result = registry.load_mcp_toolsets()
 
         assert result == 1
         mock_http_cls.assert_called_once()
@@ -810,9 +784,8 @@ class TestLoadMCPToolsets:
         prefs = UserToolPreferences(user_id="u1", enabled_mcp_servers=["other-server"])
 
         with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    result = registry.load_mcp_toolsets(user_preferences=prefs)
+            with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                result = registry.load_mcp_toolsets(user_preferences=prefs)
 
         assert result == 0
 
@@ -830,29 +803,8 @@ class TestLoadMCPToolsets:
         registry.set_mcp_server_store(mock_store)
 
         with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    result = registry.load_mcp_toolsets()
-
-        assert result == 0
-
-    def test_skips_sse_server_missing_http_config(self):
-        """load_mcp_toolsets() skips sse server when http_config is missing."""
-        registry = ToolRegistry()
-        mock_store = MagicMock()
-
-        config = MCPServerConfig(
-            name="bad-sse",
-            transport=TransportType.SSE,
-            http_config=None,
-        )
-        mock_store.list.return_value = [config]
-        registry.set_mcp_server_store(mock_store)
-
-        with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    result = registry.load_mcp_toolsets()
+            with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                result = registry.load_mcp_toolsets()
 
         assert result == 0
 
@@ -880,9 +832,8 @@ class TestLoadMCPToolsets:
         )
 
         with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    result = registry.load_mcp_toolsets(user_preferences=prefs)
+            with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                result = registry.load_mcp_toolsets(user_preferences=prefs)
 
         assert result == 1
         mock_server.filtered.assert_called_once_with(allowed_tools=["tool-abc"])
@@ -903,9 +854,8 @@ class TestLoadMCPToolsets:
         mock_stdio_cls = MagicMock(side_effect=RuntimeError("connection failed"))
 
         with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    result = registry.load_mcp_toolsets()
+            with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                result = registry.load_mcp_toolsets()
 
         assert result == 0
 
@@ -923,9 +873,8 @@ class TestLoadMCPToolsets:
         registry.set_mcp_server_store(mock_store)
 
         with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    result = registry.load_mcp_toolsets()
+            with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                result = registry.load_mcp_toolsets()
 
         assert result == 0
 
@@ -944,10 +893,9 @@ class TestLoadMCPToolsets:
 
         # Patch the transport check to simulate an unsupported transport
         with patch("pydantic_ai.mcp.MCPServerStdio", MagicMock()):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    with patch.object(config, "transport", "unknown_transport"):
-                        result = registry.load_mcp_toolsets()
+            with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                with patch.object(config, "transport", "unknown_transport"):
+                    result = registry.load_mcp_toolsets()
 
         assert result == 0
 
@@ -982,9 +930,8 @@ class TestLoadMCPToolsets:
         mock_stdio_cls = MagicMock(return_value=mock_server)
 
         with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    result = registry.load_mcp_toolsets()
+            with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                result = registry.load_mcp_toolsets()
 
         assert result == 1
         mock_server.prepared.assert_called_once()
@@ -1029,9 +976,8 @@ class TestLoadMCPToolsets:
         mock_stdio_cls = MagicMock(return_value=mock_server)
 
         with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    registry.load_mcp_toolsets()
+            with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                registry.load_mcp_toolsets()
 
         assert captured_callback is not None
 
@@ -1084,9 +1030,8 @@ class TestLoadMCPToolsets:
         mock_stdio_cls = MagicMock(return_value=mock_server)
 
         with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    registry.load_mcp_toolsets()
+            with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                registry.load_mcp_toolsets()
 
         mock_tool = MagicMock()
         mock_tool.name = "other-tool"
@@ -1131,9 +1076,8 @@ class TestLoadMCPToolsets:
         mock_stdio_cls = MagicMock(return_value=mock_server)
 
         with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
-            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
-                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
-                    registry.load_mcp_toolsets()
+            with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                registry.load_mcp_toolsets()
 
         mock_tool = MagicMock()
         mock_tool.name = "plain-tool"

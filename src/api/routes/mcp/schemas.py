@@ -30,7 +30,7 @@ class MCPServerCreateRequest(BaseModel):
         default=None, description="stdio transport configuration"
     )
     http_config: Optional[HttpConfig] = Field(
-        default=None, description="SSE / Streamable HTTP transport configuration"
+        default=None, description="Streamable HTTP transport configuration"
     )
     tools: List[MCPToolConfig] = Field(
         default_factory=list,
@@ -46,7 +46,7 @@ class MCPServerUpdateRequest(BaseModel):
         default=None, description="stdio transport configuration"
     )
     http_config: Optional[HttpConfig] = Field(
-        default=None, description="SSE / Streamable HTTP transport configuration"
+        default=None, description="Streamable HTTP transport configuration"
     )
     tools: Optional[List[MCPToolConfig]] = Field(
         default=None,
@@ -75,7 +75,7 @@ class MCPServerResponse(BaseModel):
         default=None, description="stdio transport configuration"
     )
     http_config: Optional[HttpConfig] = Field(
-        default=None, description="SSE / Streamable HTTP transport configuration"
+        default=None, description="Streamable HTTP transport configuration"
     )
     tools: List[MCPToolConfig] = Field(
         default_factory=list,

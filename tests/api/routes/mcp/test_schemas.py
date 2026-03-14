@@ -45,14 +45,6 @@ def test_create_request_stdio():
     assert req.stdio_config.command == "npx"
 
 
-def test_create_request_sse_with_http_config():
-    req = MCPServerCreateRequest(
-        name="sse-server",
-        transport=TransportType.SSE,
-        http_config=HttpConfig(url="http://localhost/sse"),
-    )
-    assert req.transport == TransportType.SSE
-
 
 def test_create_request_tools_default_empty():
     req = MCPServerCreateRequest(name="s", transport=TransportType.STDIO)

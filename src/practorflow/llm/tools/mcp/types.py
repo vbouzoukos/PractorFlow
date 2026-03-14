@@ -16,7 +16,6 @@ class TransportType(str, Enum):
     """Supported MCP transport types."""
 
     STDIO = "stdio"
-    SSE = "sse"
     STREAMABLE_HTTP = "streamable_http"
 
 
@@ -34,7 +33,7 @@ class StdioConfig(BaseModel):
 
 
 class HttpConfig(BaseModel):
-    """Configuration for SSE and Streamable HTTP transports."""
+    """Configuration for Streamable HTTP transport."""
 
     url: str = Field(..., description="Server URL")
     headers: Dict[str, str] = Field(
@@ -79,7 +78,7 @@ class MCPServerConfig(BaseModel):
         default=None, description="stdio transport configuration"
     )
     http_config: Optional[HttpConfig] = Field(
-        default=None, description="SSE / Streamable HTTP transport configuration"
+        default=None, description="Streamable HTTP transport configuration"
     )
 
     tools: List[MCPToolConfig] = Field(

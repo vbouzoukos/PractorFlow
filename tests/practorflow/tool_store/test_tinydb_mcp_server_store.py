@@ -147,7 +147,7 @@ def test_serialize_with_stdio_config(store):
 
 def test_serialize_with_http_config(store):
     config = _make_config(
-        transport=TransportType.SSE,
+        transport=TransportType.STREAMABLE_HTTP,
         stdio_config=None,
         http_config=HttpConfig(url="https://example.com/mcp"),
     )
@@ -181,7 +181,7 @@ def test_deserialize_with_stdio_config(store):
 
 def test_deserialize_with_http_config(store):
     config = _make_config(
-        transport=TransportType.SSE,
+        transport=TransportType.STREAMABLE_HTTP,
         stdio_config=None,
         http_config=HttpConfig(url="https://example.com/mcp"),
     )

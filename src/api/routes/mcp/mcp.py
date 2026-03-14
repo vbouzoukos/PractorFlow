@@ -69,10 +69,10 @@ async def create_server(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="stdio_config required for stdio transport",
         )
-    if request.transport.value in ("sse", "streamable_http") and not request.http_config:
+    if request.transport.value == "streamable_http" and not request.http_config:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="http_config required for SSE/HTTP transport",
+            detail="http_config required for Streamable HTTP transport",
         )
 
     # Check for duplicate name
@@ -330,7 +330,7 @@ async def list_server_tools(
             detail=f"Server '{server_id}' not found",
         )
 
-    from pydantic_ai.mcp import MCPServerStdio, MCPServerSSE, MCPServerStreamableHTTP
+    from pydantic_ai.mcp import MCPServerStdio, MCPServerStreamableHTTP
     from practorflow.llm.tools.mcp.types import TransportType
 
     tools: List[MCPToolInfo] = []
@@ -344,12 +344,6 @@ async def list_server_tools(
                 command=config.stdio_config.command,
                 args=config.stdio_config.args,
                 env=config.stdio_config.env if config.stdio_config.env else None,
-            )
-        elif config.transport == TransportType.SSE:
-            server = MCPServerSSE(
-                url=config.http_config.url,
-                headers=config.http_config.headers if config.http_config.headers else None,
-                timeout=config.http_config.timeout_seconds,
             )
         else:
             server = MCPServerStreamableHTTP(

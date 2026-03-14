@@ -232,7 +232,7 @@ class McpSettingsPanel(QWidget):
         form.addRow("Name:", self._name_input)
 
         self._transport_combo = QComboBox()
-        self._transport_combo.addItems(["stdio", "sse", "streamable_http"])
+        self._transport_combo.addItems(["stdio", "streamable_http"])
         form.addRow("Transport:", self._transport_combo)
 
         return card
@@ -309,7 +309,7 @@ class McpSettingsPanel(QWidget):
     def _on_transport_changed(self, transport: str):
         """Show/hide config cards based on transport type."""
         is_stdio = transport == "stdio"
-        is_http = transport in ("sse", "streamable_http")
+        is_http = transport == "streamable_http"
         self._stdio_card.setVisible(is_stdio)
         self._http_card.setVisible(is_http)
 
