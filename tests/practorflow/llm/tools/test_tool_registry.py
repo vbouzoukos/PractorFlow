@@ -988,3 +988,158 @@ class TestLoadMCPToolsets:
 
         assert result == 1
         mock_server.prepared.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_prepare_tools_callback_enriches_description(self):
+        """_prepare_tools callback enriches matching tool descriptions."""
+        from practorflow.llm.tools.mcp.types import MCPToolConfig
+
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        tool_cfg = MCPToolConfig(
+            name="my-tool",
+            description="base desc",
+            purpose="do something",
+            use_when=["condition A"],
+            do_not_use_when=["condition B"],
+            category="util",
+            tags=["tag1"],
+            keywords=["kw1"],
+        )
+        config = MCPServerConfig(
+            name="enriched-server",
+            transport=TransportType.STDIO,
+            stdio_config=StdioConfig(command="cmd"),
+            tools=[tool_cfg],
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        captured_callback = None
+
+        def capture_prepared(cb):
+            nonlocal captured_callback
+            captured_callback = cb
+            return mock_server
+
+        mock_server = MagicMock()
+        mock_server.filtered.return_value = mock_server
+        mock_server.prepared.side_effect = capture_prepared
+        mock_stdio_cls = MagicMock(return_value=mock_server)
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    registry.load_mcp_toolsets()
+
+        assert captured_callback is not None
+
+        mock_tool = MagicMock()
+        mock_tool.name = "my-tool"
+        mock_tool.description = "original"
+
+        result = await captured_callback(None, [mock_tool])
+
+        assert result == [mock_tool]
+        assert "base desc" in mock_tool.description
+        assert "Purpose: do something" in mock_tool.description
+        assert "Use when: condition A" in mock_tool.description
+        assert "Do not use when: condition B" in mock_tool.description
+        assert "Category: util" in mock_tool.description
+        assert "Tags: tag1" in mock_tool.description
+        assert "Keywords: kw1" in mock_tool.description
+
+    @pytest.mark.asyncio
+    async def test_prepare_tools_callback_skips_nonmatching_tool(self):
+        """_prepare_tools callback leaves non-matching tools unchanged."""
+        from practorflow.llm.tools.mcp.types import MCPToolConfig
+
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        tool_cfg = MCPToolConfig(
+            name="my-tool",
+            description="base desc",
+        )
+        config = MCPServerConfig(
+            name="server",
+            transport=TransportType.STDIO,
+            stdio_config=StdioConfig(command="cmd"),
+            tools=[tool_cfg],
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        captured_callback = None
+
+        def capture_prepared(cb):
+            nonlocal captured_callback
+            captured_callback = cb
+            return mock_server
+
+        mock_server = MagicMock()
+        mock_server.filtered.return_value = mock_server
+        mock_server.prepared.side_effect = capture_prepared
+        mock_stdio_cls = MagicMock(return_value=mock_server)
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    registry.load_mcp_toolsets()
+
+        mock_tool = MagicMock()
+        mock_tool.name = "other-tool"
+        mock_tool.description = "unchanged"
+
+        result = await captured_callback(None, [mock_tool])
+
+        assert result == [mock_tool]
+        assert mock_tool.description == "unchanged"
+
+    @pytest.mark.asyncio
+    async def test_prepare_tools_callback_no_enrichments_uses_base_description(self):
+        """_prepare_tools sets base description when no enrichment fields are set."""
+        from practorflow.llm.tools.mcp.types import MCPToolConfig
+
+        registry = ToolRegistry()
+        mock_store = MagicMock()
+
+        tool_cfg = MCPToolConfig(
+            name="plain-tool",
+            description="plain desc",
+        )
+        config = MCPServerConfig(
+            name="plain-server",
+            transport=TransportType.STDIO,
+            stdio_config=StdioConfig(command="cmd"),
+            tools=[tool_cfg],
+        )
+        mock_store.list.return_value = [config]
+        registry.set_mcp_server_store(mock_store)
+
+        captured_callback = None
+
+        def capture_prepared(cb):
+            nonlocal captured_callback
+            captured_callback = cb
+            return mock_server
+
+        mock_server = MagicMock()
+        mock_server.filtered.return_value = mock_server
+        mock_server.prepared.side_effect = capture_prepared
+        mock_stdio_cls = MagicMock(return_value=mock_server)
+
+        with patch("pydantic_ai.mcp.MCPServerStdio", mock_stdio_cls):
+            with patch("pydantic_ai.mcp.MCPServerSSE", MagicMock()):
+                with patch("pydantic_ai.mcp.MCPServerStreamableHTTP", MagicMock()):
+                    registry.load_mcp_toolsets()
+
+        mock_tool = MagicMock()
+        mock_tool.name = "plain-tool"
+        mock_tool.description = "original"
+
+        result = await captured_callback(None, [mock_tool])
+
+        assert result == [mock_tool]
+        assert mock_tool.description == "plain desc"

@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 
 from practorflow.services.agent.runners import (
     run_planner,
+    adapt_plan,
     run_executor,
     run_synthesizer,
     run_verifier,
@@ -251,6 +252,137 @@ async def test_run_planner_invalid_plan_structure_raises_value_error():
             )
 
     # ensures the ValidationError branch is executed
+    error_logger.assert_called_once()
+
+
+# ------------------------
+# adapt_plan
+# ------------------------
+
+
+@pytest.mark.asyncio
+async def test_adapt_plan_success_with_history():
+    ctx = _make_ctx([MagicMock()])  # non-empty history triggers debug log line 195
+    plan_dict = {
+        "plan_id": "p2",
+        "task": "t",
+        "steps": [
+            {
+                "step_id": "s1",
+                "description": "d",
+                "tool": None,
+                "tool_args": None,
+                "expected_output": "x",
+            }
+        ],
+        "success_criteria": ["done"],
+        "retry_policy": {"max_retries": 1},
+    }
+
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=MagicMock(output="json"))
+
+    with (
+        patch(
+            "practorflow.services.agent.runners.planner.prepare_agent_history",
+            AsyncMock(return_value=[MagicMock()]),
+        ),
+        patch("practorflow.services.agent.runners.planner.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.planner.create_runner"),
+        patch(
+            "practorflow.services.agent.runners.planner.parse_json_from_response",
+            return_value=plan_dict,
+        ),
+        patch("practorflow.services.agent.runners.planner.logger.debug") as debug_logger,
+    ):
+        plan = await adapt_plan(
+            task="t",
+            failed_plan=MagicMock(),
+            execution_result=MagicMock(),
+            verification_result=MagicMock(),
+            ctx=ctx,
+            model_pool=MagicMock(),
+            model_config=MagicMock(n_ctx=100),
+            knowledge_store=MagicMock(),
+            tool_registry=MagicMock(get_schemas=lambda: []),
+            attempt_number=1,
+        )
+
+    debug_logger.assert_any_call("[AdaptPlan] Using 1 history messages")
+    assert plan.plan_id == "p2"
+
+
+@pytest.mark.asyncio
+async def test_adapt_plan_parse_failure_raises():
+    ctx = _make_ctx([])
+
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=MagicMock(output="bad"))
+
+    with (
+        patch(
+            "practorflow.services.agent.runners.planner.prepare_agent_history",
+            AsyncMock(return_value=[]),
+        ),
+        patch("practorflow.services.agent.runners.planner.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.planner.create_runner"),
+        patch(
+            "practorflow.services.agent.runners.planner.parse_json_from_response",
+            return_value=None,
+        ),
+        patch("practorflow.services.agent.runners.planner.repair_plan_json", return_value=None),
+    ):
+        with pytest.raises(ValueError, match="valid JSON"):
+            await adapt_plan(
+                task="t",
+                failed_plan=MagicMock(),
+                execution_result=MagicMock(),
+                verification_result=MagicMock(),
+                ctx=ctx,
+                model_pool=MagicMock(),
+                model_config=MagicMock(n_ctx=100),
+                knowledge_store=MagicMock(),
+                tool_registry=MagicMock(get_schemas=lambda: []),
+                attempt_number=1,
+            )
+
+
+@pytest.mark.asyncio
+async def test_adapt_plan_invalid_structure_raises():
+    ctx = _make_ctx([])
+
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=MagicMock(output="json"))
+
+    invalid_plan = {"plan_id": "p1"}  # missing required fields
+
+    with (
+        patch(
+            "practorflow.services.agent.runners.planner.prepare_agent_history",
+            AsyncMock(return_value=[]),
+        ),
+        patch("practorflow.services.agent.runners.planner.Agent", return_value=agent),
+        patch("practorflow.services.agent.runners.planner.create_runner"),
+        patch(
+            "practorflow.services.agent.runners.planner.parse_json_from_response",
+            return_value=invalid_plan,
+        ),
+        patch("practorflow.services.agent.runners.planner.logger.error") as error_logger,
+    ):
+        with pytest.raises(ValueError, match="Invalid plan structure"):
+            await adapt_plan(
+                task="t",
+                failed_plan=MagicMock(),
+                execution_result=MagicMock(),
+                verification_result=MagicMock(),
+                ctx=ctx,
+                model_pool=MagicMock(),
+                model_config=MagicMock(n_ctx=100),
+                knowledge_store=MagicMock(),
+                tool_registry=MagicMock(get_schemas=lambda: []),
+                attempt_number=1,
+            )
+
     error_logger.assert_called_once()
 
 
