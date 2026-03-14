@@ -29,7 +29,6 @@ class LocalAuthProvider(AuthProvider):
             config: Authentication configuration settings.
         """
         self._app_secret = config.app_secret
-        self._admin_enabled = config.admin_enabled
         self._admin_secret = config.admin_secret
     
     @property
@@ -60,7 +59,7 @@ class LocalAuthProvider(AuthProvider):
         Validate local credentials.
         
         In open mode, always succeeds and generates a user ID if not provided.
-        If admin_enabled, llm_admin permission is granted automatically in open mode.
+        If admin_secret is not set, llm_admin permission is granted automatically.
         In secure mode, validates the provided app_secret.
         If admin_secret is also provided and valid, llm_admin permission is granted.
         
@@ -80,7 +79,16 @@ class LocalAuthProvider(AuthProvider):
         # Open mode: issue token without validation
         if self.is_open_mode:
             user_id = username if username else self._generate_anonymous_id()
-            permissions = ["llm_admin"] if self._admin_enabled else []
+            if self._admin_secret:
+                if (
+                    provided_admin_secret
+                    and secrets.compare_digest(provided_admin_secret, self._admin_secret)
+                ):
+                    permissions = ["llm_admin"]
+                else:
+                    permissions = []
+            else:
+                permissions = ["llm_admin"]
             return AuthResult(
                 success=True,
                 user_id=user_id,
@@ -105,12 +113,13 @@ class LocalAuthProvider(AuthProvider):
         
         # Validation successful - check for admin permission
         permissions = []
-        if (
-            self._admin_enabled
-            and self._admin_secret
-            and provided_admin_secret
-            and secrets.compare_digest(provided_admin_secret, self._admin_secret)
-        ):
+        if self._admin_secret:
+            if (
+                provided_admin_secret
+                and secrets.compare_digest(provided_admin_secret, self._admin_secret)
+            ):
+                permissions.append("llm_admin")
+        else:
             permissions.append("llm_admin")
         
         user_id = username if username else "local_user"

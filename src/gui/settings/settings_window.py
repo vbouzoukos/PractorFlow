@@ -78,7 +78,12 @@ class SettingsWindow(QWidget):
         self._username_edit = QLineEdit()
         self._username_edit.setPlaceholderText(DEFAULT_USERNAME)
         connection_layout.addRow("Username:", self._username_edit)
-        
+
+        self._admin_secret_edit = QLineEdit()
+        self._admin_secret_edit.setEchoMode(QLineEdit.Password)
+        self._admin_secret_edit.setPlaceholderText("Required for MCP Settings (llm_admin)")
+        connection_layout.addRow("Admin Secret:", self._admin_secret_edit)
+
         self._auto_connect_checkbox = QCheckBox("Connect automatically on startup")
         connection_layout.addRow("", self._auto_connect_checkbox)
         
@@ -132,6 +137,7 @@ class SettingsWindow(QWidget):
         """Load current settings into UI fields."""
         self._api_url_edit.setText(self._settings.api_url)
         self._username_edit.setText(self._settings.username)
+        self._admin_secret_edit.setText(self._settings.admin_secret)
         self._instructions_edit.setPlainText(self._settings.instructions)
         self._auto_connect_checkbox.setChecked(self._settings.auto_connect)
         
@@ -144,6 +150,7 @@ class SettingsWindow(QWidget):
         return AppSettings(
             api_url=self._api_url_edit.text().strip() or DEFAULT_API_URL,
             username=self._username_edit.text().strip() or DEFAULT_USERNAME,
+            admin_secret=self._admin_secret_edit.text().strip(),
             instructions=self._instructions_edit.toPlainText().strip(),
             theme=self._theme_combo.currentText(),
             auto_connect=self._auto_connect_checkbox.isChecked(),

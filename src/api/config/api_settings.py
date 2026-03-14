@@ -18,8 +18,8 @@ Environment Variables:
     JWT_TOKEN_EXPIRY_MINUTES: Token expiration in minutes (default: 60)
     JWT_SECRET_KEY: Secret key for signing JWTs
     APP_SECRET: Local authentication secret (empty = open mode)
-    ADMIN_ENABLED: Enable admin functionality (default: false)
-    ADMIN_SECRET: Secret for obtaining llm_admin permission (local mode only)
+    ADMIN_SECRET: Secret for obtaining llm_admin permission (local mode only).
+                  When set, admin mode is enabled and llm_admin requires this secret.
     OIDC_ISSUER_URL: OIDC provider issuer URL
     OIDC_AUDIENCE: Expected audience claim for OIDC tokens
     OIDC_CLIENT_ID: OIDC client identifier
@@ -68,10 +68,19 @@ class AuthConfig:
     """Authentication configuration settings."""
 
     app_secret: str = ""
-    admin_enabled: bool = False
     admin_secret: str = ""
     jwt: JWTConfig = field(default_factory=JWTConfig)
     oidc: OIDCConfig = field(default_factory=OIDCConfig)
+
+    @property
+    def is_admin_enabled(self) -> bool:
+        """
+        Check if admin mode is enabled.
+
+        Admin mode is active when ADMIN_SECRET is set.
+        When disabled, all local users get llm_admin automatically.
+        """
+        return bool(self.admin_secret)
 
     @property
     def is_oidc_mode(self) -> bool:
@@ -153,7 +162,6 @@ def _load_auth_config() -> AuthConfig:
 
     return AuthConfig(
         app_secret=os.getenv("APP_SECRET", "") or "",
-        admin_enabled=str(os.getenv("ADMIN_ENABLED", "false")).lower() in ("true", "1", "yes"),
         admin_secret=os.getenv("ADMIN_SECRET", "") or "",
         jwt=jwt_config,
         oidc=oidc_config,

@@ -166,7 +166,7 @@ class AuthService:
         import uuid
         
         user_id = username if username else f"anonymous_{uuid.uuid4().hex[:8]}"
-        permissions = ["llm_admin"] if self._config.admin_enabled else []
+        permissions = [] if self._config.is_admin_enabled else ["llm_admin"]
         
         return UserContext(
             user_id=user_id,

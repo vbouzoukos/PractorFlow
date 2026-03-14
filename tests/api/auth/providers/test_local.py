@@ -110,19 +110,19 @@ async def test_validate_secure_mode_valid_secret_without_username():
 
 
 @pytest.mark.asyncio
-async def test_validate_open_mode_admin_enabled_grants_permission():
-    provider = LocalAuthProvider(AuthConfig(app_secret="", admin_enabled=True))
+async def test_validate_open_mode_admin_enabled_no_secret_no_permission():
+    provider = LocalAuthProvider(AuthConfig(app_secret="", admin_secret="admin-secret"))
 
     result = await provider.validate({"username": "user-1"})
 
     assert result.success is True
-    assert "llm_admin" in result.permissions
+    assert "llm_admin" not in result.permissions
 
 
 @pytest.mark.asyncio
 async def test_validate_secure_mode_valid_admin_secret_grants_permission():
     provider = LocalAuthProvider(
-        AuthConfig(app_secret="secret", admin_enabled=True, admin_secret="admin-secret")
+        AuthConfig(app_secret="secret", admin_secret="admin-secret")
     )
 
     result = await provider.validate(
@@ -136,7 +136,7 @@ async def test_validate_secure_mode_valid_admin_secret_grants_permission():
 @pytest.mark.asyncio
 async def test_validate_secure_mode_wrong_admin_secret_no_permission():
     provider = LocalAuthProvider(
-        AuthConfig(app_secret="secret", admin_enabled=True, admin_secret="admin-secret")
+        AuthConfig(app_secret="secret", admin_secret="admin-secret")
     )
 
     result = await provider.validate(

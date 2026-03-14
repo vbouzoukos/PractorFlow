@@ -31,23 +31,25 @@ DEFAULT_USERNAME = "practorFlowClient"
 @dataclass
 class AppSettings:
     """Application settings data model."""
-    
+
     api_url: str = DEFAULT_API_URL
     username: str = DEFAULT_USERNAME
+    admin_secret: str = ""
     instructions: str = ""
     theme: str = "auto"  # "auto", "dark", "light"
     auto_connect: bool = False
-    
+
     def to_dict(self) -> dict:
         """Convert settings to dictionary."""
         return asdict(self)
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "AppSettings":
         """Create settings from dictionary."""
         return cls(
             api_url=data.get("api_url", DEFAULT_API_URL),
             username=data.get("username", DEFAULT_USERNAME),
+            admin_secret=data.get("admin_secret", ""),
             instructions=data.get("instructions", ""),
             theme=data.get("theme", "auto"),
             auto_connect=data.get("auto_connect", False),

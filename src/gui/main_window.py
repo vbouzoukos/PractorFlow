@@ -33,7 +33,8 @@ class MainWindow(QMainWindow):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        
+
+        self._mcp_settings_panel = None   # lazy placeholder
         self._api_tools_panel = None      # lazy placeholder
 
         try:
@@ -91,6 +92,11 @@ class MainWindow(QMainWindow):
         self._settings_action.setStatusTip("Open settings")
         view_menu.addAction(self._settings_action)
 
+        self._mcp_settings_action = QAction("&MCP Settings", self)
+        self._mcp_settings_action.setShortcut("Ctrl+3")
+        self._mcp_settings_action.setStatusTip("Manage MCP server configurations")
+        view_menu.addAction(self._mcp_settings_action)
+
         self._api_tools_action = QAction("API &Tools", self)
         self._api_tools_action.setShortcut("Ctrl+2")
         self._api_tools_action.setStatusTip("Manage API tool configurations")
@@ -114,6 +120,7 @@ class MainWindow(QMainWindow):
         """Connect signals to slots."""
         self._chat_action.triggered.connect(self._show_chat)
         self._settings_action.triggered.connect(self._show_settings)
+        self._mcp_settings_action.triggered.connect(self._show_mcp_settings)
         self._api_tools_action.triggered.connect(self._show_api_tools)
         self._exit_action.triggered.connect(self.close)
         self._about_action.triggered.connect(self._show_about)
@@ -139,6 +146,29 @@ class MainWindow(QMainWindow):
             logger.error(f"Error switching to Settings view: {e}")
     
     @Slot()
+    def _show_mcp_settings(self):
+        """Switch to MCP Settings view, lazy-initializing on first use."""
+        try:
+            if self._mcp_settings_panel is None:
+                from gui.widgets.mcp_settings_panel import McpSettingsPanel
+                from gui.api.mcp_client import McpClient
+                from gui.settings.settings import load_settings
+
+                settings = load_settings()
+                client = McpClient(
+                    base_url=settings.api_url,
+                    admin_secret=settings.admin_secret,
+                    username=settings.username,
+                )
+                self._mcp_settings_panel = McpSettingsPanel(client)
+                self._stack.addWidget(self._mcp_settings_panel)
+            self._stack.setCurrentWidget(self._mcp_settings_panel)
+            self._status_bar.showMessage("MCP Settings", 2000)
+            logger.debug("Switched to MCP Settings view")
+        except Exception as e:
+            logger.error(f"Error switching to MCP Settings view: {e}")
+
+    @Slot()
     def _show_api_tools(self):
         """Switch to API Tools view, lazy-initializing on first use."""
         try:
@@ -153,8 +183,8 @@ class MainWindow(QMainWindow):
                     username=settings.username,
                 )
                 self._api_tools_panel = ApiToolsPanel(client)
-                self._stack.addWidget(self._api_tools_panel)  # index 2
-            self._stack.setCurrentIndex(2)
+                self._stack.addWidget(self._api_tools_panel)
+            self._stack.setCurrentWidget(self._api_tools_panel)
             self._status_bar.showMessage("API Tools", 2000)
             logger.debug("Switched to API Tools view")
         except Exception as e:
