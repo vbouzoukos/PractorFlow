@@ -29,7 +29,8 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QFrame,
 )
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QSize
+from PySide6.QtGui import QIcon
 
 from gui.api.mcp_client import McpClient
 from gui.workers.mcp_workers import (
@@ -37,7 +38,6 @@ from gui.workers.mcp_workers import (
     CreateServerWorker,
     UpdateServerWorker,
     DeleteServerWorker,
-    DiscoverToolsWorker,
 )
 from gui.logger import get_logger
 
@@ -65,7 +65,6 @@ class McpSettingsPanel(QWidget):
         self._list_worker = None
         self._delete_worker = None
         self._save_worker = None
-        self._discover_worker = None
 
         self._setup_ui()
         self._connect_signals()
@@ -85,6 +84,9 @@ class McpSettingsPanel(QWidget):
         self._internal_stack.addWidget(self._form_page)   # index 1
 
         layout.addWidget(self._internal_stack)
+
+        # Set initial transport card visibility
+        self._on_transport_changed(self._transport_combo.currentText())
 
     # ------------------------------------------------------------------
     # List Page
@@ -116,8 +118,17 @@ class McpSettingsPanel(QWidget):
 
         # Left — text labels
         text_layout = QVBoxLayout()
-        name_label = QLabel(server["name"])
-        name_label.setStyleSheet("font-weight: bold;")
+
+        # Name with enabled/disabled indicator
+        name_text = server["name"]
+        enabled = server.get("enabled", True)
+        if not enabled:
+            name_text = f"{name_text}  [disabled]"
+
+        name_label = QLabel(name_text)
+        name_label.setStyleSheet(
+            "font-weight: bold;" if enabled else "font-weight: bold; color: gray;"
+        )
         text_layout.addWidget(name_label)
 
         transport = server.get("transport", "")
@@ -141,18 +152,26 @@ class McpSettingsPanel(QWidget):
 
         row_layout.addLayout(text_layout, stretch=1)
 
-        # Right — action buttons
-        edit_btn = QPushButton("Edit")
-        delete_btn = QPushButton("Delete")
+        # Right — delete button with icon
+        delete_btn = QPushButton()
+        delete_btn.setFixedSize(24, 24)
+        delete_btn.setToolTip("Delete server")
+        delete_btn.setCursor(Qt.PointingHandCursor)
 
-        # Capture server_id for button lambdas
+        trash_icon = QIcon.fromTheme("edit-delete")
+        if trash_icon.isNull():
+            trash_icon = QIcon.fromTheme("user-trash")
+        if trash_icon.isNull():
+            delete_btn.setText("🗑")
+        else:
+            delete_btn.setIcon(trash_icon)
+            delete_btn.setIconSize(QSize(16, 16))
+
         server_id = server["server_id"]
-        edit_btn.clicked.connect(lambda checked, sid=server_id: self._on_edit_server(sid))
         delete_btn.clicked.connect(
             lambda checked, sid=server_id, name=server["name"]: self._on_delete_server(sid, name)
         )
 
-        row_layout.addWidget(edit_btn)
         row_layout.addWidget(delete_btn)
 
         return row
@@ -201,8 +220,7 @@ class McpSettingsPanel(QWidget):
         scroll_layout.addWidget(self._create_basic_card())
         scroll_layout.addWidget(self._create_stdio_card())
         scroll_layout.addWidget(self._create_http_card())
-        self._tools_card = self._create_tools_card()
-        scroll_layout.addWidget(self._tools_card)
+        scroll_layout.addWidget(self._create_guidance_card())
         scroll_layout.addStretch()
 
         scroll.setWidget(scroll_content)
@@ -234,6 +252,10 @@ class McpSettingsPanel(QWidget):
         self._transport_combo = QComboBox()
         self._transport_combo.addItems(["stdio", "streamable_http"])
         form.addRow("Transport:", self._transport_combo)
+
+        self._enabled_check = QCheckBox("Enabled")
+        self._enabled_check.setChecked(True)
+        form.addRow("", self._enabled_check)
 
         return card
 
@@ -278,27 +300,36 @@ class McpSettingsPanel(QWidget):
 
         return self._http_card
 
-    def _create_tools_card(self) -> QGroupBox:
-        """Build the Tools group box (edit mode only)."""
-        card = QGroupBox("Tools")
-        card_layout = QVBoxLayout(card)
+    def _create_guidance_card(self) -> QGroupBox:
+        """Build the Agent Guidance group box."""
+        card = QGroupBox("Agent Guidance")
+        form = QFormLayout(card)
 
-        # Discover button + status label
-        discover_row = QHBoxLayout()
-        self._discover_btn = QPushButton("Discover Tools")
-        self._discover_status_label = QLabel("")
-        self._discover_status_label.setStyleSheet("color: gray;")
-        discover_row.addWidget(self._discover_btn)
-        discover_row.addWidget(self._discover_status_label)
-        discover_row.addStretch()
-        card_layout.addLayout(discover_row)
+        self._purpose_input = QLineEdit()
+        self._purpose_input.setPlaceholderText("What this server does")
+        form.addRow("Purpose:", self._purpose_input)
 
-        # Tool rows container
-        self._tool_rows_container = QVBoxLayout()
-        card_layout.addLayout(self._tool_rows_container)
-        card_layout.addStretch()
+        self._keywords_input = QLineEdit()
+        self._keywords_input.setPlaceholderText("keyword1, keyword2, keyword3")
+        form.addRow("Keywords:", self._keywords_input)
 
-        self._tool_rows: list = []   # list of dicts holding widget references per row
+        self._category_input = QLineEdit()
+        self._category_input.setPlaceholderText("e.g. filesystem, database, search")
+        form.addRow("Category:", self._category_input)
+
+        self._tags_input = QLineEdit()
+        self._tags_input.setPlaceholderText("tag1, tag2, tag3")
+        form.addRow("Tags:", self._tags_input)
+
+        self._use_when_input = QTextEdit()
+        self._use_when_input.setMaximumHeight(80)
+        self._use_when_input.setPlaceholderText("One condition per line")
+        form.addRow("Use when:", self._use_when_input)
+
+        self._do_not_use_when_input = QTextEdit()
+        self._do_not_use_when_input.setMaximumHeight(80)
+        self._do_not_use_when_input.setPlaceholderText("One condition per line")
+        form.addRow("Do not use when:", self._do_not_use_when_input)
 
         return card
 
@@ -312,53 +343,6 @@ class McpSettingsPanel(QWidget):
         is_http = transport == "streamable_http"
         self._stdio_card.setVisible(is_stdio)
         self._http_card.setVisible(is_http)
-
-    # ------------------------------------------------------------------
-    # Tool Rows
-    # ------------------------------------------------------------------
-
-    def _add_tool_row(self, tool_name: str, tool_desc: str, enabled: bool = True, desc_override: str = ""):
-        """Add one discovered tool row to the tools card."""
-        frame = QFrame()
-        frame.setFrameShape(QFrame.StyledPanel)
-        layout = QHBoxLayout(frame)
-
-        enabled_check = QCheckBox()
-        enabled_check.setChecked(enabled)
-        layout.addWidget(enabled_check)
-
-        name_label = QLabel(tool_name)
-        name_label.setStyleSheet("font-weight: bold;")
-        name_label.setMinimumWidth(150)
-        layout.addWidget(name_label)
-
-        desc_label = QLabel(tool_desc)
-        desc_label.setStyleSheet("color: gray;")
-        desc_label.setWordWrap(True)
-        layout.addWidget(desc_label, stretch=1)
-
-        desc_override_input = QLineEdit()
-        desc_override_input.setPlaceholderText("Description override (optional)")
-        desc_override_input.setText(desc_override)
-        desc_override_input.setMaximumWidth(220)
-        layout.addWidget(desc_override_input)
-
-        row_data = {
-            "frame": frame,
-            "name": tool_name,
-            "enabled": enabled_check,
-            "desc_override": desc_override_input,
-        }
-        self._tool_rows.append(row_data)
-        self._tool_rows_container.addWidget(frame)
-
-    def _clear_tool_rows(self):
-        """Remove all tool rows."""
-        for row_data in self._tool_rows:
-            frame = row_data["frame"]
-            self._tool_rows_container.removeWidget(frame)
-            frame.deleteLater()
-        self._tool_rows.clear()
 
     # ------------------------------------------------------------------
     # Form Data Helpers
@@ -388,6 +372,10 @@ class McpSettingsPanel(QWidget):
                 result[parts[0].strip()] = parts[1].strip()
         return result
 
+    def _parse_lines(self, text: str) -> list:
+        """Split text into non-empty lines."""
+        return [line.strip() for line in text.split("\n") if line.strip()]
+
     def _collect_form_data(self) -> dict:
         """Read all form widgets into a dict matching the API schema."""
         data = {}
@@ -395,6 +383,7 @@ class McpSettingsPanel(QWidget):
         # Basic
         data["name"] = self._name_input.text().strip()
         data["transport"] = self._transport_combo.currentText()
+        data["enabled"] = self._enabled_check.isChecked()
 
         # Transport-specific config
         transport = data["transport"]
@@ -411,17 +400,13 @@ class McpSettingsPanel(QWidget):
                 "timeout_seconds": self._http_timeout_spin.value(),
             }
 
-        # Tools (from tool rows)
-        data["tools"] = []
-        for row in self._tool_rows:
-            tool = {
-                "name": row["name"],
-                "enabled": row["enabled"].isChecked(),
-            }
-            override = row["desc_override"].text().strip()
-            if override:
-                tool["description"] = override
-            data["tools"].append(tool)
+        # Agent guidance
+        data["purpose"] = self._purpose_input.text().strip()
+        data["keywords"] = self._parse_comma_args(self._keywords_input.text())
+        data["category"] = self._category_input.text().strip()
+        data["tags"] = self._parse_comma_args(self._tags_input.text())
+        data["use_when"] = self._parse_lines(self._use_when_input.toPlainText())
+        data["do_not_use_when"] = self._parse_lines(self._do_not_use_when_input.toPlainText())
 
         return data
 
@@ -437,6 +422,8 @@ class McpSettingsPanel(QWidget):
         self._transport_combo.setCurrentText(transport)
         # _on_transport_changed is connected to currentTextChanged so visibility updates automatically
 
+        self._enabled_check.setChecked(server.get("enabled", True))
+
         stdio_config = server.get("stdio_config") or {}
         self._stdio_command_input.setText(stdio_config.get("command", ""))
         self._stdio_args_input.setText(", ".join(stdio_config.get("args", [])))
@@ -449,20 +436,19 @@ class McpSettingsPanel(QWidget):
         self._http_headers_input.setPlainText(header_lines)
         self._http_timeout_spin.setValue(http_config.get("timeout_seconds", 30))
 
-        # Pre-populate tool rows from existing server tools
-        self._clear_tool_rows()
-        for tool in server.get("tools", []):
-            self._add_tool_row(
-                tool_name=tool.get("name", ""),
-                tool_desc="",
-                enabled=tool.get("enabled", True),
-                desc_override=tool.get("description") or "",
-            )
+        # Agent guidance
+        self._purpose_input.setText(server.get("purpose", ""))
+        self._keywords_input.setText(", ".join(server.get("keywords", [])))
+        self._category_input.setText(server.get("category", ""))
+        self._tags_input.setText(", ".join(server.get("tags", [])))
+        self._use_when_input.setPlainText("\n".join(server.get("use_when", [])))
+        self._do_not_use_when_input.setPlainText("\n".join(server.get("do_not_use_when", [])))
 
     def _clear_form(self):
         """Reset every field to defaults (create mode)."""
         self._name_input.clear()
         self._transport_combo.setCurrentIndex(0)   # stdio
+        self._enabled_check.setChecked(True)
 
         self._stdio_command_input.clear()
         self._stdio_args_input.clear()
@@ -472,8 +458,12 @@ class McpSettingsPanel(QWidget):
         self._http_headers_input.clear()
         self._http_timeout_spin.setValue(30)
 
-        self._clear_tool_rows()
-        self._discover_status_label.setText("")
+        self._purpose_input.clear()
+        self._keywords_input.clear()
+        self._category_input.clear()
+        self._tags_input.clear()
+        self._use_when_input.clear()
+        self._do_not_use_when_input.clear()
 
     # ------------------------------------------------------------------
     # Signal Wiring
@@ -483,17 +473,24 @@ class McpSettingsPanel(QWidget):
         """Connect signals to slots."""
         # List page
         self._new_server_btn.clicked.connect(self._on_new_server)
+        self._server_list.itemDoubleClicked.connect(self._on_item_double_clicked)
 
         # Form page buttons
         self._back_btn.clicked.connect(self._on_back_to_list)
         self._cancel_btn.clicked.connect(self._on_back_to_list)
         self._save_btn.clicked.connect(self._on_save)
-        self._discover_btn.clicked.connect(self._on_discover_tools)
         self._transport_combo.currentTextChanged.connect(self._on_transport_changed)
 
     # ------------------------------------------------------------------
     # Slots — List View Actions
     # ------------------------------------------------------------------
+
+    @Slot(QListWidgetItem)
+    def _on_item_double_clicked(self, item: QListWidgetItem):
+        """Open edit form on double-click."""
+        server = item.data(Qt.UserRole)
+        if server:
+            self._on_edit_server(server["server_id"])
 
     @Slot()
     def _on_new_server(self):
@@ -501,7 +498,6 @@ class McpSettingsPanel(QWidget):
         self._current_server_id = None
         self._clear_form()
         self._form_header.setText("Creating New Server")
-        self._tools_card.setVisible(False)
         # Set initial transport visibility
         self._on_transport_changed(self._transport_combo.currentText())
         self._internal_stack.setCurrentIndex(1)
@@ -520,7 +516,6 @@ class McpSettingsPanel(QWidget):
         self._current_server_id = server_id
         self._populate_form(server)
         self._form_header.setText(f"Editing: {server['name']}")
-        self._tools_card.setVisible(True)
         self._internal_stack.setCurrentIndex(1)
 
     def _on_delete_server(self, server_id: str, name: str):
@@ -591,21 +586,6 @@ class McpSettingsPanel(QWidget):
             worker.start()
             self._save_worker = worker
 
-    @Slot()
-    def _on_discover_tools(self):
-        """Discover tools from the current server (edit mode only)."""
-        if self._current_server_id is None:
-            return
-
-        self._discover_status_label.setText("Discovering...")
-        self._discover_btn.setEnabled(False)
-
-        worker = DiscoverToolsWorker(self._client, self._current_server_id, parent=self)
-        worker.tools_discovered.connect(self._on_tools_discovered)
-        worker.error_occurred.connect(self._on_discover_error)
-        worker.start()
-        self._discover_worker = worker
-
     # ------------------------------------------------------------------
     # Slots — Worker Callbacks
     # ------------------------------------------------------------------
@@ -643,47 +623,6 @@ class McpSettingsPanel(QWidget):
         self._internal_stack.setCurrentIndex(0)         # back to list
         self._save_worker.safe_delete()
         self._save_worker = None
-
-    @Slot(dict)
-    def _on_tools_discovered(self, data: dict):
-        """Populate tool rows from discovery response."""
-        self._discover_btn.setEnabled(True)
-
-        connected = data.get("connected", False)
-        error = data.get("error")
-        tools = data.get("tools", [])
-
-        if not connected or error:
-            self._discover_status_label.setText(f"Error: {error or 'Connection failed'}")
-            self._discover_status_label.setStyleSheet("color: red;")
-        else:
-            self._discover_status_label.setText(f"Connected \u2014 {len(tools)} tool(s) found")
-            self._discover_status_label.setStyleSheet("color: green;")
-
-        # Merge with existing tool configs: preserve enabled state/override for known tools
-        existing_by_name = {row["name"]: row for row in self._tool_rows}
-        self._clear_tool_rows()
-
-        for tool in tools:
-            name = tool.get("name", "")
-            desc = tool.get("description", "")
-            existing = existing_by_name.get(name)
-            enabled = existing["enabled"].isChecked() if existing else True
-            desc_override = existing["desc_override"].text().strip() if existing else ""
-            self._add_tool_row(name, desc, enabled, desc_override)
-
-        self._discover_worker.safe_delete()
-        self._discover_worker = None
-
-    @Slot(str)
-    def _on_discover_error(self, error: str):
-        """Handle discover worker error."""
-        self._discover_btn.setEnabled(True)
-        self._discover_status_label.setText(f"Error: {error}")
-        self._discover_status_label.setStyleSheet("color: red;")
-        if self._discover_worker:
-            self._discover_worker.safe_delete()
-            self._discover_worker = None
 
     @Slot(str)
     def _on_worker_error(self, error: str):

@@ -22,7 +22,14 @@ def apply_theme(app: QApplication, theme: str):
         theme: Theme name - "auto", "dark", or "light".
     """
     try:
-        qdarktheme.setup_theme(theme)
+        if hasattr(qdarktheme, "setup_theme"):
+            qdarktheme.setup_theme(theme)
+        else:
+            if theme == "auto":
+                from PySide6.QtCore import Qt
+                scheme = app.styleHints().colorScheme()
+                theme = "dark" if scheme == Qt.ColorScheme.Dark else "light"
+            app.setStyleSheet(qdarktheme.load_stylesheet(theme))
         logger.info(f"Theme applied: {theme}")
     except Exception as e:
         logger.error(f"Failed to apply theme: {e}")

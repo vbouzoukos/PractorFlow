@@ -25,6 +25,13 @@ class ColorFormatter(logging.Formatter):
         return f"{color}{message}{_RESET}" if color else message
 
 
+LOG_DEBUG = logging.DEBUG
+LOG_INFO = logging.INFO
+LOG_WARNING = logging.WARNING
+LOG_ERROR = logging.ERROR
+LOG_CRITICAL = logging.CRITICAL
+
+
 def _normalize_level(level: str) -> int:
     """
     Normalize string log level to logging module level.

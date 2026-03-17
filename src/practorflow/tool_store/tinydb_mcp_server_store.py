@@ -8,13 +8,13 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel
 from tinydb import TinyDB, Query
 
 from practorflow.llm.tools.mcp.types import (
     HttpConfig,
     MCPServerConfig,
     StdioConfig,
-    MCPToolConfig,
     TransportType,
 )
 from practorflow.llm.tools.mcp.store import MCPServerStore
@@ -114,12 +114,23 @@ class TinyDBMCPServerStore(MCPServerStore):
             "updated_at": config.updated_at.isoformat(),
             "name": config.name,
             "transport": config.transport.value,
-            "stdio_config": config.stdio_config.model_dump() if config.stdio_config else None,
-            "http_config": config.http_config.model_dump() if config.http_config else None,
-            "tools": [
-                tool.model_dump()
-                for tool in config.tools
-            ],
+            "stdio_config": (
+                config.stdio_config.model_dump()
+                if isinstance(config.stdio_config, BaseModel)
+                else config.stdio_config
+            ) if config.stdio_config else None,
+            "http_config": (
+                config.http_config.model_dump()
+                if isinstance(config.http_config, BaseModel)
+                else config.http_config
+            ) if config.http_config else None,
+            "enabled": config.enabled,
+            "purpose": config.purpose,
+            "keywords": config.keywords,
+            "category": config.category,
+            "tags": config.tags,
+            "use_when": config.use_when,
+            "do_not_use_when": config.do_not_use_when,
         }
         return data
 
@@ -133,8 +144,11 @@ class TinyDBMCPServerStore(MCPServerStore):
             transport=TransportType(data["transport"]),
             stdio_config=StdioConfig(**data["stdio_config"]) if data.get("stdio_config") else None,
             http_config=HttpConfig(**data["http_config"]) if data.get("http_config") else None,
-            tools=[
-                MCPToolConfig(**tool)
-                for tool in data.get("tools", [])
-            ],
+            enabled=data.get("enabled", True),
+            purpose=data.get("purpose", ""),
+            keywords=data.get("keywords", []),
+            category=data.get("category", ""),
+            tags=data.get("tags", []),
+            use_when=data.get("use_when", []),
+            do_not_use_when=data.get("do_not_use_when", []),
         )

@@ -12,7 +12,7 @@ from practorflow.llm.llm_config import LLMConfig
 from practorflow.llm.knowledge.knowledge_store import KnowledgeStore
 from practorflow.llm.pyai.model import LocalLLMModel
 from practorflow.llm.tools.tool_registry import ToolRegistry
-from practorflow.logger.logger import get_logger
+from practorflow.logger.logger import get_logger, LOG_DEBUG
 from practorflow.settings.app_settings import appConfiguration
 
 from practorflow.services.agent.schemas import (
@@ -109,13 +109,13 @@ async def run_executor(
                     f"[Executor] node={getattr(node, 'name', type(node).__name__)}"
                 )
 
-            response_text = ""
-            if agent_run.result:
+            if agent_run.result and logger.isEnabledFor(LOG_DEBUG):
                 response_text = (
                     agent_run.result.output
                     if isinstance(agent_run.result.output, str)
                     else str(agent_run.result.output)
                 )
+                logger.debug(f"[Executor] Response: {response_text}")
 
     step_results = await parse_executor_results(plan, deps)
     execution_log = build_execution_log(step_results, plan)

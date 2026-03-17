@@ -5,7 +5,7 @@ Pydantic models for MCP server management endpoints.
 """
 
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -13,7 +13,6 @@ from practorflow.llm.tools.mcp.types import (
     HttpConfig,
     MCPServerConfig,
     StdioConfig,
-    MCPToolConfig,
     TransportType,
 )
 
@@ -32,9 +31,16 @@ class MCPServerCreateRequest(BaseModel):
     http_config: Optional[HttpConfig] = Field(
         default=None, description="Streamable HTTP transport configuration"
     )
-    tools: List[MCPToolConfig] = Field(
-        default_factory=list,
-        description="MCP tool configurations",
+    enabled: bool = Field(default=True, description="Whether the server is enabled")
+    purpose: str = Field(default="", description="Server purpose")
+    keywords: List[str] = Field(default_factory=list, description="Search keywords")
+    category: str = Field(default="", description="Server category")
+    tags: List[str] = Field(default_factory=list, description="Server tags")
+    use_when: List[str] = Field(
+        default_factory=list, description="When to use this server"
+    )
+    do_not_use_when: List[str] = Field(
+        default_factory=list, description="When not to use this server"
     )
 
 
@@ -48,21 +54,24 @@ class MCPServerUpdateRequest(BaseModel):
     http_config: Optional[HttpConfig] = Field(
         default=None, description="Streamable HTTP transport configuration"
     )
-    tools: Optional[List[MCPToolConfig]] = Field(
-        default=None,
-        description="MCP tool configurations",
+    enabled: Optional[bool] = Field(
+        default=None, description="Whether the server is enabled"
+    )
+    purpose: Optional[str] = Field(default=None, description="Server purpose")
+    keywords: Optional[List[str]] = Field(
+        default=None, description="Search keywords"
+    )
+    category: Optional[str] = Field(default=None, description="Server category")
+    tags: Optional[List[str]] = Field(default=None, description="Server tags")
+    use_when: Optional[List[str]] = Field(
+        default=None, description="When to use this server"
+    )
+    do_not_use_when: Optional[List[str]] = Field(
+        default=None, description="When not to use this server"
     )
 
 
 # Response schemas
-
-
-class MCPToolInfo(BaseModel):
-    """Information about a single MCP tool."""
-
-    name: str = Field(..., description="Tool name")
-    description: str = Field(..., description="Tool description")
-    input_schema: Dict = Field(..., description="Tool input schema")
 
 
 class MCPServerResponse(BaseModel):
@@ -77,9 +86,16 @@ class MCPServerResponse(BaseModel):
     http_config: Optional[HttpConfig] = Field(
         default=None, description="Streamable HTTP transport configuration"
     )
-    tools: List[MCPToolConfig] = Field(
-        default_factory=list,
-        description="MCP tool configurations",
+    enabled: bool = Field(..., description="Whether the server is enabled")
+    purpose: str = Field(default="", description="Server purpose")
+    keywords: List[str] = Field(default_factory=list, description="Search keywords")
+    category: str = Field(default="", description="Server category")
+    tags: List[str] = Field(default_factory=list, description="Server tags")
+    use_when: List[str] = Field(
+        default_factory=list, description="When to use this server"
+    )
+    do_not_use_when: List[str] = Field(
+        default_factory=list, description="When not to use this server"
     )
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
@@ -93,7 +109,13 @@ class MCPServerResponse(BaseModel):
             transport=config.transport,
             stdio_config=config.stdio_config,
             http_config=config.http_config,
-            tools=config.tools,
+            enabled=config.enabled,
+            purpose=config.purpose,
+            keywords=config.keywords,
+            category=config.category,
+            tags=config.tags,
+            use_when=config.use_when,
+            do_not_use_when=config.do_not_use_when,
             created_at=config.created_at,
             updated_at=config.updated_at,
         )
@@ -104,17 +126,6 @@ class MCPServerListResponse(BaseModel):
 
     servers: List[MCPServerResponse] = Field(..., description="List of MCP servers")
     count: int = Field(..., description="Total number of servers")
-
-
-class MCPServerToolsResponse(BaseModel):
-    """Response model for listing available tools from an MCP server."""
-
-    server_id: str = Field(..., description="Server ID")
-    connected: bool = Field(..., description="Connection status")
-    tools: List[MCPToolInfo] = Field(
-        default_factory=list, description="Available tools from server"
-    )
-    error: Optional[str] = Field(default=None, description="Error message if failed")
 
 
 class MCPServerReloadResponse(BaseModel):

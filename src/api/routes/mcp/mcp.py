@@ -3,12 +3,10 @@ MCP Server CRUD endpoints.
 
 Admin-only endpoints for managing MCP server configurations:
 - Creating, listing, getting, updating, deleting servers
-- Listing available tools from a server
 - Reloading server tools
 """
 
 from datetime import datetime
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -21,9 +19,7 @@ from api.routes.mcp.schemas import (
     MCPServerListResponse,
     MCPServerReloadResponse,
     MCPServerResponse,
-    MCPServerToolsResponse,
     MCPServerUpdateRequest,
-    MCPToolInfo,
 )
 from practorflow.llm.tools.mcp.store import MCPServerStore
 from practorflow.llm.tools.mcp.types import MCPServerConfig
@@ -89,7 +85,13 @@ async def create_server(
         transport=request.transport,
         stdio_config=request.stdio_config,
         http_config=request.http_config,
-        tools=request.tools,
+        enabled=request.enabled,
+        purpose=request.purpose,
+        keywords=request.keywords,
+        category=request.category,
+        tags=request.tags,
+        use_when=request.use_when,
+        do_not_use_when=request.do_not_use_when,
     )
 
     created = store.create(config)
@@ -290,97 +292,6 @@ async def delete_server(
         server_id=server_id,
         deleted=True,
         message="Server deleted successfully",
-    )
-
-
-@router.get(
-    "/{server_id}/tools",
-    response_model=MCPServerToolsResponse,
-    summary="List MCP server tools",
-    description=(
-        "Connect to an MCP server and list available tools. "
-        "Requires llm_admin permission."
-    ),
-)
-async def list_server_tools(
-    server_id: str,
-    current_user: UserContext = Depends(require_llm_admin),
-    store: MCPServerStore = Depends(get_mcp_server_store),
-) -> MCPServerToolsResponse:
-    """
-    List available tools from an MCP server.
-
-    Admin uses this to see what tools a server offers before creating them.
-
-    Args:
-        server_id: Server ID from path.
-        current_user: Authenticated admin user.
-        store: MCP server store instance.
-
-    Returns:
-        MCPServerToolsResponse with connection status and tools.
-
-    Raises:
-        HTTPException: 404 if server not found.
-    """
-    config = store.get(server_id)
-    if config is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Server '{server_id}' not found",
-        )
-
-    from pydantic_ai.mcp import MCPServerStdio, MCPServerStreamableHTTP
-    from practorflow.llm.tools.mcp.types import TransportType
-
-    tools: List[MCPToolInfo] = []
-    error_msg: str = None
-    connected = False
-
-    try:
-        # Create native Pydantic AI MCP server instance
-        if config.transport == TransportType.STDIO:
-            server = MCPServerStdio(
-                command=config.stdio_config.command,
-                args=config.stdio_config.args,
-                env=config.stdio_config.env if config.stdio_config.env else None,
-            )
-        else:
-            server = MCPServerStreamableHTTP(
-                url=config.http_config.url,
-                headers=config.http_config.headers if config.http_config.headers else None,
-                timeout=config.http_config.timeout_seconds,
-            )
-
-        async with server:
-            connected = True
-            discovered_tools = await server.list_tools()
-            tools = [
-                MCPToolInfo(
-                    name=t.name,
-                    description=t.description or "",
-                    input_schema=t.parameters_json_schema,
-                )
-                for t in discovered_tools
-            ]
-
-        logger.info(
-            f"[MCP] Listed tools for server '{config.name}' (id={server_id}): "
-            f"connected={connected}, tools={len(tools)} "
-            f"by user: {current_user.user_id}"
-        )
-
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(
-            f"[MCP] Failed to list tools for server '{config.name}' (id={server_id}): {e}"
-        )
-
-    return MCPServerToolsResponse(
-        server_id=server_id,
-        connected=connected,
-        tools=tools,
-        error=error_msg,
     )
 
 

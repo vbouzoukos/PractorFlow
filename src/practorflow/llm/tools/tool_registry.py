@@ -259,13 +259,12 @@ class ToolRegistry:
         Load native Pydantic AI MCP toolsets from configured servers.
 
         Reads all MCPServerConfig from the store and creates native
-        MCPServer* instances based on transport type. Applies user
-        preference filtering and tool description enrichment via
-        .filtered() and .prepared() when applicable.
+        MCPServer* instances based on transport type. Skips servers
+        with enabled=False. Enriches tool descriptions with server-level
+        agent-guidance fields via .prepared().
 
         Args:
-            user_preferences: Optional user preferences for filtering servers
-                and tools.
+            user_preferences: Optional user preferences for filtering servers.
 
         Returns:
             Number of toolsets created.
@@ -284,19 +283,20 @@ class ToolRegistry:
             logger.debug("[ToolRegistry] No MCP servers configured")
             return 0
 
-        # Build preference lookup sets
+        # Build preference lookup set
         enabled_server_names = None
-        enabled_mcp_tool_ids = None
         if user_preferences is not None:
             enabled_server_names = set(user_preferences.enabled_mcp_servers)
-            enabled_mcp_tool_ids = {
-                entry.id
-                for entry in user_preferences.enabled_tools
-                if entry.type == "mcp"
-            }
 
         for config in server_configs:
-            # Filter by enabled servers when preferences provided
+            # Skip disabled servers
+            if not config.enabled:
+                logger.debug(
+                    f"[ToolRegistry] MCP server '{config.name}' is disabled, skipping"
+                )
+                continue
+
+            # Filter by user preferences when provided
             if enabled_server_names is not None:
                 if config.name not in enabled_server_names:
                     logger.debug(
@@ -336,48 +336,29 @@ class ToolRegistry:
                     )
                     continue
 
-                # Apply tool filtering via .filtered() when preferences provided
-                if enabled_mcp_tool_ids is not None:
-                    server = server.filtered(
-                        allowed_tools=list(enabled_mcp_tool_ids)
-                    )
+                # Apply server-level agent-guidance enrichment via .prepared()
+                enrichments = []
+                if config.purpose:
+                    enrichments.append(f"Purpose: {config.purpose}")
+                if config.use_when:
+                    enrichments.append(f"Use when: {', '.join(config.use_when)}")
+                if config.do_not_use_when:
+                    enrichments.append(f"Do not use when: {', '.join(config.do_not_use_when)}")
+                if config.category:
+                    enrichments.append(f"Category: {config.category}")
+                if config.tags:
+                    enrichments.append(f"Tags: {', '.join(config.tags)}")
+                if config.keywords:
+                    enrichments.append(f"Keywords: {', '.join(config.keywords)}")
 
-                # Apply description enrichment via .prepared() for tools with overrides
-                if config.tools:
-                    async def _prepare_tools(ctx, tools, tool_configs=config.tools):
+                if enrichments:
+                    enrichment_text = "\n".join(enrichments)
+
+                    async def _prepare_tools(ctx, tools, _enrichment=enrichment_text):
                         for tool in tools:
-                            for tool_cfg in tool_configs:
-                                if tool_cfg.name != tool.name:
-                                    continue
-                                # Build enriched description
-                                base_description = (
-                                    tool_cfg.description
-                                    if tool_cfg.description
-                                    else tool.description
-                                )
-                                enrichments = []
-                                if tool_cfg.purpose:
-                                    enrichments.append(f"Purpose: {tool_cfg.purpose}")
-                                if tool_cfg.use_when:
-                                    use_when_str = ", ".join(tool_cfg.use_when)
-                                    enrichments.append(f"Use when: {use_when_str}")
-                                if tool_cfg.do_not_use_when:
-                                    do_not_use_str = ", ".join(tool_cfg.do_not_use_when)
-                                    enrichments.append(f"Do not use when: {do_not_use_str}")
-                                if tool_cfg.category:
-                                    enrichments.append(f"Category: {tool_cfg.category}")
-                                if tool_cfg.tags:
-                                    enrichments.append(f"Tags: {', '.join(tool_cfg.tags)}")
-                                if tool_cfg.keywords:
-                                    enrichments.append(f"Keywords: {', '.join(tool_cfg.keywords)}")
-                                if enrichments:
-                                    tool.description = (
-                                        f"{base_description}\n"
-                                        + "\n".join(enrichments)
-                                    )
-                                else:
-                                    tool.description = base_description
-                                break
+                            tool.description = (
+                                f"{tool.description}\n{_enrichment}"
+                            )
                         return tools
 
                     server = server.prepared(_prepare_tools)

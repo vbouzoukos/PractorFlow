@@ -113,7 +113,6 @@ class ChatService:
         self,
         message_history: List,
         model: LocalLLMModel,
-        tools: List,
     ) -> tuple[Optional[str], Optional[str]]:
         """
         Extract persona and instructions from conversation history using the agent.
@@ -121,7 +120,6 @@ class ChatService:
         Args:
             message_history: Conversation history in pydantic_ai format.
             model: LocalLLMModel instance.
-            tools: List of Tool objects for the agent.
 
         Returns:
             Tuple of (persona, instructions) - either can be None if not detected.
@@ -133,7 +131,6 @@ class ChatService:
             model=model,
             deps_type=ChatDeps,
             system_prompt="You are a context extraction assistant. Analyze conversation history and extract any requested persona and instructions.",
-            tools=tools,
         )
 
         try:
@@ -231,6 +228,7 @@ class ChatService:
 
         # load API tools for user and build tools list
         tools = load_api_tools_for_user(self._tool_registry, user)
+        mcp_toolsets = self._tool_registry.get_mcp_toolsets()
 
         # index files
         new_file_names: List[str] = []
@@ -270,7 +268,7 @@ class ChatService:
             message_history = build_message_history(session)
 
             # Step 1: Extract persona and instructions from history
-            persona, instructions = await self._extract_context(message_history, model, tools)
+            persona, instructions = await self._extract_context(message_history, model)
 
             # Step 2: Enhance message with persona/instructions if detected
             if persona or instructions:
@@ -285,6 +283,7 @@ class ChatService:
                 deps_type=ChatDeps,
                 system_prompt=session.instructions,
                 tools=tools,
+                toolsets=mcp_toolsets,
             )
 
             deps = ChatDeps(

@@ -42,27 +42,6 @@ class HttpConfig(BaseModel):
     timeout_seconds: int = Field(default=30, description="Request timeout in seconds")
 
 
-class MCPToolConfig(BaseModel):
-    """Per-tool configuration within an MCP server."""
-
-    tool_id: str = Field(default_factory=lambda: str(uuid4()), description="Unique tool ID")
-    name: str = Field(..., description="Tool name from MCP server")
-    enabled: bool = Field(default=True, description="Whether the tool is enabled")
-    description: Optional[str] = Field(
-        default=None, description="Override server-provided description"
-    )
-    purpose: Optional[str] = Field(default=None, description="Tool purpose")
-    keywords: List[str] = Field(default_factory=list, description="Search keywords")
-    use_when: List[str] = Field(
-        default_factory=list, description="When to use this tool"
-    )
-    do_not_use_when: List[str] = Field(
-        default_factory=list, description="When not to use this tool"
-    )
-    category: Optional[str] = Field(default=None, description="Tool category")
-    tags: List[str] = Field(default_factory=list, description="Tool tags")
-
-
 class MCPServerConfig(BaseModel):
     """Complete MCP server configuration."""
 
@@ -81,7 +60,14 @@ class MCPServerConfig(BaseModel):
         default=None, description="Streamable HTTP transport configuration"
     )
 
-    tools: List[MCPToolConfig] = Field(
-        default_factory=list,
-        description="MCP tool configurations",
+    enabled: bool = Field(default=True, description="Whether the server is enabled")
+    purpose: str = Field(default="", description="Server purpose")
+    keywords: List[str] = Field(default_factory=list, description="Search keywords")
+    category: str = Field(default="", description="Server category")
+    tags: List[str] = Field(default_factory=list, description="Server tags")
+    use_when: List[str] = Field(
+        default_factory=list, description="When to use this server"
+    )
+    do_not_use_when: List[str] = Field(
+        default_factory=list, description="When not to use this server"
     )

@@ -12,19 +12,16 @@ from api.auth.dependencies import get_current_user
 from api.auth.schemas import UserContext
 from api.dependencies import (
     get_api_tool_store,
-    get_mcp_server_store,
     get_tool_preferences_store,
 )
 from api.routes.tools.schemas import (
     ApiToolInfo,
     BuiltinToolInfo,
-    MCPToolInfo,
     ToolPreferenceUpdateRequest,
     ToolPreferenceUpdateResponse,
     ToolsListResponse,
 )
 from practorflow.llm.tools.api.store.base_store import ApiToolStore
-from practorflow.llm.tools.mcp.store import MCPServerStore
 from practorflow.llm.tools.user_preferences import (
     EnabledToolEntry,
     UserToolPreferencesStore,
@@ -59,7 +56,6 @@ async def list_tools(
     current_user: UserContext = Depends(get_current_user),
     prefs_store: UserToolPreferencesStore = Depends(get_tool_preferences_store),
     api_store: ApiToolStore = Depends(get_api_tool_store),
-    mcp_store: MCPServerStore = Depends(get_mcp_server_store),
 ) -> ToolsListResponse:
     """
     List all available tools with user's enabled/disabled state.
@@ -68,7 +64,6 @@ async def list_tools(
         current_user: Authenticated user context.
         prefs_store: User tool preferences store.
         api_store: API tool store.
-        mcp_store: MCP server store.
 
     Returns:
         ToolsListResponse with all tools categorized by type.
@@ -83,7 +78,6 @@ async def list_tools(
     enabled_tool_ids = {
         (entry.type, entry.id) for entry in prefs.enabled_tools
     }
-    enabled_server_ids = set(prefs.enabled_mcp_servers)
 
     # Get built-in tools from static list
     builtin_tools: List[BuiltinToolInfo] = []
@@ -115,36 +109,16 @@ async def list_tools(
             )
         )
 
-    # Get MCP tools from server configs
-    mcp_tools_list: List[MCPToolInfo] = []
-    mcp_servers = mcp_store.list()
-
-    for server in mcp_servers:
-        for tool in server.tools:
-            mcp_tools_list.append(
-                MCPToolInfo(
-                    id=tool.tool_id,
-                    type="mcp",
-                    name=tool.name,
-                    description=tool.description or tool.purpose or "",
-                    server_id=server.server_id,
-                    server_name=server.name,
-                    enabled=("mcp", tool.tool_id) in enabled_tool_ids
-                    and server.server_id in enabled_server_ids,
-                )
-            )
-
-    total_count = len(builtin_tools) + len(api_tools) + len(mcp_tools_list)
+    total_count = len(builtin_tools) + len(api_tools)
 
     logger.info(
         f"[Tools] Listed {total_count} tools for user {current_user.user_id}: "
-        f"{len(builtin_tools)} builtin, {len(api_tools)} API, {len(mcp_tools_list)} MCP"
+        f"{len(builtin_tools)} builtin, {len(api_tools)} API"
     )
 
     return ToolsListResponse(
         builtin_tools=builtin_tools,
         api_tools=api_tools,
-        mcp_tools=mcp_tools_list,
         count=total_count,
     )
 

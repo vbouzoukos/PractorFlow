@@ -36,7 +36,7 @@ class ToolInfoBase(BaseModel):
     """Base information for a tool."""
 
     id: str = Field(..., description="Tool identifier")
-    type: str = Field(..., description="Tool type: 'builtin', 'api', or 'mcp'")
+    type: str = Field(..., description="Tool type: 'builtin' or 'api'")
     name: str = Field(..., description="Tool name")
     description: str = Field(..., description="Tool description")
     enabled: bool = Field(..., description="Whether the tool is enabled for the user")
@@ -55,14 +55,6 @@ class ApiToolInfo(ToolInfoBase):
     system: bool = Field(..., description="Whether the tool is a system tool")
 
 
-class MCPToolInfo(ToolInfoBase):
-    """Information about an MCP tool."""
-
-    type: str = Field(default="mcp", description="Always 'mcp'")
-    server_id: str = Field(..., description="Parent MCP server ID")
-    server_name: str = Field(..., description="Parent MCP server name")
-
-
 class ToolsListResponse(BaseModel):
     """Response model for listing all available tools."""
 
@@ -71,8 +63,5 @@ class ToolsListResponse(BaseModel):
     )
     api_tools: List[ApiToolInfo] = Field(
         default_factory=list, description="API tools"
-    )
-    mcp_tools: List[MCPToolInfo] = Field(
-        default_factory=list, description="MCP tools"
     )
     count: int = Field(..., description="Total number of tools")

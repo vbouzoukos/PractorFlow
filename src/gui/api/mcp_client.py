@@ -3,7 +3,7 @@ MCP client.
 
 HTTP client for communicating with the PractorFlow MCP API.
 Provides CRUD operations for managing MCP server configurations including
-listing, creating, updating, deleting, and discovering tools.
+listing, creating, updating, and deleting servers.
 """
 
 from typing import Optional
@@ -26,7 +26,6 @@ class McpClient:
     - Getting a single MCP server
     - Updating MCP servers
     - Deleting MCP servers
-    - Discovering tools from an MCP server
     """
 
     def __init__(
@@ -245,20 +244,3 @@ class McpClient:
             logger.error(f"McpClient.delete_server failed: {e}")
             raise
 
-    def discover_tools(self, server_id: str) -> dict:
-        """Discover available tools from an MCP server."""
-        self.ensure_authenticated()
-
-        url = f"{self._base_url}/mcp/servers/{server_id}/tools"
-
-        try:
-            with httpx.Client(timeout=self._timeout) as client:
-                response = client.get(
-                    url,
-                    headers=self._get_auth_headers(),
-                )
-                response.raise_for_status()
-                return response.json()
-        except httpx.HTTPError as e:
-            logger.error(f"McpClient.discover_tools failed: {e}")
-            raise

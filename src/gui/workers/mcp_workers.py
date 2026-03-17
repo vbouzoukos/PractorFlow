@@ -1,8 +1,8 @@
 """
 MCP workers - Background threads for MCP server CRUD operations.
 
-Handles listing, creating, updating, deleting servers and discovering
-tools in background threads to keep the UI responsive.
+Handles listing, creating, updating, and deleting servers
+in background threads to keep the UI responsive.
 """
 
 from PySide6.QtCore import QThread, Signal
@@ -127,37 +127,6 @@ class DeleteServerWorker(QThread):
                 self.server_deleted.emit(self._server_id)
             else:
                 self.error_occurred.emit("Failed to delete server")
-        except Exception as e:
-            self.error_occurred.emit(str(e))
-
-    def safe_delete(self):
-        """Safely delete worker - wait if still running."""
-        if self.isRunning():
-            self.wait(2000)
-        self.deleteLater()
-
-
-class DiscoverToolsWorker(QThread):
-    """
-    Worker thread for discovering tools from an MCP server.
-
-    Signals:
-        tools_discovered: Emitted with tools response dict on success.
-        error_occurred: Emitted with error message on failure.
-    """
-
-    tools_discovered = Signal(dict)
-    error_occurred = Signal(str)
-
-    def __init__(self, client: McpClient, server_id: str, parent=None):
-        super().__init__(parent)
-        self._client = client
-        self._server_id = server_id
-
-    def run(self):
-        try:
-            result = self._client.discover_tools(self._server_id)
-            self.tools_discovered.emit(result)
         except Exception as e:
             self.error_occurred.emit(str(e))
 
